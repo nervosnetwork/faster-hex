@@ -1,0 +1,21 @@
+[package]
+name = "faster-hex"
+version = "0.1.0"
+authors = ["zhangsoledad <787953403@qq.com>"]
+keywords = ["simd", "hex"]
+license = "MIT"
+description = "Fast hex encoding."
+repository = "https://github.com/NervosFoundation/faster-hex"
+homepage = "https://github.com/NervosFoundation/faster-hex"
+readme = "README.md"
+
+
+[dev-dependencies]
+criterion = "0.2"
+rustc-hex = "1.0"
+hex = "0.3.2"
+proptest = "0.8"
+
+[[bench]]
+name = "hex_encode"
+harness = false
