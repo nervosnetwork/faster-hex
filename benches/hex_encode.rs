@@ -1,10 +1,4 @@
-#[macro_use]
-extern crate criterion;
-extern crate faster_hex;
-extern crate hex;
-extern crate rustc_hex;
-
-use criterion::Criterion;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use faster_hex::hex_string;
 use rustc_hex::ToHex;
 
@@ -13,19 +7,22 @@ fn bench(c: &mut Criterion) {
 
     c.bench_function("bench_rustc_hex", move |b| {
         b.iter(|| {
-            s.as_bytes().to_hex();
+            let ret = s.as_bytes().to_hex();
+            black_box(ret);
         })
     });
 
     c.bench_function("bench_hex", move |b| {
         b.iter(|| {
-            hex::encode(s);
+            let ret = hex::encode(s);
+            black_box(ret);
         })
     });
 
     c.bench_function("bench_simd", move |b| {
         b.iter(|| {
-            hex_string(s.as_bytes()).unwrap();
+            let ret = hex_string(s.as_bytes()).unwrap();
+            black_box(ret);
         })
     });
 }

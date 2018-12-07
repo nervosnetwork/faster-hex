@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "cargo-clippy", allow(cast_ptr_alignment))]
+#![allow(clippy::cast_ptr_alignment)]
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;

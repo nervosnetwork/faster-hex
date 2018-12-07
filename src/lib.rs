@@ -1,17 +1,10 @@
-#[cfg(test)]
-#[macro_use]
-extern crate proptest;
-#[cfg(test)]
-extern crate hex;
-
 mod encode;
-
-pub use encode::{hex_string, hex_to};
+pub use crate::encode::{hex_string, hex_to};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use encode::hex_string;
+    use crate::encode::{hex_string, hex_to};
+    use proptest::{proptest, proptest_helper};
     use std::str;
 
     fn _test_hex(s: &String) {
