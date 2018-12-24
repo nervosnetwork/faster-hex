@@ -1,5 +1,7 @@
+mod decode;
 mod encode;
-pub use crate::encode::{hex_string, hex_to};
+pub use crate::decode::{hex_decode, hex_decode_fallback};
+pub use crate::encode::{hex_encode, hex_encode_fallback, hex_string, hex_to};
 
 #[cfg(test)]
 mod tests {

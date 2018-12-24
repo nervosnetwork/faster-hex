@@ -1,6 +1,6 @@
 [package]
 name = "faster-hex"
-version = "0.1.1"
+version = "0.3.0"
 authors = ["zhangsoledad <787953403@qq.com>"]
 edition = "2018"
 keywords = ["simd", "hex"]
@@ -18,5 +18,5 @@ hex = "0.3.2"
 proptest = "0.8"
 
 [[bench]]
-name = "hex_encode"
+name = "hex"
 harness = false
