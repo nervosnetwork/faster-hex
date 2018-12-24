@@ -9,10 +9,9 @@ static TABLE: &[u8] = b"0123456789abcdef";
 
 pub fn hex_string(src: &[u8]) -> Result<String, usize> {
     let mut buffer = vec![0; src.len() * 2];
-    hex_to(src, &mut buffer).map(|_| unsafe { String::from_utf8_unchecked(buffer) })
+    hex_encode(src, &mut buffer).map(|_| unsafe { String::from_utf8_unchecked(buffer) })
 }
 
-#[deprecated(since = "0.3.0", note = "please use `hex_encode` instead")]
 pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
     let len = src.len().checked_mul(2).unwrap();
     if dst.len() < len {
@@ -35,6 +34,7 @@ pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
     Ok(())
 }
 
+#[deprecated(since = "0.3.0", note = "please use `hex_encode` instead")]
 pub fn hex_to(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
     hex_encode(src, dst)
 }

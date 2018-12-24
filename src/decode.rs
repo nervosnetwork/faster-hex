@@ -42,12 +42,12 @@ pub(crate) static UNHEX4: [u8; 256] = [
 const _0213: i32 = 0b11011000;
 
 #[inline]
-fn unhexB(x: usize) -> u8 {
+fn unhex_b(x: usize) -> u8 {
     UNHEX[x]
 }
 
 #[inline]
-fn unhexA(x: usize) -> u8 {
+fn unhex_a(x: usize) -> u8 {
     UNHEX4[x]
 }
 
@@ -82,7 +82,7 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            unsafe { hex_decode_avx2(src, dst) };
+            unsafe { hex_decode_avx2(src, dst) }?;
             return Ok(());
         }
     }
@@ -93,7 +93,7 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
 
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
+unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) -> Result<(), usize> {
     let mask_a = _mm256_setr_epi8(
         0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1, 0, -1, 2, -1, 4, -1, 6, -1, 8,
         -1, 10, -1, 12, -1, 14, -1,
@@ -104,7 +104,6 @@ unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
         -1, 11, -1, 13, -1, 15, -1,
     );
 
-    let mut i = 0usize;
     while dst.len() >= 32 {
         // 32 nibbles, 16 bytes
         let av1 = _mm256_loadu_si256(src.as_ptr() as *const _);
@@ -126,17 +125,14 @@ unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
         _mm256_storeu_si256(dst.as_mut_ptr() as *mut _, bytes);
         dst = &mut dst[32..];
         src = &src[64..];
-        i += 1;
     }
-
-    let i = i as usize;
-    hex_decode_fallback(&src, &mut dst);
+    hex_decode_fallback(&src, &mut dst)
 }
 
 pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
     for (idx, item) in dst.iter_mut().zip(src.chunks(2)).enumerate() {
-        let a = unhexA(item.1[0] as usize);
-        let b = unhexB(item.1[1] as usize);
+        let a = unhex_a(item.1[0] as usize);
+        let b = unhex_b(item.1[1] as usize);
         if a == NIL || b == NIL {
             return Err(idx);
         }
@@ -147,11 +143,9 @@ pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::hex_decode;
     use crate::decode::hex_decode_fallback;
     use crate::encode::hex_string;
     use proptest::{proptest, proptest_helper};
-    use std::str;
 
     fn _test_decode_fallback(s: &String) {
         let len = s.as_bytes().len();
@@ -160,7 +154,7 @@ mod tests {
 
         let hex_string = hex_string(s.as_bytes()).unwrap();
 
-        hex_decode_fallback(hex_string.as_bytes(), &mut dst);
+        hex_decode_fallback(hex_string.as_bytes(), &mut dst).unwrap();
 
         assert_eq!(&dst[..], s.as_bytes());
     }
