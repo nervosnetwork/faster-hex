@@ -1,6 +1,9 @@
 mod decode;
 mod encode;
-pub use crate::decode::{hex_decode, hex_decode_fallback};
+mod error;
+pub use crate::decode::{
+    hex_check_fallback, hex_check_sse, hex_decode, hex_decode_fallback, hex_decode_unchecked,
+};
 pub use crate::encode::{hex_encode, hex_encode_fallback, hex_string, hex_to};
 
 #[cfg(test)]
@@ -42,7 +45,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_hex_decode(ref s in ".*") {
+        fn test_hex_decode(ref s in ".+") {
             _test_hex_decode(s);
         }
     }

@@ -20,3 +20,8 @@ proptest = "0.8"
 [[bench]]
 name = "hex"
 harness = false
+
+
+[[bench]]
+name = "check"
+harness = false

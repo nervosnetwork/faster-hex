@@ -5,17 +5,19 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+use crate::error::Error;
+
 static TABLE: &[u8] = b"0123456789abcdef";
 
-pub fn hex_string(src: &[u8]) -> Result<String, usize> {
+pub fn hex_string(src: &[u8]) -> Result<String, Error> {
     let mut buffer = vec![0; src.len() * 2];
     hex_encode(src, &mut buffer).map(|_| unsafe { String::from_utf8_unchecked(buffer) })
 }
 
-pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
+pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     let len = src.len().checked_mul(2).unwrap();
     if dst.len() < len {
-        return Err(len);
+        return Err(Error::InvalidLength(len));
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -35,7 +37,7 @@ pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
 }
 
 #[deprecated(since = "0.3.0", note = "please use `hex_encode` instead")]
-pub fn hex_to(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
+pub fn hex_to(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     hex_encode(src, dst)
 }
 
@@ -49,7 +51,8 @@ unsafe fn hex_encode_avx2(mut src: &[u8], dst: &mut [u8]) {
 
     let mut i = 0_isize;
     while src.len() >= 32 {
-        let invec = _mm256_lddqu_si256(src.as_ptr() as *const _);
+        // https://stackoverflow.com/questions/47425851/whats-the-difference-between-mm256-lddqu-si256-and-mm256-loadu-si256
+        let invec = _mm256_loadu_si256(src.as_ptr() as *const _);
 
         let masked1 = _mm256_and_si256(invec, and4bits);
         let masked2 = _mm256_and_si256(_mm256_srli_epi64(invec, 4), and4bits);
@@ -93,7 +96,7 @@ unsafe fn hex_encode_sse41(mut src: &[u8], dst: &mut [u8]) {
 
     let mut i = 0_isize;
     while src.len() >= 16 {
-        let invec = _mm_lddqu_si128(src.as_ptr() as *const _);
+        let invec = _mm_loadu_si128(src.as_ptr() as *const _);
 
         let masked1 = _mm_and_si128(invec, and4bits);
         let masked2 = _mm_and_si128(_mm_srli_epi64(invec, 4), and4bits);

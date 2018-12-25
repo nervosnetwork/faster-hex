@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use faster_hex::{hex_decode, hex_decode_fallback, hex_string};
+use faster_hex::{hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_string};
 use rustc_hex::{FromHex, ToHex};
 
 fn bench(c: &mut Criterion) {
@@ -41,6 +41,17 @@ fn bench(c: &mut Criterion) {
             let mut dst = Vec::with_capacity(len);
             dst.resize(len, 0);
             let ret = hex_decode(hex.as_bytes(), &mut dst);
+            black_box(ret);
+        })
+    });
+
+    c.bench_function("bench_simd_unhex_unchecked", move |b| {
+        let hex = hex_string(s.as_bytes()).unwrap();
+        let len = s.as_bytes().len();
+        b.iter(|| {
+            let mut dst = Vec::with_capacity(len);
+            dst.resize(len, 0);
+            let ret = hex_decode_unchecked(hex.as_bytes(), &mut dst);
             black_box(ret);
         })
     });
