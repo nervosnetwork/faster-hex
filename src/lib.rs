@@ -49,4 +49,25 @@ mod tests {
             _test_hex_decode(s);
         }
     }
+
+    fn _test_hex_decode_check(s: &String, ok: bool) {
+        let len = s.as_bytes().len();
+        let mut dst = Vec::with_capacity(len / 2);
+        dst.resize(len / 2, 0);
+        assert!(hex_decode(s.as_bytes(), &mut dst).is_ok() == ok);
+    }
+
+    proptest! {
+        #[test]
+        fn test_hex_decode_check(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
+            _test_hex_decode_check(s, true);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_hex_decode_check_odd(ref s in "[0-9a-fA-F]{11}") {
+            _test_hex_decode_check(s, false);
+        }
+    }
 }

@@ -1,5 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use faster_hex::{hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_string, hex_encode_fallback};
+use faster_hex::{
+    hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_encode_fallback, hex_string,
+};
 use rustc_hex::{FromHex, ToHex};
 
 fn bench(c: &mut Criterion) {

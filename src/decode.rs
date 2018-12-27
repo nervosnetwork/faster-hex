@@ -146,7 +146,7 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
         return Err(Error::InvalidLength(0));
     }
     let len = dst.len().checked_mul(2).unwrap();
-    if src.len() < len {
+    if src.len() < len || ((src.len() & 1) != 0) {
         return Err(Error::InvalidLength(len));
     }
     if !hex_check(src) {
@@ -271,7 +271,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_check_sse_true(ref s in "[0-9a-fA-F]+") {
+        fn test_check_sse_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
             _test_check_sse_true(s);
         }
     }
