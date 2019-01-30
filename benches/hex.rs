@@ -7,28 +7,28 @@ use rustc_hex::{FromHex, ToHex};
 fn bench(c: &mut Criterion) {
     let s = "Day before yesterday I saw a rabbit, and yesterday a deer, and today, you.";
 
-    c.bench_function("bench_rustc_hex", move |b| {
+    c.bench_function("bench_rustc_hex_encode", move |b| {
         b.iter(|| {
             let ret = s.as_bytes().to_hex();
             black_box(ret);
         })
     });
 
-    c.bench_function("bench_hex_hex", move |b| {
+    c.bench_function("bench_hex_encode", move |b| {
         b.iter(|| {
             let ret = hex::encode(s);
             black_box(ret);
         })
     });
 
-    c.bench_function("bench_faster_hex", move |b| {
+    c.bench_function("bench_faster_hex_encode", move |b| {
         b.iter(|| {
             let ret = hex_string(s.as_bytes()).unwrap();
             black_box(ret);
         })
     });
 
-    c.bench_function("bench_faster_hex_fallback", move |b| {
+    c.bench_function("bench_faster_hex_encode_fallback", move |b| {
         b.iter(|| {
             let bytes = s.as_bytes();
             let mut buffer = vec![0; bytes.len() * 2];
@@ -41,6 +41,14 @@ fn bench(c: &mut Criterion) {
         let hex = s.as_bytes().to_hex();
         b.iter(|| {
             let ret: Vec<u8> = hex.from_hex().unwrap();
+            black_box(ret);
+        })
+    });
+
+    c.bench_function("bench_hex_decode", move |b| {
+        let hex = s.as_bytes().to_hex();
+        b.iter(|| {
+            let ret: Vec<u8> = hex::decode(&hex).unwrap();
             black_box(ret);
         })
     });
