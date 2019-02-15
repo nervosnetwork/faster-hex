@@ -1,0 +1,9 @@
+[package]
+name = "afl"
+version = "0.1.0"
+authors = ["zhangsoledad <787953403@qq.com>"]
+edition = "2018"
+
+[dependencies]
+afl = "0.4"
+faster-hex = "0.3"
