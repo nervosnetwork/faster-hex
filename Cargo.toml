@@ -1,6 +1,6 @@
 [package]
 name = "faster-hex"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["zhangsoledad <787953403@qq.com>"]
 edition = "2018"
 keywords = ["simd", "hex"]
@@ -9,6 +9,11 @@ description = "Fast hex encoding."
 repository = "https://github.com/NervosFoundation/faster-hex"
 homepage = "https://github.com/NervosFoundation/faster-hex"
 readme = "README.md"
+exclude = [
+    "afl/*",
+    "benches/*",
+    "fuzz/*"
+]
 
 
 [dev-dependencies]
