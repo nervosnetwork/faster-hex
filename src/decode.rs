@@ -145,9 +145,9 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     if src.is_empty() {
         return Err(Error::InvalidLength(0));
     }
-    let len = dst.len().checked_mul(2).unwrap();
-    if src.len() < len || ((src.len() & 1) != 0) {
-        return Err(Error::InvalidLength(len));
+    let decoded_len = src.len().checked_div(2).unwrap();
+    if dst.len() < decoded_len || ((src.len() & 1) != 0) {
+        return Err(Error::InvalidLength(src.len()));
     }
     if !hex_check(src) {
         return Err(Error::InvalidChar);
