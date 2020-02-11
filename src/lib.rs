@@ -77,4 +77,15 @@ mod tests {
             _test_hex_decode_check(s, false);
         }
     }
+
+    proptest! {
+        #[test]
+        fn test_roundtrip(input: Vec<u8>) {
+            let mut encoded = vec![0; input.len() * 2];
+            hex_encode(&input, &mut encoded).unwrap();
+            let mut decoded = vec![0; input.len()];
+            hex_decode(&encoded, &mut decoded).unwrap();
+            assert_eq!(&decoded, &input);
+        }
+    }
 }
