@@ -4,11 +4,14 @@ mod error;
 pub use crate::decode::{
     hex_check_fallback, hex_decode, hex_decode_fallback, hex_decode_unchecked,
 };
-pub use crate::encode::{hex_encode, hex_encode_fallback, hex_string, hex_to};
+pub use crate::encode::{hex_encode, hex_encode_fallback, hex_string};
 pub use crate::error::Error;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64", feature = "sse4.1"))]
 pub use crate::decode::hex_check_sse;
+
+#[allow(deprecated)]
+pub use crate::encode::hex_to;
 
 #[cfg(test)]
 mod tests {

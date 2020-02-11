@@ -95,7 +95,7 @@ pub fn hex_check(src: &[u8]) -> bool {
 pub fn hex_check_fallback(src: &[u8]) -> bool {
     for byte in src {
         match byte {
-            b'A'...b'F' | b'a'...b'f' | b'0'...b'9' => continue,
+            b'A'..=b'F' | b'a'..=b'f' | b'0'..=b'9' => continue,
             _ => {
                 return false;
             }
