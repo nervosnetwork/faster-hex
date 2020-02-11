@@ -1,91 +1,132 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use faster_hex::{
     hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_encode_fallback, hex_string,
 };
 use rustc_hex::{FromHex, ToHex};
+use std::time::Duration;
 
-fn bench(c: &mut Criterion) {
-    let s = "Day before yesterday I saw a rabbit, and yesterday a deer, and today, you.";
+const BYTE_SIZES: [usize; 5] = [2, 16, 32, 128, 4096];
 
-    c.bench_function("bench_rustc_hex_encode", move |b| {
-        b.iter(|| {
-            let ret = s.as_bytes().to_hex();
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_hex_encode", move |b| {
-        b.iter(|| {
-            let ret = hex::encode(s);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_encode", move |b| {
-        b.iter(|| {
-            let ret = hex_string(s.as_bytes()).unwrap();
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_encode_fallback", move |b| {
-        b.iter(|| {
-            let bytes = s.as_bytes();
-            let mut buffer = vec![0; bytes.len() * 2];
-            let ret = hex_encode_fallback(bytes, &mut buffer);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_rustc_hex_decode", move |b| {
-        let hex = s.as_bytes().to_hex();
-        b.iter(|| {
-            let ret: Vec<u8> = hex.from_hex().unwrap();
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_hex_decode", move |b| {
-        let hex = s.as_bytes().to_hex();
-        b.iter(|| {
-            let ret: Vec<u8> = hex::decode(&hex).unwrap();
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_decode", move |b| {
-        let hex = hex_string(s.as_bytes()).unwrap();
-        let len = s.as_bytes().len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            let ret = hex_decode(hex.as_bytes(), &mut dst);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_decode_unchecked", move |b| {
-        let hex = hex_string(s.as_bytes()).unwrap();
-        let len = s.as_bytes().len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            let ret = hex_decode_unchecked(hex.as_bytes(), &mut dst);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_decode_fallback", move |b| {
-        let hex = hex_string(s.as_bytes()).unwrap();
-        let len = s.as_bytes().len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            let ret = hex_decode_fallback(hex.as_bytes(), &mut dst);
-            black_box(ret);
-        })
-    });
+fn rand_slice(size: usize) -> Vec<u8> {
+    use rand::Rng;
+    let mut input: Vec<u8> = vec![0; size];
+    rand::thread_rng().fill(input.as_mut_slice());
+    input
 }
 
-criterion_group!(benches, bench);
+fn rand_hex_encoded(size: usize) -> String {
+    use rand::seq::SliceRandom;
+    String::from_utf8(
+        std::iter::repeat(())
+            .map(|_| *b"0123456789abcdef".choose(&mut rand::thread_rng()).unwrap())
+            .take(size)
+            .collect(),
+    )
+    .unwrap()
+}
+
+fn bench(c: &mut Criterion) {
+    let mut encode_group = c.benchmark_group("encode");
+    for size in &BYTE_SIZES[..] {
+        encode_group.throughput(Throughput::Bytes(*size as u64));
+        encode_group.bench_with_input(BenchmarkId::new("rustc", size), size, |b, &size| {
+            let input = rand_slice(size);
+            b.iter(|| {
+                let ret = input.to_hex();
+                black_box(ret);
+            })
+        });
+        encode_group.bench_with_input(BenchmarkId::new("hex", size), size, |b, &size| {
+            let input = rand_slice(size);
+            b.iter(|| {
+                let ret = hex::encode(&input);
+                black_box(ret);
+            })
+        });
+        encode_group.bench_with_input(BenchmarkId::new("faster_hex", size), size, |b, &size| {
+            let input = rand_slice(size);
+            b.iter(|| {
+                let ret = hex_string(&input).unwrap();
+                black_box(ret);
+            })
+        });
+        encode_group.bench_with_input(
+            BenchmarkId::new("faster_hex_fallback", size),
+            size,
+            |b, &size| {
+                let input = rand_slice(size);
+                let mut buffer = vec![0; input.len() * 2];
+                b.iter(|| {
+                    let ret = hex_encode_fallback(&input, buffer.as_mut_slice());
+                    black_box(ret);
+                })
+            },
+        );
+    }
+    encode_group.finish();
+
+    let mut decode_group = c.benchmark_group("decode");
+    for size in &BYTE_SIZES[..] {
+        decode_group.throughput(Throughput::Bytes(*size as u64));
+        decode_group.bench_with_input(BenchmarkId::new("rustc", size), size, |b, &size| {
+            let hex_input = rand_hex_encoded(size);
+            b.iter(|| {
+                let ret: Vec<u8> = hex_input.from_hex().unwrap();
+                black_box(ret);
+            })
+        });
+        decode_group.bench_with_input(BenchmarkId::new("hex", size), size, |b, &size| {
+            let hex_input = rand_hex_encoded(size);
+            b.iter(|| {
+                let ret: Vec<u8> = hex::decode(&hex_input).unwrap();
+                black_box(ret);
+            })
+        });
+        decode_group.bench_with_input(BenchmarkId::new("faster_hex", size), size, |b, &size| {
+            let hex_input = rand_hex_encoded(size);
+            let mut dst = vec![0; size / 2];
+            b.iter(|| {
+                let ret = hex_decode(hex_input.as_bytes(), &mut dst).unwrap();
+                black_box(ret);
+            })
+        });
+        decode_group.bench_with_input(
+            BenchmarkId::new("faster_hex_unchecked", size),
+            size,
+            |b, &size| {
+                let hex_input = rand_hex_encoded(size);
+                let mut dst = vec![0; size / 2];
+                b.iter(|| {
+                    let ret = hex_decode_unchecked(hex_input.as_bytes(), &mut dst);
+                    black_box(ret);
+                })
+            },
+        );
+        decode_group.bench_with_input(
+            BenchmarkId::new("faster_hex_fallback", size),
+            size,
+            |b, &size| {
+                let hex_input = rand_hex_encoded(size);
+                let mut dst = vec![0; size / 2];
+                b.iter(|| {
+                    let ret = hex_decode_fallback(hex_input.as_bytes(), &mut dst);
+                    black_box(ret);
+                })
+            },
+        );
+    }
+    decode_group.finish();
+}
+
+fn quicker() -> Criterion {
+    Criterion::default()
+        .warm_up_time(Duration::from_millis(500))
+        .measurement_time(Duration::from_secs(1))
+}
+
+criterion_group! {
+    name = benches;
+    config = quicker();
+    targets = bench
+}
 criterion_main!(benches);
