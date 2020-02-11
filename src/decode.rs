@@ -142,9 +142,6 @@ pub unsafe fn hex_check_sse(mut src: &[u8]) -> bool {
 }
 
 pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
-    if src.is_empty() {
-        return Err(Error::InvalidLength(0));
-    }
     let decoded_len = src.len().checked_div(2).unwrap();
     if dst.len() < decoded_len || ((src.len() & 1) != 0) {
         return Err(Error::InvalidLength(src.len()));
