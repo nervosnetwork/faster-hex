@@ -22,7 +22,7 @@ fn bench(c: &mut Criterion) {
                 })
             },
         );
-        check_fallback_group.bench_with_input(BenchmarkId::new("sse", idx), input, |b, &input| {
+        check_fallback_group.bench_with_input(BenchmarkId::new("avx2", idx), input, |b, &input| {
             b.iter(|| {
                 let ret = unsafe { hex_check_avx2(input.as_bytes()) };
                 black_box(ret);

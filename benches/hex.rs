@@ -110,7 +110,7 @@ fn bench(c: &mut Criterion) {
                 let hex_input = rand_hex_encoded(size);
                 let mut dst = vec![0; size / 2];
                 b.iter(|| {
-                    let ret = hex_decode_fallback(hex_input.as_bytes(), &mut dst);
+                    let ret = hex_decode_fallback(hex_input.as_bytes(), &mut dst).unwrap();
                     black_box(ret);
                 })
             },
