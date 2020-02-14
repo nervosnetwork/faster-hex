@@ -27,7 +27,7 @@ fn hex_check(src: &[u8]) -> bool {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("sse4.1") {
-            return unsafe { arch::avx2::hex_check_sse(src) };
+            return unsafe { arch::avx2::hex_check(src) };
         }
     }
 
@@ -103,38 +103,40 @@ pub mod arch {
             _mm256_permute4x64_epi64(pck1, 0b11011000)
         }
 
-        #[target_feature(enable = "sse4.1")]
-        pub unsafe fn hex_check_sse(mut src: &[u8]) -> bool {
-            let ascii_zero = _mm_set1_epi8((b'0' - 1) as i8);
-            let ascii_nine = _mm_set1_epi8((b'9' + 1) as i8);
-            let ascii_ua = _mm_set1_epi8((b'A' - 1) as i8);
-            let ascii_uf = _mm_set1_epi8((b'F' + 1) as i8);
-            let ascii_la = _mm_set1_epi8((b'a' - 1) as i8);
-            let ascii_lf = _mm_set1_epi8((b'f' + 1) as i8);
+        #[target_feature(enable = "avx2")]
+        #[allow(overflowing_literals)]
+        pub unsafe fn hex_check(mut src: &[u8]) -> bool {
+            let ascii_zero = _mm256_set1_epi8((b'0' - 1) as i8);
+            let ascii_nine = _mm256_set1_epi8((b'9' + 1) as i8);
+            let ascii_ua = _mm256_set1_epi8((b'A' - 1) as i8);
+            let ascii_uf = _mm256_set1_epi8((b'F' + 1) as i8);
+            let ascii_la = _mm256_set1_epi8((b'a' - 1) as i8);
+            let ascii_lf = _mm256_set1_epi8((b'f' + 1) as i8);
 
-            while src.len() >= 16 {
-                let unchecked = _mm_loadu_si128(src.as_ptr() as *const _);
+            while src.len() >= 32 {
+                let unchecked = _mm256_loadu_si256(src.as_ptr() as *const _);
 
-                let gt0 = _mm_cmpgt_epi8(unchecked, ascii_zero);
-                let lt9 = _mm_cmplt_epi8(unchecked, ascii_nine);
-                let outside1 = _mm_and_si128(gt0, lt9);
+                let gt0 = _mm256_cmpgt_epi8(unchecked, ascii_zero);
+                let lt9 = _mm256_cmpgt_epi8(ascii_nine, unchecked);
+                let outside1 = _mm256_and_si256(gt0, lt9);
 
-                let gtua = _mm_cmpgt_epi8(unchecked, ascii_ua);
-                let ltuf = _mm_cmplt_epi8(unchecked, ascii_uf);
-                let outside2 = _mm_and_si128(gtua, ltuf);
+                let gtua = _mm256_cmpgt_epi8(unchecked, ascii_ua);
+                let ltuf = _mm256_cmpgt_epi8(ascii_uf, unchecked);
+                let outside2 = _mm256_and_si256(gtua, ltuf);
 
-                let gtla = _mm_cmpgt_epi8(unchecked, ascii_la);
-                let ltlf = _mm_cmplt_epi8(unchecked, ascii_lf);
-                let outside3 = _mm_and_si128(gtla, ltlf);
+                let gtla = _mm256_cmpgt_epi8(unchecked, ascii_la);
+                let ltlf = _mm256_cmpgt_epi8(ascii_lf, unchecked);
+                let outside3 = _mm256_and_si256(gtla, ltlf);
 
-                let tmp = _mm_or_si128(outside1, outside2);
-                let ret = _mm_movemask_epi8(_mm_or_si128(tmp, outside3));
+                let tmp = _mm256_or_si256(outside1, outside2);
+                let ret = _mm256_movemask_epi8(_mm256_or_si256(tmp, outside3));
 
-                if ret != 0x0000_ffff {
+                eprintln!("{:x}", ret);
+                if ret != 0xffff_ffff {
                     return false;
                 }
 
-                src = &src[16..];
+                src = &src[32..];
             }
             crate::decode::arch::fallback::hex_check(src)
         }
@@ -144,25 +146,25 @@ pub mod arch {
             use super::*;
             use proptest::{proptest, proptest_helper};
 
-            fn _test_check_sse_true(s: &String) {
-                assert!(unsafe { hex_check_sse(s.as_bytes()) });
+            fn _test_check_true(s: &String) {
+                assert!(unsafe { hex_check(s.as_bytes()) });
             }
 
             proptest! {
                 #[test]
-                fn test_check_sse_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
-                    _test_check_sse_true(s);
+                fn test_check_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
+                    _test_check_true(s);
                 }
             }
 
-            fn _test_check_sse_false(s: &String) {
-                assert!(!unsafe { hex_check_sse(s.as_bytes()) });
+            fn _test_check_false(s: &String) {
+                assert!(!unsafe { hex_check(s.as_bytes()) });
             }
 
             proptest! {
                 #[test]
-                fn test_check_sse_false(ref s in ".{16}[^0-9a-fA-F]+") {
-                    _test_check_sse_false(s);
+                fn test_check_false(ref s in ".{32}[^0-9a-fA-F]+") {
+                    _test_check_false(s);
                 }
             }
         }
