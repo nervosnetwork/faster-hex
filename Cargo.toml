@@ -15,6 +15,9 @@ exclude = [
     "fuzz/*"
 ]
 
+[features]
+bench = []
+
 
 [dev-dependencies]
 criterion = "0.3"
@@ -26,8 +29,10 @@ rand = "0.7.3"
 [[bench]]
 name = "hex"
 harness = false
+required-features = ["bench"]
 
 
 [[bench]]
 name = "check"
 harness = false
+required-features = ["bench"]

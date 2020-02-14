@@ -1,17 +1,18 @@
 mod decode;
 mod encode;
 mod error;
-pub use crate::decode::{
-    hex_check_fallback, hex_decode, hex_decode_fallback, hex_decode_unchecked,
-};
+pub use crate::decode::{hex_decode, hex_decode_unchecked};
 pub use crate::encode::{hex_encode, hex_encode_fallback, hex_string};
 pub use crate::error::Error;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64", feature = "sse4.1"))]
-pub use crate::decode::hex_check_sse;
-
 #[allow(deprecated)]
 pub use crate::encode::hex_to;
+
+#[cfg(feature = "bench")]
+pub use crate::decode::{
+    arch::avx2::hex_check_sse,
+    arch::fallback::{hex_check as hex_check_fallback, hex_decode as hex_decode_fallback},
+};
 
 #[cfg(test)]
 mod tests {
