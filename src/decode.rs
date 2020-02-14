@@ -62,42 +62,17 @@ pub mod arch {
             mut src: &[u8],
             mut dst: &mut [u8],
         ) -> Result<(), ()> {
-            // 0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1,
-            // 0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1
-            let mask_a = _mm256_setr_epi8(
-                0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1, 0, -1, 2, -1, 4, -1, 6,
-                -1, 8, -1, 10, -1, 12, -1, 14, -1,
-            );
-
-            // 1, -1, 3, -1, 5, -1, 7, -1, 9, -1, 11, -1, 13, -1, 15, -1,
-            // 1, -1, 3, -1, 5, -1, 7, -1, 9, -1, 11, -1, 13, -1, 15, -1
-            let mask_b = _mm256_setr_epi8(
-                1, -1, 3, -1, 5, -1, 7, -1, 9, -1, 11, -1, 13, -1, 15, -1, 1, -1, 3, -1, 5, -1, 7,
-                -1, 9, -1, 11, -1, 13, -1, 15, -1,
-            );
-
-            while dst.len() >= 32 {
+            while src.len() >= 64 {
                 let av1 = _mm256_loadu_si256(src.as_ptr() as *const _);
                 let av2 = _mm256_loadu_si256(src[32..].as_ptr() as *const _);
-
-                if !<V as IsValid>::is_valid(av1) && !<V as IsValid>::is_valid(av2) {
-                    return Err(());
-                }
-
-                let mut a1 = _mm256_shuffle_epi8(av1, mask_a);
-                let mut b1 = _mm256_shuffle_epi8(av1, mask_b);
-                let mut a2 = _mm256_shuffle_epi8(av2, mask_a);
-                let mut b2 = _mm256_shuffle_epi8(av2, mask_b);
-
-                a1 = unhex(a1);
-                a2 = unhex(a2);
-                b1 = unhex(b1);
-                b2 = unhex(b2);
-
-                let bytes = nib2byte(a1, b1, a2, b2);
-
-                //dst does not need to be aligned on any particular boundary
-                _mm256_storeu_si256(dst.as_mut_ptr() as *mut _, bytes);
+                let av1 = decode_chunk::<V>(av1)?;
+                let av1 =
+                    _mm256_permutevar8x32_epi32(av1, _mm256_setr_epi32(0, 1, 4, 5, -1, -1, -1, -1));
+                let av2 = decode_chunk::<V>(av2)?;
+                let av2 =
+                    _mm256_permutevar8x32_epi32(av2, _mm256_setr_epi32(-1, -1, -1, -1, 0, 1, 4, 5));
+                let decoded = _mm256_or_si256(av1, av2);
+                _mm256_storeu_si256(dst.as_mut_ptr() as *mut _, decoded);
                 dst = &mut dst[32..];
                 src = &src[64..];
             }
@@ -106,30 +81,47 @@ pub mod arch {
 
         #[inline]
         #[target_feature(enable = "avx2")]
-        unsafe fn unhex(value: __m256i) -> __m256i {
-            let sr6 = _mm256_srai_epi16(value, 6);
-            let and15 = _mm256_and_si256(value, _mm256_set1_epi16(0xf));
-            let mul = _mm256_maddubs_epi16(sr6, _mm256_set1_epi16(9));
-            _mm256_add_epi16(mul, and15)
+        unsafe fn decode_chunk<V: IsValid>(input: __m256i) -> Result<__m256i, ()> {
+            #[allow(overflowing_literals)]
+            let hi_nibbles =
+                _mm256_and_si256(_mm256_srli_epi32(input, 4), _mm256_set1_epi8(0b00001111));
+            let low_nibbles = _mm256_and_si256(input, _mm256_set1_epi8(0b00001111));
+
+            if !<V as IsValid>::is_valid(hi_nibbles, low_nibbles) {
+                return Err(());
+            }
+
+            let shift_lut = _mm256_setr_epi8(
+                0, 0, 0, -48, -55, 0, -87, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -48, -55, 0, -87, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+            );
+
+            let sh = _mm256_shuffle_epi8(shift_lut, hi_nibbles);
+            let input = _mm256_add_epi8(input, sh);
+            #[allow(overflowing_literals)]
+            let input = _mm256_maddubs_epi16(
+                input,
+                _mm256_set1_epi32(0b00000001_00010000_00000001_00010000),
+            );
+            let input = _mm256_shuffle_epi8(
+                input,
+                _mm256_setr_epi8(
+                    0, 2, 4, 6, 8, 10, 12, 14, -1, -1, -1, -1, -1, -1, -1, -1, 0, 2, 4, 6, 8, 10,
+                    12, 14, -1, -1, -1, -1, -1, -1, -1, -1,
+                ),
+            );
+            Ok(input)
         }
 
-        // (a << 4) | b;
-        #[inline]
-        #[target_feature(enable = "avx2")]
-        unsafe fn nib2byte(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256i {
-            let a4_1 = _mm256_slli_epi16(a1, 4);
-            let a4_2 = _mm256_slli_epi16(a2, 4);
-            let a4orb_1 = _mm256_or_si256(a4_1, b1);
-            let a4orb_2 = _mm256_or_si256(a4_2, b2);
-            let pck1 = _mm256_packus_epi16(a4orb_1, a4orb_2);
-            _mm256_permute4x64_epi64(pck1, 0b11011000)
-        }
-
+        #[cfg(any(test, feature = "bench"))]
         #[target_feature(enable = "avx2")]
         pub unsafe fn hex_check(mut src: &[u8]) -> bool {
             while src.len() >= 32 {
-                let unchecked = _mm256_loadu_si256(src.as_ptr() as *const _);
-                if !Checked::is_valid(unchecked) {
+                let input = _mm256_loadu_si256(src.as_ptr() as *const _);
+                let hi_nibbles =
+                    _mm256_and_si256(_mm256_srli_epi32(input, 4), _mm256_set1_epi8(0b00001111));
+                let low_nibbles = _mm256_and_si256(input, _mm256_set1_epi8(0b00001111));
+                if !Checked::is_valid(hi_nibbles, low_nibbles) {
                     return false;
                 }
                 src = &src[32..];
@@ -138,15 +130,13 @@ pub mod arch {
         }
 
         pub trait IsValid: crate::decode::arch::fallback::IsValid {
-            unsafe fn is_valid(input: __m256i) -> bool;
+            unsafe fn is_valid(hi_nibbles: __m256i, low_nibbles: __m256i) -> bool;
         }
 
         impl IsValid for Checked {
             #[inline]
             #[target_feature(enable = "avx2")]
-            unsafe fn is_valid(input: __m256i) -> bool {
-                let hi_nibbles = _mm256_and_si256(_mm256_srli_epi32(input, 4), _mm256_set1_epi8(0x0f));
-                let low_nibbles = _mm256_and_si256(input, _mm256_set1_epi8(0x0f));
+            unsafe fn is_valid(hi_nibbles: __m256i, low_nibbles: __m256i) -> bool {
                 let mask_lut = _mm256_setr_epi8(
                     0b0000_1000, // 0
                     0b0101_1000, // 1 .. 6
@@ -200,7 +190,7 @@ pub mod arch {
         impl IsValid for Unchecked {
             #[inline]
             #[target_feature(enable = "avx2")]
-            unsafe fn is_valid(_: __m256i) -> bool {
+            unsafe fn is_valid(_: __m256i, _: __m256i) -> bool {
                 true
             }
         }
@@ -237,6 +227,7 @@ pub mod arch {
     pub mod fallback {
         use crate::decode::{Checked, Error, Unchecked};
 
+        #[cfg(any(test, feature = "bench"))]
         pub fn hex_check(src: &[u8]) -> bool {
             src.iter().cloned().all(|b| unhex_a(b) != 0xff)
         }
