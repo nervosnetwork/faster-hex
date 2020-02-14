@@ -106,36 +106,33 @@ pub mod arch {
         #[target_feature(enable = "avx2")]
         #[allow(overflowing_literals)]
         pub unsafe fn hex_check(mut src: &[u8]) -> bool {
-            let ascii_zero = _mm256_set1_epi8((b'0' - 1) as i8);
-            let ascii_nine = _mm256_set1_epi8((b'9' + 1) as i8);
-            let ascii_ua = _mm256_set1_epi8((b'A' - 1) as i8);
-            let ascii_uf = _mm256_set1_epi8((b'F' + 1) as i8);
-            let ascii_la = _mm256_set1_epi8((b'a' - 1) as i8);
-            let ascii_lf = _mm256_set1_epi8((b'f' + 1) as i8);
+            let ascii_zero = _mm256_set1_epi8(b'0' as i8);
+            let ascii_nine = _mm256_set1_epi8(b'9' as i8);
+            let ascii_ua = _mm256_set1_epi8(b'A' as i8);
+            let ascii_uf = _mm256_set1_epi8(b'F' as i8);
+            let ascii_la = _mm256_set1_epi8(b'a' as i8);
+            let ascii_lf = _mm256_set1_epi8(b'f' as i8);
 
             while src.len() >= 32 {
                 let unchecked = _mm256_loadu_si256(src.as_ptr() as *const _);
 
-                let gt0 = _mm256_cmpgt_epi8(unchecked, ascii_zero);
-                let lt9 = _mm256_cmpgt_epi8(ascii_nine, unchecked);
-                let outside1 = _mm256_and_si256(gt0, lt9);
+                let lt0 = _mm256_cmpgt_epi8(ascii_zero, unchecked);
+                let gt9 = _mm256_cmpgt_epi8(unchecked, ascii_nine);
+                let ltua = _mm256_cmpgt_epi8(ascii_ua, unchecked);
+                let gtuf = _mm256_cmpgt_epi8(unchecked, ascii_uf);
+                let ltla = _mm256_cmpgt_epi8(ascii_la, unchecked);
+                let gtlf = _mm256_cmpgt_epi8(unchecked, ascii_lf);
 
-                let gtua = _mm256_cmpgt_epi8(unchecked, ascii_ua);
-                let ltuf = _mm256_cmpgt_epi8(ascii_uf, unchecked);
-                let outside2 = _mm256_and_si256(gtua, ltuf);
+                let between_nine_ua = _mm256_and_si256(gt9, ltua);
+                let between_uf_la = _mm256_and_si256(gtuf, ltla);
 
-                let gtla = _mm256_cmpgt_epi8(unchecked, ascii_la);
-                let ltlf = _mm256_cmpgt_epi8(ascii_lf, unchecked);
-                let outside3 = _mm256_and_si256(gtla, ltlf);
-
-                let tmp = _mm256_or_si256(outside1, outside2);
-                let ret = _mm256_movemask_epi8(_mm256_or_si256(tmp, outside3));
-
-                eprintln!("{:x}", ret);
-                if ret != 0xffff_ffff {
+                let any_invalid = _mm256_or_si256(lt0, between_nine_ua);
+                let any_invalid = _mm256_or_si256(any_invalid, between_uf_la);
+                let any_invalid = _mm256_or_si256(any_invalid, gtlf);
+                let ret = _mm256_movemask_epi8(any_invalid);
+                if ret != 0 {
                     return false;
                 }
-
                 src = &src[32..];
             }
             crate::decode::arch::fallback::hex_check(src)
