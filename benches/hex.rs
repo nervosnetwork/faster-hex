@@ -1,6 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use faster_hex::{
-    hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_encode_fallback, hex_string,
+    hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_decode_unchecked_fallback,
+    hex_encode_fallback, hex_string,
 };
 use rustc_hex::{FromHex, ToHex};
 use std::time::Duration;
@@ -110,6 +111,18 @@ fn bench(c: &mut Criterion) {
                 let mut dst = vec![0; size / 2];
                 b.iter(|| {
                     let ret = hex_decode_fallback(hex_input.as_bytes(), &mut dst);
+                    black_box(ret);
+                })
+            },
+        );
+        decode_group.bench_with_input(
+            BenchmarkId::new("faster_hex_unchecked_fallback", size),
+            size,
+            |b, &size| {
+                let hex_input = rand_hex_encoded(size);
+                let mut dst = vec![0; size / 2];
+                b.iter(|| {
+                    let ret = hex_decode_unchecked_fallback(hex_input.as_bytes(), &mut dst);
                     black_box(ret);
                 })
             },

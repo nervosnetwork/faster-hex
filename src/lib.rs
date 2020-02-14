@@ -11,7 +11,10 @@ pub use crate::encode::hex_to;
 #[cfg(feature = "bench")]
 pub use crate::decode::{
     arch::avx2::hex_check as hex_check_avx2,
-    arch::fallback::{hex_check as hex_check_fallback, hex_decode as hex_decode_fallback},
+    arch::fallback::{
+        hex_check as hex_check_fallback, hex_decode as hex_decode_fallback,
+        hex_decode_unchecked as hex_decode_unchecked_fallback,
+    },
 };
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use faster_hex::{hex_check_fallback, hex_check_avx2};
+use faster_hex::{hex_check_avx2, hex_check_fallback};
 use std::time::Duration;
 
 const INPUT: &[&str] = &[
