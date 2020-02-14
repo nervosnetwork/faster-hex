@@ -145,27 +145,55 @@ pub mod arch {
             #[inline]
             #[target_feature(enable = "avx2")]
             unsafe fn is_valid(input: __m256i) -> bool {
-                let ascii_zero = _mm256_set1_epi8(b'0' as i8);
-                let ascii_nine = _mm256_set1_epi8(b'9' as i8);
-                let ascii_ua = _mm256_set1_epi8(b'A' as i8);
-                let ascii_uf = _mm256_set1_epi8(b'F' as i8);
-                let ascii_la = _mm256_set1_epi8(b'a' as i8);
-                let ascii_lf = _mm256_set1_epi8(b'f' as i8);
+                let hi_nibbles = _mm256_and_si256(_mm256_srli_epi32(input, 4), _mm256_set1_epi8(0x0f));
+                let low_nibbles = _mm256_and_si256(input, _mm256_set1_epi8(0x0f));
+                let mask_lut = _mm256_setr_epi8(
+                    0b0000_1000, // 0
+                    0b0101_1000, // 1 .. 6
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0000_1000, // 7 .. 9
+                    0b0000_1000, //
+                    0b0000_1000, //
+                    0b0000_0000, // 10 .. 15
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    //
+                    0b0000_1000, // 0
+                    0b0101_1000, // 1 .. 6
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0000_1000, // 7 .. 9
+                    0b0000_1000, //
+                    0b0000_1000, //
+                    0b0000_0000, // 10 .. 15
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                );
 
-                let lt0 = _mm256_cmpgt_epi8(ascii_zero, input);
-                let gt9 = _mm256_cmpgt_epi8(input, ascii_nine);
-                let ltua = _mm256_cmpgt_epi8(ascii_ua, input);
-                let gtuf = _mm256_cmpgt_epi8(input, ascii_uf);
-                let ltla = _mm256_cmpgt_epi8(ascii_la, input);
-                let gtlf = _mm256_cmpgt_epi8(input, ascii_lf);
+                #[allow(overflowing_literals)]
+                let bit_pos_lut = _mm256_setr_epi8(
+                    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                );
 
-                let between_nine_ua = _mm256_and_si256(gt9, ltua);
-                let between_uf_la = _mm256_and_si256(gtuf, ltla);
-
-                let any_invalid = _mm256_or_si256(lt0, between_nine_ua);
-                let any_invalid = _mm256_or_si256(any_invalid, between_uf_la);
-                let any_invalid = _mm256_or_si256(any_invalid, gtlf);
-                _mm256_movemask_epi8(any_invalid) == 0
+                let m = _mm256_shuffle_epi8(mask_lut, low_nibbles);
+                let bit = _mm256_shuffle_epi8(bit_pos_lut, hi_nibbles);
+                let non_match = _mm256_cmpeq_epi8(_mm256_and_si256(m, bit), _mm256_setzero_si256());
+                _mm256_movemask_epi8(non_match) == 0
             }
         }
 
