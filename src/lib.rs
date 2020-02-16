@@ -29,7 +29,7 @@ mod tests {
         hex_encode(s.as_bytes(), &mut buffer).unwrap();
         let encode = unsafe { str::from_utf8_unchecked(&buffer[..s.as_bytes().len() * 2]) };
 
-        let hex_string = hex_string(s.as_bytes()).unwrap();
+        let hex_string = hex_string(s.as_bytes());
 
         assert_eq!(encode, hex::encode(s));
         assert_eq!(hex_string, hex::encode(s));
@@ -47,7 +47,7 @@ mod tests {
         let mut dst = Vec::with_capacity(len);
         dst.resize(len, 0);
 
-        let hex_string = hex_string(s.as_bytes()).unwrap();
+        let hex_string = hex_string(s.as_bytes());
 
         hex_decode(hex_string.as_bytes(), &mut dst).unwrap();
 
