@@ -15,6 +15,7 @@ pub use crate::decode::{
         hex_check as hex_check_fallback, hex_decode as hex_decode_fallback,
         hex_decode_unchecked as hex_decode_unchecked_fallback,
     },
+    arch::sse::hex_check as hex_check_sse,
 };
 
 #[cfg(test)]

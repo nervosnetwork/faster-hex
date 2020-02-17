@@ -47,7 +47,7 @@ fn bench(c: &mut Criterion) {
         encode_group.bench_with_input(BenchmarkId::new("faster_hex", size), size, |b, &size| {
             let input = rand_slice(size);
             b.iter(|| {
-                let ret = hex_string(&input).unwrap();
+                let ret = hex_string(&input);
                 black_box(ret);
             })
         });

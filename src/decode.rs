@@ -7,6 +7,9 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
         if is_x86_feature_detected!("avx2") && src.len() >= 64 {
             return unsafe { arch::avx2::hex_decode(src, dst) };
         }
+        if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
+            return unsafe { arch::sse::hex_decode(src, dst) };
+        }
     }
     arch::fallback::hex_decode(src, dst)
 }
@@ -18,6 +21,11 @@ pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
         if is_x86_feature_detected!("avx2") && src.len() >= 64 {
             return unsafe {
                 arch::avx2::hex_decode_unchecked(src, dst);
+            };
+        }
+        if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
+            return unsafe {
+                arch::sse::hex_decode_unchecked(src, dst);
             };
         }
     }
@@ -191,6 +199,164 @@ pub mod arch {
             #[inline]
             #[target_feature(enable = "avx2")]
             unsafe fn is_valid(_: __m256i, _: __m256i) -> bool {
+                true
+            }
+        }
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+            use proptest::{proptest, proptest_helper};
+
+            fn _test_check_true(s: &String) {
+                assert!(unsafe { hex_check(s.as_bytes()) });
+            }
+
+            proptest! {
+                #[test]
+                fn test_check_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
+                    _test_check_true(s);
+                }
+            }
+
+            fn _test_check_false(s: &String) {
+                assert!(!unsafe { hex_check(s.as_bytes()) });
+            }
+
+            proptest! {
+                #[test]
+                fn test_check_false(ref s in ".{32}[^0-9a-fA-F]+") {
+                    _test_check_false(s);
+                }
+            }
+        }
+    }
+
+    pub mod sse {
+        #[cfg(target_arch = "x86")]
+        use std::arch::x86::*;
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::*;
+
+        use crate::decode::{Checked, Error, Unchecked};
+
+        #[target_feature(enable = "sse4.1")]
+        pub unsafe fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+            _hex_decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
+        }
+
+        #[target_feature(enable = "sse4.1")]
+        pub unsafe fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
+            let _ = _hex_decode::<Unchecked>(src, dst);
+        }
+
+        #[inline]
+        #[target_feature(enable = "sse4.1")]
+        pub unsafe fn _hex_decode<V: IsValid>(
+            mut src: &[u8],
+            mut dst: &mut [u8],
+        ) -> Result<(), ()> {
+            while src.len() >= 32 {
+                let av1 = _mm_loadu_si128(src.as_ptr() as *const _);
+                let av2 = _mm_loadu_si128(src[16..].as_ptr() as *const _);
+                let av1 = decode_chunk::<V>(av1)?;
+                let av1 = _mm_shuffle_epi8(
+                    av1,
+                    _mm_setr_epi8(0, 2, 4, 6, 8, 10, 12, 14, -1, -1, -1, -1, -1, -1, -1, -1),
+                );
+                let av2 = decode_chunk::<V>(av2)?;
+                let av2 = _mm_shuffle_epi8(
+                    av2,
+                    _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 0, 2, 4, 6, 8, 10, 12, 14),
+                );
+                let decoded = _mm_or_si128(av1, av2);
+                _mm_storeu_si128(dst.as_mut_ptr() as *mut _, decoded);
+                dst = &mut dst[16..];
+                src = &src[32..];
+            }
+            crate::decode::arch::fallback::_hex_decode::<V>(&src, &mut dst)
+        }
+
+        #[inline]
+        #[target_feature(enable = "sse4.1")]
+        unsafe fn decode_chunk<V: IsValid>(input: __m128i) -> Result<__m128i, ()> {
+            #[allow(overflowing_literals)]
+            let hi_nibbles = _mm_and_si128(_mm_srli_epi32(input, 4), _mm_set1_epi8(0b00001111));
+            let low_nibbles = _mm_and_si128(input, _mm_set1_epi8(0b00001111));
+
+            if !<V as IsValid>::is_valid(hi_nibbles, low_nibbles) {
+                return Err(());
+            }
+
+            let shift_lut = _mm_setr_epi8(0, 0, 0, -48, -55, 0, -87, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+            let sh = _mm_shuffle_epi8(shift_lut, hi_nibbles);
+            let input = _mm_add_epi8(input, sh);
+            #[allow(overflowing_literals)]
+            let input =
+                _mm_maddubs_epi16(input, _mm_set1_epi32(0b00000001_00010000_00000001_00010000));
+            Ok(input)
+        }
+
+        #[cfg(any(test, feature = "bench"))]
+        #[target_feature(enable = "sse4.1")]
+        pub unsafe fn hex_check(mut src: &[u8]) -> bool {
+            while src.len() >= 16 {
+                let input = _mm_loadu_si128(src.as_ptr() as *const _);
+                let hi_nibbles = _mm_and_si128(_mm_srli_epi32(input, 4), _mm_set1_epi8(0b00001111));
+                let low_nibbles = _mm_and_si128(input, _mm_set1_epi8(0b00001111));
+                if !Checked::is_valid(hi_nibbles, low_nibbles) {
+                    return false;
+                }
+                src = &src[16..];
+            }
+            crate::decode::arch::fallback::hex_check(src)
+        }
+
+        pub trait IsValid: crate::decode::arch::fallback::IsValid {
+            unsafe fn is_valid(hi_nibbles: __m128i, low_nibbles: __m128i) -> bool;
+        }
+
+        impl IsValid for Checked {
+            #[inline]
+            #[target_feature(enable = "sse4.1")]
+            unsafe fn is_valid(hi_nibbles: __m128i, low_nibbles: __m128i) -> bool {
+                let mask_lut = _mm_setr_epi8(
+                    0b0000_1000, // 0
+                    0b0101_1000, // 1 .. 6
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0000_1000, // 7 .. 9
+                    0b0000_1000, //
+                    0b0000_1000, //
+                    0b0000_0000, // 10 .. 15
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                );
+
+                #[allow(overflowing_literals)]
+                let bit_pos_lut = _mm_setr_epi8(
+                    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                );
+
+                let m = _mm_shuffle_epi8(mask_lut, low_nibbles);
+                let bit = _mm_shuffle_epi8(bit_pos_lut, hi_nibbles);
+                let non_match = _mm_cmpeq_epi8(_mm_and_si128(m, bit), _mm_setzero_si128());
+                _mm_movemask_epi8(non_match) == 0
+            }
+        }
+
+        impl IsValid for Unchecked {
+            #[inline]
+            #[target_feature(enable = "sse4.1")]
+            unsafe fn is_valid(_: __m128i, _: __m128i) -> bool {
                 true
             }
         }
