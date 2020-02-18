@@ -29,7 +29,7 @@ mod tests {
         encode_to_slice(s.as_bytes(), &mut buffer).unwrap();
         let encoded = unsafe { str::from_utf8_unchecked(&buffer[..s.as_bytes().len() * 2]) };
 
-        let hex_string = encode(s.as_bytes());
+        let hex_string = encode(s);
 
         assert_eq!(encoded, hex::encode(s));
         assert_eq!(hex_string, hex::encode(s));
@@ -43,7 +43,7 @@ mod tests {
     }
 
     fn _test_decode_check(s: &String, ok: bool) {
-        assert!(decode(s.as_bytes()).is_ok() == ok);
+        assert!(decode(s).is_ok() == ok);
     }
 
     proptest! {
@@ -64,7 +64,7 @@ mod tests {
         #[test]
         fn test_roundtrip(input: Vec<u8>) {
             let encoded = encode(&input);
-            let decoded = decode(encoded.as_bytes()).unwrap();
+            let decoded = decode(&encoded).unwrap();
             assert_eq!(&decoded, &input);
         }
 

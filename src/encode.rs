@@ -4,14 +4,22 @@ use crate::error::Error;
 
 static TABLE: &[u8] = b"0123456789abcdef";
 
-pub fn encode(src: &[u8]) -> String {
+pub fn encode<I>(src: &I) -> String
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
     let mut buffer = vec![0; src.len() * 2];
     // should never panic because the destination buffer is large enough.
     encode_to_slice(src, &mut buffer).unwrap();
     unsafe { String::from_utf8_unchecked(buffer) }
 }
 
-pub fn encode_to_slice(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+pub fn encode_to_slice<I>(src: &I, dst: &mut [u8]) -> Result<(), Error>
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
     let len = src.len().checked_mul(2).unwrap();
     if dst.len() < len {
         return Err(Error::InvalidLength(len));

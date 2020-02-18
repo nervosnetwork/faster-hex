@@ -1,12 +1,20 @@
 use crate::error::Error;
 
-pub fn decode(src: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn decode<I>(src: &I) -> Result<Vec<u8>, Error>
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
     let mut output = vec![0u8; src.len() / 2];
     decode_to_slice(src, &mut output)?;
     Ok(output)
 }
 
-pub fn decode_to_slice(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+pub fn decode_to_slice<I>(src: &I, dst: &mut [u8]) -> Result<(), Error>
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
     validate_buffer_length(src, dst)?;
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -26,7 +34,11 @@ pub fn decode_to_slice(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     arch::fallback::decode(src, dst)
 }
 
-pub fn decode_to_slice_unchecked(src: &[u8], dst: &mut [u8]) {
+pub fn decode_to_slice_unchecked<I>(src: &I, dst: &mut [u8])
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
     validate_buffer_length(src, dst).unwrap();
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
