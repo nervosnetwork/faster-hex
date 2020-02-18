@@ -2,31 +2,31 @@ use crate::error::Error;
 
 pub fn decode(src: &[u8]) -> Result<Vec<u8>, Error> {
     let mut output = vec![0u8; src.len() / 2];
-    hex_decode(src, &mut output)?;
+    decode_to_slice(src, &mut output)?;
     Ok(output)
 }
 
-pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+pub fn decode_to_slice(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     validate_buffer_length(src, dst)?;
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         #[cfg(feature = "avx2")]
         {
             if is_x86_feature_detected!("avx2") && src.len() >= 64 {
-                return unsafe { arch::avx2::hex_decode(src, dst) };
+                return unsafe { arch::avx2::decode(src, dst) };
             }
         }
         #[cfg(feature = "sse41")]
         {
             if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
-                return unsafe { arch::sse41::hex_decode(src, dst) };
+                return unsafe { arch::sse41::decode(src, dst) };
             }
         }
     }
-    arch::fallback::hex_decode(src, dst)
+    arch::fallback::decode(src, dst)
 }
 
-pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
+pub fn decode_to_slice_unchecked(src: &[u8], dst: &mut [u8]) {
     validate_buffer_length(src, dst).unwrap();
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -34,7 +34,7 @@ pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
         {
             if is_x86_feature_detected!("avx2") && src.len() >= 64 {
                 return unsafe {
-                    arch::avx2::hex_decode_unchecked(src, dst);
+                    arch::avx2::decode_unchecked(src, dst);
                 };
             }
         }
@@ -42,12 +42,12 @@ pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
         {
             if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
                 return unsafe {
-                    arch::sse41::hex_decode_unchecked(src, dst);
+                    arch::sse41::decode_unchecked(src, dst);
                 };
             }
         }
     }
-    arch::fallback::hex_decode_unchecked(src, dst)
+    arch::fallback::decode_unchecked(src, dst)
 }
 
 #[inline]
@@ -73,21 +73,18 @@ pub mod arch {
         use crate::decode::{Checked, Error, Unchecked};
 
         #[target_feature(enable = "avx2")]
-        pub unsafe fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
-            _hex_decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
+        pub unsafe fn decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+            _decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
         }
 
         #[target_feature(enable = "avx2")]
-        pub unsafe fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
-            let _ = _hex_decode::<Unchecked>(src, dst);
+        pub unsafe fn decode_unchecked(src: &[u8], dst: &mut [u8]) {
+            let _ = _decode::<Unchecked>(src, dst);
         }
 
         #[inline]
         #[target_feature(enable = "avx2")]
-        pub unsafe fn _hex_decode<V: IsValid>(
-            mut src: &[u8],
-            mut dst: &mut [u8],
-        ) -> Result<(), ()> {
+        pub unsafe fn _decode<V: IsValid>(mut src: &[u8], mut dst: &mut [u8]) -> Result<(), ()> {
             while src.len() >= 64 {
                 let av1 = _mm256_loadu_si256(src.as_ptr() as *const _);
                 let av2 = _mm256_loadu_si256(src[32..].as_ptr() as *const _);
@@ -102,7 +99,7 @@ pub mod arch {
                 dst = &mut dst[32..];
                 src = &src[64..];
             }
-            crate::decode::arch::fallback::_hex_decode::<V>(&src, &mut dst)
+            crate::decode::arch::fallback::_decode::<V>(&src, &mut dst)
         }
 
         #[inline]
@@ -141,7 +138,7 @@ pub mod arch {
 
         #[cfg(any(test, feature = "bench"))]
         #[target_feature(enable = "avx2")]
-        pub unsafe fn hex_check(mut src: &[u8]) -> bool {
+        pub unsafe fn check(mut src: &[u8]) -> bool {
             while src.len() >= 32 {
                 let input = _mm256_loadu_si256(src.as_ptr() as *const _);
                 let hi_nibbles =
@@ -152,7 +149,7 @@ pub mod arch {
                 }
                 src = &src[32..];
             }
-            crate::decode::arch::fallback::hex_check(src)
+            crate::decode::arch::fallback::check(src)
         }
 
         pub trait IsValid: crate::decode::arch::fallback::IsValid {
@@ -227,7 +224,7 @@ pub mod arch {
             use proptest::{proptest, proptest_helper};
 
             fn _test_check_true(s: &String) {
-                assert!(unsafe { hex_check(s.as_bytes()) });
+                assert!(unsafe { check(s.as_bytes()) });
             }
 
             proptest! {
@@ -238,7 +235,7 @@ pub mod arch {
             }
 
             fn _test_check_false(s: &String) {
-                assert!(!unsafe { hex_check(s.as_bytes()) });
+                assert!(!unsafe { check(s.as_bytes()) });
             }
 
             proptest! {
@@ -260,21 +257,18 @@ pub mod arch {
         use crate::decode::{Checked, Error, Unchecked};
 
         #[target_feature(enable = "sse4.1")]
-        pub unsafe fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
-            _hex_decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
+        pub unsafe fn decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+            _decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
         }
 
         #[target_feature(enable = "sse4.1")]
-        pub unsafe fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
-            let _ = _hex_decode::<Unchecked>(src, dst);
+        pub unsafe fn decode_unchecked(src: &[u8], dst: &mut [u8]) {
+            let _ = _decode::<Unchecked>(src, dst);
         }
 
         #[inline]
         #[target_feature(enable = "sse4.1")]
-        pub unsafe fn _hex_decode<V: IsValid>(
-            mut src: &[u8],
-            mut dst: &mut [u8],
-        ) -> Result<(), ()> {
+        pub unsafe fn _decode<V: IsValid>(mut src: &[u8], mut dst: &mut [u8]) -> Result<(), ()> {
             while src.len() >= 32 {
                 let av1 = _mm_loadu_si128(src.as_ptr() as *const _);
                 let av2 = _mm_loadu_si128(src[16..].as_ptr() as *const _);
@@ -293,7 +287,7 @@ pub mod arch {
                 dst = &mut dst[16..];
                 src = &src[32..];
             }
-            crate::decode::arch::fallback::_hex_decode::<V>(&src, &mut dst)
+            crate::decode::arch::fallback::_decode::<V>(&src, &mut dst)
         }
 
         #[inline]
@@ -319,7 +313,7 @@ pub mod arch {
 
         #[cfg(any(test, feature = "bench"))]
         #[target_feature(enable = "sse4.1")]
-        pub unsafe fn hex_check(mut src: &[u8]) -> bool {
+        pub unsafe fn check(mut src: &[u8]) -> bool {
             while src.len() >= 16 {
                 let input = _mm_loadu_si128(src.as_ptr() as *const _);
                 let hi_nibbles = _mm_and_si128(_mm_srli_epi32(input, 4), _mm_set1_epi8(0b00001111));
@@ -329,7 +323,7 @@ pub mod arch {
                 }
                 src = &src[16..];
             }
-            crate::decode::arch::fallback::hex_check(src)
+            crate::decode::arch::fallback::check(src)
         }
 
         pub trait IsValid: crate::decode::arch::fallback::IsValid {
@@ -386,7 +380,7 @@ pub mod arch {
             use proptest::{proptest, proptest_helper};
 
             fn _test_check_true(s: &String) {
-                assert!(unsafe { hex_check(s.as_bytes()) });
+                assert!(unsafe { check(s.as_bytes()) });
             }
 
             proptest! {
@@ -397,7 +391,7 @@ pub mod arch {
             }
 
             fn _test_check_false(s: &String) {
-                assert!(!unsafe { hex_check(s.as_bytes()) });
+                assert!(!unsafe { check(s.as_bytes()) });
             }
 
             proptest! {
@@ -413,22 +407,22 @@ pub mod arch {
         use crate::decode::{Checked, Error, Unchecked};
 
         #[cfg(any(test, feature = "bench"))]
-        pub fn hex_check(src: &[u8]) -> bool {
+        pub fn check(src: &[u8]) -> bool {
             src.iter().cloned().all(|b| unhex_a(b) != 0xff)
         }
 
         #[inline]
-        pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
-            _hex_decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
+        pub fn decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+            _decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
         }
 
         #[inline]
-        pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
-            let _ = _hex_decode::<Unchecked>(src, dst);
+        pub fn decode_unchecked(src: &[u8], dst: &mut [u8]) {
+            let _ = _decode::<Unchecked>(src, dst);
         }
 
         #[inline]
-        pub fn _hex_decode<V: IsValid>(src: &[u8], dst: &mut [u8]) -> Result<(), ()> {
+        pub fn _decode<V: IsValid>(src: &[u8], dst: &mut [u8]) -> Result<(), ()> {
             for (slot, bytes) in dst.iter_mut().zip(src.chunks(2)) {
                 if !V::is_valid(bytes[0], bytes[1]) {
                     return Err(());
@@ -522,9 +516,9 @@ pub mod arch {
                 let mut dst = Vec::with_capacity(len);
                 dst.resize(len, 0);
 
-                let hex_string = crate::hex_string(s.as_bytes());
+                let hex_string = crate::encode(s.as_bytes());
 
-                hex_decode(hex_string.as_bytes(), &mut dst).unwrap();
+                decode(hex_string.as_bytes(), &mut dst).unwrap();
 
                 assert_eq!(&dst[..], s.as_bytes());
             }
@@ -537,7 +531,7 @@ pub mod arch {
             }
 
             fn _test_check_true(s: &String) {
-                assert!(hex_check(s.as_bytes()));
+                assert!(check(s.as_bytes()));
             }
 
             proptest! {
@@ -548,7 +542,7 @@ pub mod arch {
             }
 
             fn _test_check_false(s: &String) {
-                assert!(!hex_check(s.as_bytes()));
+                assert!(!check(s.as_bytes()));
             }
 
             proptest! {

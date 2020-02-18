@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use faster_hex::{
-    hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_decode_unchecked_fallback,
-    hex_encode_fallback, hex_string,
+    decode_fallback, decode_to_slice, decode_to_slice_unchecked, decode_unchecked_fallback, encode,
+    encode_fallback,
 };
 use rustc_hex::{FromHex, ToHex};
 use std::time::Duration;
@@ -47,7 +47,7 @@ fn bench(c: &mut Criterion) {
         encode_group.bench_with_input(BenchmarkId::new("faster_hex", size), size, |b, &size| {
             let input = rand_slice(size);
             b.iter(|| {
-                let ret = hex_string(&input);
+                let ret = encode(&input);
                 black_box(ret);
             })
         });
@@ -58,7 +58,7 @@ fn bench(c: &mut Criterion) {
                 let input = rand_slice(size);
                 let mut buffer = vec![0; input.len() * 2];
                 b.iter(|| {
-                    let ret = hex_encode_fallback(&input, buffer.as_mut_slice());
+                    let ret = encode_fallback(&input, buffer.as_mut_slice());
                     black_box(ret);
                 })
             },
@@ -87,7 +87,7 @@ fn bench(c: &mut Criterion) {
             let hex_input = rand_hex_encoded(size);
             let mut dst = vec![0; size / 2];
             b.iter(|| {
-                let ret = hex_decode(hex_input.as_bytes(), &mut dst).unwrap();
+                let ret = decode_to_slice(hex_input.as_bytes(), &mut dst).unwrap();
                 black_box(ret);
             })
         });
@@ -98,7 +98,7 @@ fn bench(c: &mut Criterion) {
                 let hex_input = rand_hex_encoded(size);
                 let mut dst = vec![0; size / 2];
                 b.iter(|| {
-                    let ret = hex_decode_unchecked(hex_input.as_bytes(), &mut dst);
+                    let ret = decode_to_slice_unchecked(hex_input.as_bytes(), &mut dst);
                     black_box(ret);
                 })
             },
@@ -110,7 +110,7 @@ fn bench(c: &mut Criterion) {
                 let hex_input = rand_hex_encoded(size);
                 let mut dst = vec![0; size / 2];
                 b.iter(|| {
-                    let ret = hex_decode_fallback(hex_input.as_bytes(), &mut dst).unwrap();
+                    let ret = decode_fallback(hex_input.as_bytes(), &mut dst).unwrap();
                     black_box(ret);
                 })
             },
@@ -122,7 +122,7 @@ fn bench(c: &mut Criterion) {
                 let hex_input = rand_hex_encoded(size);
                 let mut dst = vec![0; size / 2];
                 b.iter(|| {
-                    let ret = hex_decode_unchecked_fallback(hex_input.as_bytes(), &mut dst);
+                    let ret = decode_unchecked_fallback(hex_input.as_bytes(), &mut dst);
                     black_box(ret);
                 })
             },

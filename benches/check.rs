@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use faster_hex::{hex_check_avx2, hex_check_fallback, hex_check_sse};
+use faster_hex::{check_avx2, check_fallback, check_sse};
 use std::time::Duration;
 
 const INPUT: &[&str] = &[
@@ -14,19 +14,19 @@ fn bench(c: &mut Criterion) {
     for (idx, input) in INPUT.iter().enumerate() {
         check_group.bench_with_input(BenchmarkId::new("fallback", idx), input, |b, &input| {
             b.iter(|| {
-                let ret = hex_check_fallback(input.as_bytes());
+                let ret = check_fallback(input.as_bytes());
                 black_box(ret);
             })
         });
         check_group.bench_with_input(BenchmarkId::new("avx2", idx), input, |b, &input| {
             b.iter(|| {
-                let ret = unsafe { hex_check_avx2(input.as_bytes()) };
+                let ret = unsafe { check_avx2(input.as_bytes()) };
                 black_box(ret);
             })
         });
         check_group.bench_with_input(BenchmarkId::new("sse", idx), input, |b, &input| {
             b.iter(|| {
-                let ret = unsafe { hex_check_sse(input.as_bytes()) };
+                let ret = unsafe { check_sse(input.as_bytes()) };
                 black_box(ret);
             })
         });

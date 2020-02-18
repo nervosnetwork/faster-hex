@@ -4,14 +4,14 @@ use crate::error::Error;
 
 static TABLE: &[u8] = b"0123456789abcdef";
 
-pub fn hex_string(src: &[u8]) -> String {
+pub fn encode(src: &[u8]) -> String {
     let mut buffer = vec![0; src.len() * 2];
     // should never panic because the destination buffer is large enough.
-    hex_encode(src, &mut buffer).unwrap();
+    encode_to_slice(src, &mut buffer).unwrap();
     unsafe { String::from_utf8_unchecked(buffer) }
 }
 
-pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+pub fn encode_to_slice(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     let len = src.len().checked_mul(2).unwrap();
     if dst.len() < len {
         return Err(Error::InvalidLength(len));
@@ -22,26 +22,21 @@ pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
         #[cfg(feature = "avx2")]
         {
             if is_x86_feature_detected!("avx2") && src.len() >= 16 {
-                unsafe { avx2::hex_encode(src, dst) };
+                unsafe { avx2::encode(src, dst) };
                 return Ok(());
             }
         }
         #[cfg(feature = "sse41")]
         {
             if is_x86_feature_detected!("sse4.1") && src.len() >= 16 {
-                unsafe { sse41::hex_encode(src, dst) };
+                unsafe { sse41::encode(src, dst) };
                 return Ok(());
             }
         }
     }
 
-    hex_encode_fallback(src, dst);
+    encode_fallback(src, dst);
     Ok(())
-}
-
-#[deprecated(since = "0.3.0", note = "please use `hex_encode` instead")]
-pub fn hex_to(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
-    hex_encode(src, dst)
 }
 
 #[cfg(all(feature = "avx2", any(target_arch = "x86", target_arch = "x86_64")))]
@@ -52,7 +47,7 @@ mod avx2 {
     use std::arch::x86_64::*;
 
     #[target_feature(enable = "avx2")]
-    pub(super) unsafe fn hex_encode(mut src: &[u8], mut dst: &mut [u8]) {
+    pub(super) unsafe fn encode(mut src: &[u8], mut dst: &mut [u8]) {
         while src.len() >= 32 {
             let input = _mm256_loadu_si256(src.as_ptr() as *const _);
             _mm256_storeu_si256(
@@ -72,7 +67,7 @@ mod avx2 {
             src = &src[16..];
             dst = &mut dst[32..];
         }
-        super::hex_encode_fallback(src, dst);
+        super::encode_fallback(src, dst);
     }
 
     #[target_feature(enable = "avx2")]
@@ -112,7 +107,7 @@ mod sse41 {
     use std::arch::x86_64::*;
 
     #[target_feature(enable = "sse4.1")]
-    pub(super) unsafe fn hex_encode(mut src: &[u8], mut dst: &mut [u8]) {
+    pub(super) unsafe fn encode(mut src: &[u8], mut dst: &mut [u8]) {
         let and4bits = _mm_set1_epi8(0xf);
 
         while src.len() >= 16 {
@@ -139,7 +134,7 @@ mod sse41 {
             src = &src[16..];
             dst = &mut dst[32..];
         }
-        super::hex_encode_fallback(src, dst);
+        super::encode_fallback(src, dst);
     }
 }
 
@@ -148,7 +143,7 @@ fn hex(byte: u8) -> u8 {
     TABLE[byte as usize]
 }
 
-pub fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
+pub fn encode_fallback(src: &[u8], dst: &mut [u8]) {
     for (byte, slots) in src.iter().zip(dst.chunks_mut(2)) {
         slots[0] = hex((*byte >> 4) & 0xf);
         slots[1] = hex(*byte & 0xf);
@@ -157,13 +152,13 @@ pub fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
-    use crate::encode::hex_encode_fallback;
+    use crate::encode::encode_fallback;
     use proptest::{proptest, proptest_helper};
     use std::str;
 
     fn _test_encode_fallback(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
-        hex_encode_fallback(s.as_bytes(), &mut buffer);
+        encode_fallback(s.as_bytes(), &mut buffer);
         let encode = unsafe { str::from_utf8_unchecked(&buffer[..s.as_bytes().len() * 2]) };
         assert_eq!(encode, hex::encode(s));
     }
