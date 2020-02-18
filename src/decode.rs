@@ -1,289 +1,454 @@
-#[cfg(target_arch = "x86")]
-use std::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
 use crate::error::Error;
 
-const NIL: u8 = u8::max_value();
-const T_MASK: i32 = 65535;
-
-// ASCII -> hex
-pub(crate) static UNHEX: [u8; 256] = [
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, 10, 11, 12, 13, 14, 15, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 10, 11, 12, 13,
-    14, 15, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL,
-];
-
-// ASCII -> hex << 4
-pub(crate) static UNHEX4: [u8; 256] = [
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 0, 16, 32, 48, 64, 80, 96, 112, 128, 144,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, 160, 176, 192, 208, 224, 240, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, 160, 176, 192, 208, 224, 240, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-];
-
-const _0213: i32 = 0b11011000;
-
-// lower nibble
-#[inline]
-fn unhex_b(x: usize) -> u8 {
-    UNHEX[x]
+pub fn decode<I>(src: &I) -> Result<Vec<u8>, Error>
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
+    let mut output = vec![0u8; src.len() / 2];
+    decode_to_slice(src, &mut output)?;
+    Ok(output)
 }
 
-// upper nibble, logically equivalent to unhex_b(x) << 4
-#[inline]
-fn unhex_a(x: usize) -> u8 {
-    UNHEX4[x]
-}
-
-#[inline]
-#[target_feature(enable = "avx2")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn unhex_avx2(value: __m256i) -> __m256i {
-    let sr6 = _mm256_srai_epi16(value, 6);
-    let and15 = _mm256_and_si256(value, _mm256_set1_epi16(0xf));
-    let mul = _mm256_maddubs_epi16(sr6, _mm256_set1_epi16(9));
-    _mm256_add_epi16(mul, and15)
-}
-
-// (a << 4) | b;
-#[inline]
-#[target_feature(enable = "avx2")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn nib2byte_avx2(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256i {
-    let a4_1 = _mm256_slli_epi16(a1, 4);
-    let a4_2 = _mm256_slli_epi16(a2, 4);
-    let a4orb_1 = _mm256_or_si256(a4_1, b1);
-    let a4orb_2 = _mm256_or_si256(a4_2, b2);
-    let pck1 = _mm256_packus_epi16(a4orb_1, a4orb_2);
-    _mm256_permute4x64_epi64(pck1, _0213)
-}
-
-pub fn hex_check(src: &[u8]) -> bool {
+pub fn decode_to_slice<I>(src: &I, dst: &mut [u8]) -> Result<(), Error>
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
+    validate_buffer_length(src, dst)?;
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("sse4.1") {
-            return unsafe { hex_check_sse(src) };
+        #[cfg(feature = "avx2")]
+        {
+            if is_x86_feature_detected!("avx2") && src.len() >= 64 {
+                return unsafe { arch::avx2::decode(src, dst) };
+            }
         }
-    }
-
-    hex_check_fallback(src)
-}
-
-pub fn hex_check_fallback(src: &[u8]) -> bool {
-    for byte in src {
-        match byte {
-            b'A'...b'F' | b'a'...b'f' | b'0'...b'9' => continue,
-            _ => {
-                return false;
+        #[cfg(feature = "sse41")]
+        {
+            if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
+                return unsafe { arch::sse41::decode(src, dst) };
             }
         }
     }
-    true
+    arch::fallback::decode(src, dst)
 }
 
-#[target_feature(enable = "sse4.1")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub unsafe fn hex_check_sse(mut src: &[u8]) -> bool {
-    let ascii_zero = _mm_set1_epi8((b'0' - 1) as i8);
-    let ascii_nine = _mm_set1_epi8((b'9' + 1) as i8);
-    let ascii_ua = _mm_set1_epi8((b'A' - 1) as i8);
-    let ascii_uf = _mm_set1_epi8((b'F' + 1) as i8);
-    let ascii_la = _mm_set1_epi8((b'a' - 1) as i8);
-    let ascii_lf = _mm_set1_epi8((b'f' + 1) as i8);
-
-    while src.len() >= 16 {
-        let unchecked = _mm_loadu_si128(src.as_ptr() as *const _);
-
-        let gt0 = _mm_cmpgt_epi8(unchecked, ascii_zero);
-        let lt9 = _mm_cmplt_epi8(unchecked, ascii_nine);
-        let outside1 = _mm_and_si128(gt0, lt9);
-
-        let gtua = _mm_cmpgt_epi8(unchecked, ascii_ua);
-        let ltuf = _mm_cmplt_epi8(unchecked, ascii_uf);
-        let outside2 = _mm_and_si128(gtua, ltuf);
-
-        let gtla = _mm_cmpgt_epi8(unchecked, ascii_la);
-        let ltlf = _mm_cmplt_epi8(unchecked, ascii_lf);
-        let outside3 = _mm_and_si128(gtla, ltlf);
-
-        let tmp = _mm_or_si128(outside1, outside2);
-        let ret = _mm_movemask_epi8(_mm_or_si128(tmp, outside3));
-
-        if ret != T_MASK {
-            return false;
+pub fn decode_to_slice_unchecked<I>(src: &I, dst: &mut [u8])
+where
+    I: AsRef<[u8]> + ?Sized,
+{
+    let src = src.as_ref();
+    validate_buffer_length(src, dst).unwrap();
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(feature = "avx2")]
+        {
+            if is_x86_feature_detected!("avx2") && src.len() >= 64 {
+                return unsafe {
+                    arch::avx2::decode_unchecked(src, dst);
+                };
+            }
         }
-
-        src = &src[16..];
+        #[cfg(feature = "sse41")]
+        {
+            if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
+                return unsafe {
+                    arch::sse41::decode_unchecked(src, dst);
+                };
+            }
+        }
     }
-    hex_check_fallback(src)
+    arch::fallback::decode_unchecked(src, dst)
 }
 
-pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
-    if src.is_empty() {
-        return Err(Error::InvalidLength(0));
+#[inline]
+fn validate_buffer_length(src: &[u8], dst: &[u8]) -> Result<(), Error> {
+    let decoded_len = src.len().checked_div(2).unwrap();
+    if dst.len() < decoded_len || ((src.len() & 1) != 0) {
+        return Err(Error::InvalidLength(src.len()));
     }
-    let len = dst.len().checked_mul(2).unwrap();
-    if src.len() < len || ((src.len() & 1) != 0) {
-        return Err(Error::InvalidLength(len));
-    }
-    if !hex_check(src) {
-        return Err(Error::InvalidChar);
-    }
-    hex_decode_unchecked(src, dst);
     Ok(())
 }
 
-pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        if is_x86_feature_detected!("avx2") {
-            return unsafe { hex_decode_avx2(src, dst) };
+struct Checked;
+struct Unchecked;
+
+pub mod arch {
+    #[cfg(all(feature = "avx2", any(target_arch = "x86", target_arch = "x86_64")))]
+    pub mod avx2 {
+        #[cfg(target_arch = "x86")]
+        use std::arch::x86::*;
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::*;
+
+        use crate::decode::{Checked, Error, Unchecked};
+
+        #[target_feature(enable = "avx2")]
+        pub unsafe fn decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+            _decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
+        }
+
+        #[target_feature(enable = "avx2")]
+        pub unsafe fn decode_unchecked(src: &[u8], dst: &mut [u8]) {
+            let _ = _decode::<Unchecked>(src, dst);
+        }
+
+        #[inline]
+        #[target_feature(enable = "avx2")]
+        pub unsafe fn _decode<V: IsValid>(mut src: &[u8], mut dst: &mut [u8]) -> Result<(), ()> {
+            while src.len() >= 64 {
+                let av1 = _mm256_loadu_si256(src.as_ptr() as *const _);
+                let av2 = _mm256_loadu_si256(src[32..].as_ptr() as *const _);
+                let av1 = decode_chunk::<V>(av1)?;
+                let av1 =
+                    _mm256_permutevar8x32_epi32(av1, _mm256_setr_epi32(0, 1, 4, 5, -1, -1, -1, -1));
+                let av2 = decode_chunk::<V>(av2)?;
+                let av2 =
+                    _mm256_permutevar8x32_epi32(av2, _mm256_setr_epi32(-1, -1, -1, -1, 0, 1, 4, 5));
+                let decoded = _mm256_or_si256(av1, av2);
+                _mm256_storeu_si256(dst.as_mut_ptr() as *mut _, decoded);
+                dst = &mut dst[32..];
+                src = &src[64..];
+            }
+            crate::decode::arch::fallback::_decode::<V>(&src, &mut dst)
+        }
+
+        #[inline]
+        #[target_feature(enable = "avx2")]
+        unsafe fn decode_chunk<V: IsValid>(input: __m256i) -> Result<__m256i, ()> {
+            #[allow(overflowing_literals)]
+            let hi_nibbles =
+                _mm256_and_si256(_mm256_srli_epi32(input, 4), _mm256_set1_epi8(0b00001111));
+            let low_nibbles = _mm256_and_si256(input, _mm256_set1_epi8(0b00001111));
+
+            if !<V as IsValid>::is_valid(hi_nibbles, low_nibbles) {
+                return Err(());
+            }
+
+            let shift_lut = _mm256_setr_epi8(
+                0, 0, 0, -48, -55, 0, -87, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -48, -55, 0, -87, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+            );
+
+            let sh = _mm256_shuffle_epi8(shift_lut, hi_nibbles);
+            let input = _mm256_add_epi8(input, sh);
+            #[allow(overflowing_literals)]
+            let input = _mm256_maddubs_epi16(
+                input,
+                _mm256_set1_epi32(0b00000001_00010000_00000001_00010000),
+            );
+            let input = _mm256_shuffle_epi8(
+                input,
+                _mm256_setr_epi8(
+                    0, 2, 4, 6, 8, 10, 12, 14, -1, -1, -1, -1, -1, -1, -1, -1, 0, 2, 4, 6, 8, 10,
+                    12, 14, -1, -1, -1, -1, -1, -1, -1, -1,
+                ),
+            );
+            Ok(input)
+        }
+
+        pub trait IsValid: crate::decode::arch::fallback::IsValid {
+            unsafe fn is_valid(hi_nibbles: __m256i, low_nibbles: __m256i) -> bool;
+        }
+
+        impl IsValid for Checked {
+            #[inline]
+            #[target_feature(enable = "avx2")]
+            unsafe fn is_valid(hi_nibbles: __m256i, low_nibbles: __m256i) -> bool {
+                let mask_lut = _mm256_setr_epi8(
+                    0b0000_1000, // 0
+                    0b0101_1000, // 1 .. 6
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0000_1000, // 7 .. 9
+                    0b0000_1000, //
+                    0b0000_1000, //
+                    0b0000_0000, // 10 .. 15
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    //
+                    0b0000_1000, // 0
+                    0b0101_1000, // 1 .. 6
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0000_1000, // 7 .. 9
+                    0b0000_1000, //
+                    0b0000_1000, //
+                    0b0000_0000, // 10 .. 15
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                );
+
+                #[allow(overflowing_literals)]
+                let bit_pos_lut = _mm256_setr_epi8(
+                    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                );
+
+                let m = _mm256_shuffle_epi8(mask_lut, low_nibbles);
+                let bit = _mm256_shuffle_epi8(bit_pos_lut, hi_nibbles);
+                let non_match = _mm256_cmpeq_epi8(_mm256_and_si256(m, bit), _mm256_setzero_si256());
+                _mm256_movemask_epi8(non_match) == 0
+            }
+        }
+
+        impl IsValid for Unchecked {
+            #[inline]
+            #[target_feature(enable = "avx2")]
+            unsafe fn is_valid(_: __m256i, _: __m256i) -> bool {
+                true
+            }
         }
     }
 
-    hex_decode_fallback(src, dst);
-}
+    #[cfg(all(feature = "sse41", any(target_arch = "x86", target_arch = "x86_64")))]
+    pub mod sse41 {
+        #[cfg(target_arch = "x86")]
+        use std::arch::x86::*;
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::*;
 
-#[target_feature(enable = "avx2")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
-    // 0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1,
-    // 0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1
-    let mask_a = _mm256_setr_epi8(
-        0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1, 0, -1, 2, -1, 4, -1, 6, -1, 8,
-        -1, 10, -1, 12, -1, 14, -1,
-    );
+        use crate::decode::{Checked, Error, Unchecked};
 
-    // 1, -1, 3, -1, 5, -1, 7, -1, 9, -1, 11, -1, 13, -1, 15, -1,
-    // 1, -1, 3, -1, 5, -1, 7, -1, 9, -1, 11, -1, 13, -1, 15, -1
-    let mask_b = _mm256_setr_epi8(
-        1, -1, 3, -1, 5, -1, 7, -1, 9, -1, 11, -1, 13, -1, 15, -1, 1, -1, 3, -1, 5, -1, 7, -1, 9,
-        -1, 11, -1, 13, -1, 15, -1,
-    );
+        #[target_feature(enable = "sse4.1")]
+        pub unsafe fn decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+            _decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
+        }
 
-    while dst.len() >= 32 {
-        let av1 = _mm256_loadu_si256(src.as_ptr() as *const _);
-        let av2 = _mm256_loadu_si256(src[32..].as_ptr() as *const _);
+        #[target_feature(enable = "sse4.1")]
+        pub unsafe fn decode_unchecked(src: &[u8], dst: &mut [u8]) {
+            let _ = _decode::<Unchecked>(src, dst);
+        }
 
-        let mut a1 = _mm256_shuffle_epi8(av1, mask_a);
-        let mut b1 = _mm256_shuffle_epi8(av1, mask_b);
-        let mut a2 = _mm256_shuffle_epi8(av2, mask_a);
-        let mut b2 = _mm256_shuffle_epi8(av2, mask_b);
+        #[inline]
+        #[target_feature(enable = "sse4.1")]
+        pub unsafe fn _decode<V: IsValid>(mut src: &[u8], mut dst: &mut [u8]) -> Result<(), ()> {
+            while src.len() >= 32 {
+                let av1 = _mm_loadu_si128(src.as_ptr() as *const _);
+                let av2 = _mm_loadu_si128(src[16..].as_ptr() as *const _);
+                let av1 = decode_chunk::<V>(av1)?;
+                let av1 = _mm_shuffle_epi8(
+                    av1,
+                    _mm_setr_epi8(0, 2, 4, 6, 8, 10, 12, 14, -1, -1, -1, -1, -1, -1, -1, -1),
+                );
+                let av2 = decode_chunk::<V>(av2)?;
+                let av2 = _mm_shuffle_epi8(
+                    av2,
+                    _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 0, 2, 4, 6, 8, 10, 12, 14),
+                );
+                let decoded = _mm_or_si128(av1, av2);
+                _mm_storeu_si128(dst.as_mut_ptr() as *mut _, decoded);
+                dst = &mut dst[16..];
+                src = &src[32..];
+            }
+            crate::decode::arch::fallback::_decode::<V>(&src, &mut dst)
+        }
 
-        a1 = unhex_avx2(a1);
-        a2 = unhex_avx2(a2);
-        b1 = unhex_avx2(b1);
-        b2 = unhex_avx2(b2);
+        #[inline]
+        #[target_feature(enable = "sse4.1")]
+        unsafe fn decode_chunk<V: IsValid>(input: __m128i) -> Result<__m128i, ()> {
+            #[allow(overflowing_literals)]
+            let hi_nibbles = _mm_and_si128(_mm_srli_epi32(input, 4), _mm_set1_epi8(0b00001111));
+            let low_nibbles = _mm_and_si128(input, _mm_set1_epi8(0b00001111));
 
-        let bytes = nib2byte_avx2(a1, b1, a2, b2);
+            if !<V as IsValid>::is_valid(hi_nibbles, low_nibbles) {
+                return Err(());
+            }
 
-        //dst does not need to be aligned on any particular boundary
-        _mm256_storeu_si256(dst.as_mut_ptr() as *mut _, bytes);
-        dst = &mut dst[32..];
-        src = &src[64..];
-    }
-    hex_decode_fallback(&src, &mut dst)
-}
+            let shift_lut = _mm_setr_epi8(0, 0, 0, -48, -55, 0, -87, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
-    for (slot, bytes) in dst.iter_mut().zip(src.chunks(2)) {
-        let a = unhex_a(bytes[0] as usize);
-        let b = unhex_b(bytes[1] as usize);
-        *slot = a | b;
-    }
-}
+            let sh = _mm_shuffle_epi8(shift_lut, hi_nibbles);
+            let input = _mm_add_epi8(input, sh);
+            #[allow(overflowing_literals)]
+            let input =
+                _mm_maddubs_epi16(input, _mm_set1_epi32(0b00000001_00010000_00000001_00010000));
+            Ok(input)
+        }
 
-#[cfg(test)]
-mod tests {
-    use crate::decode::hex_check_fallback;
-    use crate::decode::hex_check_sse;
-    use crate::decode::hex_decode_fallback;
-    use crate::encode::hex_string;
-    use proptest::{proptest, proptest_helper};
+        pub trait IsValid: crate::decode::arch::fallback::IsValid {
+            unsafe fn is_valid(hi_nibbles: __m128i, low_nibbles: __m128i) -> bool;
+        }
 
-    fn _test_decode_fallback(s: &String) {
-        let len = s.as_bytes().len();
-        let mut dst = Vec::with_capacity(len);
-        dst.resize(len, 0);
+        impl IsValid for Checked {
+            #[inline]
+            #[target_feature(enable = "sse4.1")]
+            unsafe fn is_valid(hi_nibbles: __m128i, low_nibbles: __m128i) -> bool {
+                let mask_lut = _mm_setr_epi8(
+                    0b0000_1000, // 0
+                    0b0101_1000, // 1 .. 6
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0101_1000, //
+                    0b0000_1000, // 7 .. 9
+                    0b0000_1000, //
+                    0b0000_1000, //
+                    0b0000_0000, // 10 .. 15
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                    0b0000_0000, //
+                );
 
-        let hex_string = hex_string(s.as_bytes()).unwrap();
+                #[allow(overflowing_literals)]
+                let bit_pos_lut = _mm_setr_epi8(
+                    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                );
 
-        hex_decode_fallback(hex_string.as_bytes(), &mut dst);
+                let m = _mm_shuffle_epi8(mask_lut, low_nibbles);
+                let bit = _mm_shuffle_epi8(bit_pos_lut, hi_nibbles);
+                let non_match = _mm_cmpeq_epi8(_mm_and_si128(m, bit), _mm_setzero_si128());
+                _mm_movemask_epi8(non_match) == 0
+            }
+        }
 
-        assert_eq!(&dst[..], s.as_bytes());
-    }
-
-    proptest! {
-        #[test]
-        fn test_decode_fallback(ref s in ".+") {
-            _test_decode_fallback(s);
+        impl IsValid for Unchecked {
+            #[inline]
+            #[target_feature(enable = "sse4.1")]
+            unsafe fn is_valid(_: __m128i, _: __m128i) -> bool {
+                true
+            }
         }
     }
 
-    fn _test_check_fallback_true(s: &String) {
-        assert!(hex_check_fallback(s.as_bytes()));
-    }
+    pub mod fallback {
+        use crate::decode::{Checked, Error, Unchecked};
 
-    proptest! {
-        #[test]
-        fn test_check_fallback_true(ref s in "[0-9a-fA-F]+") {
-            _test_check_fallback_true(s);
+        #[inline]
+        pub fn decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+            _decode::<Checked>(src, dst).map_err(|_| Error::InvalidChar)
         }
-    }
 
-    fn _test_check_fallback_false(s: &String) {
-        assert!(!hex_check_fallback(s.as_bytes()));
-    }
-
-    proptest! {
-        #[test]
-        fn test_check_fallback_false(ref s in ".{16}[^0-9a-fA-F]+") {
-            _test_check_fallback_false(s);
+        #[inline]
+        pub fn decode_unchecked(src: &[u8], dst: &mut [u8]) {
+            let _ = _decode::<Unchecked>(src, dst);
         }
-    }
 
-    fn _test_check_sse_true(s: &String) {
-        assert!(unsafe { hex_check_sse(s.as_bytes()) });
-    }
-
-    proptest! {
-        #[test]
-        fn test_check_sse_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
-            _test_check_sse_true(s);
+        #[inline]
+        pub fn _decode<V: IsValid>(src: &[u8], dst: &mut [u8]) -> Result<(), ()> {
+            for (slot, bytes) in dst.iter_mut().zip(src.chunks(2)) {
+                if !V::is_valid(bytes[0], bytes[1]) {
+                    return Err(());
+                }
+                let a = unhex_a(bytes[0]);
+                let b = unhex_b(bytes[1]);
+                *slot = a | b;
+            }
+            Ok(())
         }
-    }
 
-    fn _test_check_sse_false(s: &String) {
-        assert!(!unsafe { hex_check_sse(s.as_bytes()) });
-    }
+        pub trait IsValid {
+            fn is_valid(a: u8, b: u8) -> bool;
+        }
 
-    proptest! {
-        #[test]
-        fn test_check_sse_false(ref s in ".{16}[^0-9a-fA-F]+") {
-            _test_check_sse_false(s);
+        impl IsValid for Checked {
+            #[inline]
+            fn is_valid(a: u8, b: u8) -> bool {
+                (unhex_a(a) | unhex_a(b)) != 0xff
+            }
+        }
+
+        impl IsValid for Unchecked {
+            #[inline]
+            fn is_valid(_: u8, _: u8) -> bool {
+                return true;
+            }
+        }
+
+        // lower nibble
+        #[inline]
+        fn unhex_b(x: u8) -> u8 {
+            // ASCII -> hex
+            static UNHEX: [u8; 256] = [
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 10, 11, 12, 13, 14, 15, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 10, 11, 12, 13, 14, 15, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            ];
+            UNHEX[x as usize]
+        }
+
+        // upper nibble, logically equivalent to unhex_b(x) << 4
+        #[inline]
+        fn unhex_a(x: u8) -> u8 {
+            // ASCII -> hex << 4
+            static UNHEX4: [u8; 256] = [
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 160, 176, 192, 208, 224, 240, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 160, 176, 192, 208, 224, 240,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            ];
+            UNHEX4[x as usize]
+        }
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+            use proptest::{proptest, proptest_helper};
+
+            fn _test_decode(s: &String) {
+                let len = s.as_bytes().len();
+                let mut dst = Vec::with_capacity(len);
+                dst.resize(len, 0);
+
+                let hex_string = crate::encode(s.as_bytes());
+
+                decode(hex_string.as_bytes(), &mut dst).unwrap();
+
+                assert_eq!(&dst[..], s.as_bytes());
+            }
+
+            proptest! {
+                #[test]
+                fn test_decode(ref s in ".+") {
+                    _test_decode(s);
+                }
+            }
         }
     }
 }
