@@ -1,5 +1,11 @@
 use crate::error::Error;
 
+pub fn decode(src: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut output = vec![0u8; src.len() / 2];
+    hex_decode(src, &mut output)?;
+    Ok(output)
+}
+
 pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     validate_buffer_length(src, dst)?;
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

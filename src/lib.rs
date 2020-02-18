@@ -1,7 +1,7 @@
 mod decode;
 mod encode;
 mod error;
-pub use crate::decode::{hex_decode, hex_decode_unchecked};
+pub use crate::decode::{decode, hex_decode, hex_decode_unchecked};
 pub use crate::encode::{hex_encode, hex_encode_fallback, hex_string};
 pub use crate::error::Error;
 
@@ -20,7 +20,7 @@ pub use crate::decode::{
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::hex_decode;
+    use crate::decode::{decode, hex_decode};
     use crate::encode::{hex_encode, hex_string};
     use proptest::{proptest, proptest_helper};
     use std::str;
@@ -91,6 +91,20 @@ mod tests {
             let mut decoded = vec![0; input.len()];
             hex_decode(&encoded, &mut decoded).unwrap();
             assert_eq!(&decoded, &input);
+        }
+
+        #[test]
+        fn test_encode_matches(input: Vec<u8>) {
+            let encoded = hex_string(&input);
+            let expected = hex::encode(&input);
+            assert_eq!(encoded, expected);
+        }
+
+        #[test]
+        fn test_decode_matches(input: Vec<u8>) {
+            let decoded = decode(&input).map_err(|_| ());
+            let expected = hex::decode(&input).map_err(|_| ());
+            assert_eq!(decoded, expected);
         }
     }
 }
