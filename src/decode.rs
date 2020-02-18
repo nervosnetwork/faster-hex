@@ -4,11 +4,17 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     validate_buffer_length(src, dst)?;
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("avx2") && src.len() >= 64 {
-            return unsafe { arch::avx2::hex_decode(src, dst) };
+        #[cfg(feature = "avx2")]
+        {
+            if is_x86_feature_detected!("avx2") && src.len() >= 64 {
+                return unsafe { arch::avx2::hex_decode(src, dst) };
+            }
         }
-        if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
-            return unsafe { arch::sse::hex_decode(src, dst) };
+        #[cfg(feature = "sse41")]
+        {
+            if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
+                return unsafe { arch::sse41::hex_decode(src, dst) };
+            }
         }
     }
     arch::fallback::hex_decode(src, dst)
@@ -18,15 +24,21 @@ pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
     validate_buffer_length(src, dst).unwrap();
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("avx2") && src.len() >= 64 {
-            return unsafe {
-                arch::avx2::hex_decode_unchecked(src, dst);
-            };
+        #[cfg(feature = "avx2")]
+        {
+            if is_x86_feature_detected!("avx2") && src.len() >= 64 {
+                return unsafe {
+                    arch::avx2::hex_decode_unchecked(src, dst);
+                };
+            }
         }
-        if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
-            return unsafe {
-                arch::sse::hex_decode_unchecked(src, dst);
-            };
+        #[cfg(feature = "sse41")]
+        {
+            if is_x86_feature_detected!("sse4.1") && src.len() >= 32 {
+                return unsafe {
+                    arch::sse41::hex_decode_unchecked(src, dst);
+                };
+            }
         }
     }
     arch::fallback::hex_decode_unchecked(src, dst)
@@ -45,7 +57,7 @@ struct Checked;
 struct Unchecked;
 
 pub mod arch {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(feature = "avx2", any(target_arch = "x86", target_arch = "x86_64")))]
     pub mod avx2 {
         #[cfg(target_arch = "x86")]
         use std::arch::x86::*;
@@ -232,7 +244,8 @@ pub mod arch {
         }
     }
 
-    pub mod sse {
+    #[cfg(all(feature = "sse41", any(target_arch = "x86", target_arch = "x86_64")))]
+    pub mod sse41 {
         #[cfg(target_arch = "x86")]
         use std::arch::x86::*;
         #[cfg(target_arch = "x86_64")]

@@ -16,8 +16,10 @@ exclude = [
 ]
 
 [features]
+default = ["avx2", "sse41"]
 bench = []
-
+avx2 = []
+sse41 = []
 
 [dev-dependencies]
 criterion = "0.3"
