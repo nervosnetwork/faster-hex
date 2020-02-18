@@ -6,16 +6,12 @@ pub use crate::encode::{encode, encode_to_slice};
 pub use crate::error::Error;
 
 #[cfg(feature = "bench")]
-pub use crate::decode::{
-    arch::avx2::check as check_avx2,
-    arch::fallback::{
-        check as check_fallback, decode as decode_fallback,
-        decode_unchecked as decode_unchecked_fallback,
+pub use crate::{
+    decode::arch::fallback::{
+        decode as decode_fallback, decode_unchecked as decode_unchecked_fallback,
     },
-    arch::sse41::check as check_sse,
+    encode::encode_fallback,
 };
-#[cfg(feature = "bench")]
-pub use crate::encode::encode_fallback;
 
 #[cfg(test)]
 mod tests {

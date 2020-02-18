@@ -32,9 +32,3 @@ rand = "0.7.3"
 name = "hex"
 harness = false
 required-features = ["bench", "avx2", "sse41"]
-
-
-[[bench]]
-name = "check"
-harness = false
-required-features = ["bench", "avx2", "sse41"]

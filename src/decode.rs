@@ -148,22 +148,6 @@ pub mod arch {
             Ok(input)
         }
 
-        #[cfg(any(test, feature = "bench"))]
-        #[target_feature(enable = "avx2")]
-        pub unsafe fn check(mut src: &[u8]) -> bool {
-            while src.len() >= 32 {
-                let input = _mm256_loadu_si256(src.as_ptr() as *const _);
-                let hi_nibbles =
-                    _mm256_and_si256(_mm256_srli_epi32(input, 4), _mm256_set1_epi8(0b00001111));
-                let low_nibbles = _mm256_and_si256(input, _mm256_set1_epi8(0b00001111));
-                if !Checked::is_valid(hi_nibbles, low_nibbles) {
-                    return false;
-                }
-                src = &src[32..];
-            }
-            crate::decode::arch::fallback::check(src)
-        }
-
         pub trait IsValid: crate::decode::arch::fallback::IsValid {
             unsafe fn is_valid(hi_nibbles: __m256i, low_nibbles: __m256i) -> bool;
         }
@@ -227,34 +211,6 @@ pub mod arch {
             #[target_feature(enable = "avx2")]
             unsafe fn is_valid(_: __m256i, _: __m256i) -> bool {
                 true
-            }
-        }
-
-        #[cfg(test)]
-        mod tests {
-            use super::*;
-            use proptest::{proptest, proptest_helper};
-
-            fn _test_check_true(s: &String) {
-                assert!(unsafe { check(s.as_bytes()) });
-            }
-
-            proptest! {
-                #[test]
-                fn test_check_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
-                    _test_check_true(s);
-                }
-            }
-
-            fn _test_check_false(s: &String) {
-                assert!(!unsafe { check(s.as_bytes()) });
-            }
-
-            proptest! {
-                #[test]
-                fn test_check_false(ref s in ".{32}[^0-9a-fA-F]+") {
-                    _test_check_false(s);
-                }
             }
         }
     }
@@ -323,21 +279,6 @@ pub mod arch {
             Ok(input)
         }
 
-        #[cfg(any(test, feature = "bench"))]
-        #[target_feature(enable = "sse4.1")]
-        pub unsafe fn check(mut src: &[u8]) -> bool {
-            while src.len() >= 16 {
-                let input = _mm_loadu_si128(src.as_ptr() as *const _);
-                let hi_nibbles = _mm_and_si128(_mm_srli_epi32(input, 4), _mm_set1_epi8(0b00001111));
-                let low_nibbles = _mm_and_si128(input, _mm_set1_epi8(0b00001111));
-                if !Checked::is_valid(hi_nibbles, low_nibbles) {
-                    return false;
-                }
-                src = &src[16..];
-            }
-            crate::decode::arch::fallback::check(src)
-        }
-
         pub trait IsValid: crate::decode::arch::fallback::IsValid {
             unsafe fn is_valid(hi_nibbles: __m128i, low_nibbles: __m128i) -> bool;
         }
@@ -385,43 +326,10 @@ pub mod arch {
                 true
             }
         }
-
-        #[cfg(test)]
-        mod tests {
-            use super::*;
-            use proptest::{proptest, proptest_helper};
-
-            fn _test_check_true(s: &String) {
-                assert!(unsafe { check(s.as_bytes()) });
-            }
-
-            proptest! {
-                #[test]
-                fn test_check_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
-                    _test_check_true(s);
-                }
-            }
-
-            fn _test_check_false(s: &String) {
-                assert!(!unsafe { check(s.as_bytes()) });
-            }
-
-            proptest! {
-                #[test]
-                fn test_check_false(ref s in ".{32}[^0-9a-fA-F]+") {
-                    _test_check_false(s);
-                }
-            }
-        }
     }
 
     pub mod fallback {
         use crate::decode::{Checked, Error, Unchecked};
-
-        #[cfg(any(test, feature = "bench"))]
-        pub fn check(src: &[u8]) -> bool {
-            src.iter().cloned().all(|b| unhex_a(b) != 0xff)
-        }
 
         #[inline]
         pub fn decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
@@ -539,28 +447,6 @@ pub mod arch {
                 #[test]
                 fn test_decode(ref s in ".+") {
                     _test_decode(s);
-                }
-            }
-
-            fn _test_check_true(s: &String) {
-                assert!(check(s.as_bytes()));
-            }
-
-            proptest! {
-                #[test]
-                fn test_check_true(ref s in "[0-9a-fA-F]+") {
-                    _test_check_true(s);
-                }
-            }
-
-            fn _test_check_false(s: &String) {
-                assert!(!check(s.as_bytes()));
-            }
-
-            proptest! {
-                #[test]
-                fn test_check_false(ref s in ".{16}[^0-9a-fA-F]+") {
-                    _test_check_false(s);
                 }
             }
         }
