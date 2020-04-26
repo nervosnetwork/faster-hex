@@ -7,7 +7,7 @@ pub use crate::decode::{
 pub use crate::encode::{hex_encode, hex_encode_fallback, hex_string, hex_to};
 pub use crate::error::Error;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64", feature = "sse4.1"))]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use crate::decode::hex_check_sse;
 
 #[cfg(test)]
