@@ -6,6 +6,8 @@ use std::arch::x86_64::*;
 use crate::error::Error;
 
 const NIL: u8 = u8::max_value();
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 const T_MASK: i32 = 65535;
 
 // ASCII -> hex
@@ -95,7 +97,7 @@ pub fn hex_check(src: &[u8]) -> bool {
 pub fn hex_check_fallback(src: &[u8]) -> bool {
     for byte in src {
         match byte {
-            b'A'...b'F' | b'a'...b'f' | b'0'...b'9' => continue,
+            b'A'..=b'F' | b'a'..=b'f' | b'0'..=b'9' => continue,
             _ => {
                 return false;
             }
