@@ -1,5 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use faster_hex::{hex_check_fallback, hex_check_sse};
+use faster_hex::hex_check_fallback;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use faster_hex::hex_check_sse;
 
 fn bench(c: &mut Criterion) {
     let s1 = "Bf9E2d38aceDeeCbbAfccc4B4B7AE";
@@ -20,18 +23,23 @@ fn bench(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("bench_check_sse", move |b| {
-        b.iter(|| {
-            let ret1 = unsafe { hex_check_sse(s1.as_bytes()) };
-            black_box(ret1);
-            let ret2 = unsafe { hex_check_sse(s2.as_bytes()) };
-            black_box(ret2);
-            let ret3 = unsafe { hex_check_sse(s3.as_bytes()) };
-            black_box(ret3);
-            let ret4 = unsafe { hex_check_sse(s4.as_bytes()) };
-            black_box(ret4);
-        })
-    });
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            c.bench_function("bench_check_sse", move |b| {
+                b.iter(|| {
+                    let ret1 = unsafe { hex_check_sse(s1.as_bytes()) };
+                    black_box(ret1);
+                    let ret2 = unsafe { hex_check_sse(s2.as_bytes()) };
+                    black_box(ret2);
+                    let ret3 = unsafe { hex_check_sse(s3.as_bytes()) };
+                    black_box(ret3);
+                    let ret4 = unsafe { hex_check_sse(s4.as_bytes()) };
+                    black_box(ret4);
+                })
+            });
+        }
+    }
 }
 
 criterion_group!(benches, bench);

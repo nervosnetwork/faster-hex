@@ -219,7 +219,6 @@ pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use crate::decode::hex_check_fallback;
-    use crate::decode::hex_check_sse;
     use crate::decode::hex_decode_fallback;
     use crate::encode::hex_string;
     use proptest::{proptest, proptest_helper};
@@ -264,9 +263,17 @@ mod tests {
             _test_check_fallback_false(s);
         }
     }
+}
+
+#[cfg(all(test, any(target_arch = "x86", target_arch = "x86_64")))]
+mod test_sse {
+    use crate::decode::hex_check_sse;
+    use proptest::{proptest, proptest_helper};
 
     fn _test_check_sse_true(s: &String) {
-        assert!(unsafe { hex_check_sse(s.as_bytes()) });
+        if is_x86_feature_detected!("sse4.1") {
+            assert!(unsafe { hex_check_sse(s.as_bytes()) });
+        }
     }
 
     proptest! {
@@ -277,7 +284,9 @@ mod tests {
     }
 
     fn _test_check_sse_false(s: &String) {
-        assert!(!unsafe { hex_check_sse(s.as_bytes()) });
+        if is_x86_feature_detected!("sse4.1") {
+            assert!(!unsafe { hex_check_sse(s.as_bytes()) });
+        }
     }
 
     proptest! {
