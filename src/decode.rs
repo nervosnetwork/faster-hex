@@ -223,7 +223,7 @@ mod tests {
     use crate::decode::hex_check_fallback;
     use crate::decode::hex_decode_fallback;
     use crate::encode::hex_string;
-    use proptest::{proptest, proptest_helper};
+    use proptest::proptest;
 
     fn _test_decode_fallback(s: &String) {
         let len = s.as_bytes().len();
@@ -270,7 +270,7 @@ mod tests {
 #[cfg(all(test, any(target_arch = "x86", target_arch = "x86_64")))]
 mod test_sse {
     use crate::decode::hex_check_sse;
-    use proptest::{proptest, proptest_helper};
+    use proptest::proptest;
 
     fn _test_check_sse_true(s: &String) {
         if is_x86_feature_detected!("sse4.1") {

@@ -140,7 +140,7 @@ pub fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use crate::encode::hex_encode_fallback;
-    use proptest::{proptest, proptest_helper};
+    use proptest::proptest;
     use std::str;
 
     fn _test_encode_fallback(s: &String) {

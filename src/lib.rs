@@ -17,7 +17,7 @@ pub use crate::decode::hex_check_sse;
 mod tests {
     use crate::decode::hex_decode;
     use crate::encode::{hex_encode, hex_string};
-    use proptest::{proptest, proptest_helper};
+    use proptest::proptest;
     use std::str;
 
     fn _test_hex_encode(s: &String) {

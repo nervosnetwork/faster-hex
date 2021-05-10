@@ -17,10 +17,10 @@ exclude = [
 
 
 [dev-dependencies]
-criterion = "0.2"
+criterion = "0.3"
 rustc-hex = "1.0"
 hex = "0.3.2"
-proptest = "0.8"
+proptest = "1.0"
 
 [[bench]]
 name = "hex"
