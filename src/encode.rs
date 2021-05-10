@@ -9,9 +9,11 @@ use crate::error::Error;
 
 static TABLE: &[u8] = b"0123456789abcdef";
 
-pub fn hex_string(src: &[u8]) -> Result<String, Error> {
+pub fn hex_string(src: &[u8]) -> String {
     let mut buffer = vec![0; src.len() * 2];
-    hex_encode(src, &mut buffer).map(|_| unsafe { String::from_utf8_unchecked(buffer) })
+    hex_encode(src, &mut buffer)
+        .map(|_| unsafe { String::from_utf8_unchecked(buffer) })
+        .expect("hex_string")
 }
 
 pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
@@ -138,7 +140,7 @@ pub fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use crate::encode::hex_encode_fallback;
-    use proptest::{proptest, proptest_helper};
+    use proptest::proptest;
     use std::str;
 
     fn _test_encode_fallback(s: &String) {
