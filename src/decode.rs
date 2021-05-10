@@ -230,7 +230,7 @@ mod tests {
         let mut dst = Vec::with_capacity(len);
         dst.resize(len, 0);
 
-        let hex_string = hex_string(s.as_bytes()).unwrap();
+        let hex_string = hex_string(s.as_bytes());
 
         hex_decode_fallback(hex_string.as_bytes(), &mut dst);
 

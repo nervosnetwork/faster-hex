@@ -23,7 +23,7 @@ fn bench(c: &mut Criterion) {
 
     c.bench_function("bench_faster_hex_encode", move |b| {
         b.iter(|| {
-            let ret = hex_string(s.as_bytes()).unwrap();
+            let ret = hex_string(s.as_bytes());
             black_box(ret);
         })
     });
@@ -54,7 +54,7 @@ fn bench(c: &mut Criterion) {
     });
 
     c.bench_function("bench_faster_hex_decode", move |b| {
-        let hex = hex_string(s.as_bytes()).unwrap();
+        let hex = hex_string(s.as_bytes());
         let len = s.as_bytes().len();
         b.iter(|| {
             let mut dst = Vec::with_capacity(len);
@@ -65,7 +65,7 @@ fn bench(c: &mut Criterion) {
     });
 
     c.bench_function("bench_faster_hex_decode_unchecked", move |b| {
-        let hex = hex_string(s.as_bytes()).unwrap();
+        let hex = hex_string(s.as_bytes());
         let len = s.as_bytes().len();
         b.iter(|| {
             let mut dst = Vec::with_capacity(len);
@@ -76,7 +76,7 @@ fn bench(c: &mut Criterion) {
     });
 
     c.bench_function("bench_faster_hex_decode_fallback", move |b| {
-        let hex = hex_string(s.as_bytes()).unwrap();
+        let hex = hex_string(s.as_bytes());
         let len = s.as_bytes().len();
         b.iter(|| {
             let mut dst = Vec::with_capacity(len);

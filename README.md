@@ -33,6 +33,13 @@ Compare with [rustc-hex](https://crates.io/crates/rustc-hex):
 * Decoding ~7x over
 
 
+## Notice
+
+Major version zero (0.y.z) is for initial development. Anything MAY change at any time. The public API SHOULD NOT be considered stable.
+
+MINOR version when make incompatible API changes before 1.0.0.
+
+
 ## License
 
 This project is licensed under the [MIT license](LICENSE).
