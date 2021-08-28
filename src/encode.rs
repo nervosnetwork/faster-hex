@@ -131,7 +131,7 @@ fn hex(byte: u8) -> u8 {
 }
 
 pub fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
-    for (byte, slots) in src.iter().zip(dst.chunks_mut(2)) {
+    for (byte, slots) in src.iter().zip(dst.chunks_exact_mut(2)) {
         slots[0] = hex((*byte >> 4) & 0xf);
         slots[1] = hex(*byte & 0xf);
     }
