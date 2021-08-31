@@ -12,7 +12,8 @@ readme = "README.md"
 exclude = [
     "afl/*",
     "benches/*",
-    "fuzz/*"
+    "fuzz/*",
+    "CHANGELOG.md"
 ]
 
 
