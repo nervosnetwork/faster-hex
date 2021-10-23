@@ -51,6 +51,7 @@ This product includes copies and modifications of software developed by third pa
 * [src/encode.rs](src/encode.rs) is based on
   [stdsimd](https://github.com/rust-lang-nursery/stdsimd), licensed
   under the MIT license or the Apache License (Version 2.0).
+* [src/decode.rs](src/decode.rs) avx2 decode is modified from [fast-hex](https://github.com/zbjornson/fast-hex)
 
 See the source code files for more details.
 
