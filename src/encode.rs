@@ -11,12 +11,25 @@ static TABLE: &[u8] = b"0123456789abcdef";
 
 pub fn hex_string(src: &[u8]) -> String {
     let mut buffer = vec![0; src.len() * 2];
-    hex_encode(src, &mut buffer)
-        .map(|_| unsafe { String::from_utf8_unchecked(buffer) })
-        .expect("hex_string")
+    hex_encode(src, &mut buffer).expect("hex_string");
+
+    if cfg!(debug_assertions) {
+        String::from_utf8(buffer).unwrap()
+    } else {
+        // Saftey: We just wrote valid utf8 hex string into the dst
+        unsafe { String::from_utf8_unchecked(buffer) }
+    }
 }
 
-pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+    unsafe fn mut_str(buffer: &mut [u8]) -> &mut str {
+        if cfg!(debug_assertions) {
+            core::str::from_utf8_mut(buffer).unwrap()
+        } else {
+            core::str::from_utf8_unchecked_mut(buffer)
+        }
+    }
+
     let len = src.len().checked_mul(2).unwrap();
     if dst.len() < len {
         return Err(Error::InvalidLength(len));
@@ -26,21 +39,24 @@ pub fn hex_encode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     {
         if is_x86_feature_detected!("avx2") {
             unsafe { hex_encode_avx2(src, dst) };
-            return Ok(());
+            // Saftey: We just wrote valid utf8 hex string into the dst
+            return Ok(unsafe { mut_str(dst) });
         }
         if is_x86_feature_detected!("sse4.1") {
             unsafe { hex_encode_sse41(src, dst) };
-            return Ok(());
+            // Saftey: We just wrote valid utf8 hex string into the dst
+            return Ok(unsafe { mut_str(dst) });
         }
     }
 
     hex_encode_fallback(src, dst);
-    Ok(())
+    // Saftey: We just wrote valid utf8 hex string into the dst
+    Ok(unsafe { mut_str(dst) })
 }
 
 #[deprecated(since = "0.3.0", note = "please use `hex_encode` instead")]
 pub fn hex_to(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
-    hex_encode(src, dst)
+    hex_encode(src, dst).map(|_| ())
 }
 
 #[target_feature(enable = "avx2")]
