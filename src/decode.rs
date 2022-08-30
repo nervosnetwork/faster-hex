@@ -1,9 +1,9 @@
 // avx2 decode modified from https://github.com/zbjornson/fast-hex/blob/master/src/hex.cc
 
 #[cfg(target_arch = "x86")]
-use std::arch::x86::*;
+use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use core::arch::x86_64::*;
 
 use crate::error::Error;
 
@@ -86,14 +86,10 @@ unsafe fn nib2byte_avx2(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> _
 }
 
 pub fn hex_check(src: &[u8]) -> bool {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        if is_x86_feature_detected!("sse4.1") {
-            return unsafe { hex_check_sse(src) };
-        }
+    match crate::vectorization_support() {
+        crate::Vectorization::AVX2 | crate::Vectorization::SSE41 => unsafe { hex_check_sse(src) },
+        crate::Vectorization::None => hex_check_fallback(src),
     }
-
-    hex_check_fallback(src)
 }
 
 pub fn hex_check_fallback(src: &[u8]) -> bool {
@@ -158,14 +154,10 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
 }
 
 pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        if is_x86_feature_detected!("avx2") {
-            return unsafe { hex_decode_avx2(src, dst) };
-        }
+    match crate::vectorization_support() {
+        crate::Vectorization::AVX2 => unsafe { hex_decode_avx2(src, dst) },
+        crate::Vectorization::None | crate::Vectorization::SSE41 => hex_decode_fallback(src, dst),
     }
-
-    hex_decode_fallback(src, dst);
 }
 
 #[target_feature(enable = "avx2")]
