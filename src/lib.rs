@@ -101,7 +101,6 @@ mod tests {
     use crate::encode::{hex_encode, hex_string};
     use crate::{vectorization_support, Vectorization};
     use proptest::proptest;
-    use std::str;
 
     #[test]
     fn test_feature_detection() {
@@ -122,8 +121,7 @@ mod tests {
 
     fn _test_hex_encode(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
-        hex_encode(s.as_bytes(), &mut buffer).unwrap();
-        let encode = unsafe { str::from_utf8_unchecked(&buffer[..s.as_bytes().len() * 2]) };
+        let encode = &*hex_encode(s.as_bytes(), &mut buffer).unwrap();
 
         let hex_string = hex_string(s.as_bytes());
 
