@@ -1,14 +1,16 @@
-#![allow(clippy::cast_ptr_alignment)]
-
 #[cfg(target_arch = "x86")]
-use std::arch::x86::*;
+use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use core::arch::x86_64::*;
+
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec};
 
 use crate::error::Error;
 
 static TABLE: &[u8] = b"0123456789abcdef";
 
+#[cfg(any(feature = "alloc", test))]
 pub fn hex_string(src: &[u8]) -> String {
     let mut buffer = vec![0; src.len() * 2];
     hex_encode(src, &mut buffer).expect("hex_string");
@@ -35,21 +37,12 @@ pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Erro
         return Err(Error::InvalidLength(len));
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        if is_x86_feature_detected!("avx2") {
-            unsafe { hex_encode_avx2(src, dst) };
-            // Saftey: We just wrote valid utf8 hex string into the dst
-            return Ok(unsafe { mut_str(dst) });
-        }
-        if is_x86_feature_detected!("sse4.1") {
-            unsafe { hex_encode_sse41(src, dst) };
-            // Saftey: We just wrote valid utf8 hex string into the dst
-            return Ok(unsafe { mut_str(dst) });
-        }
+    match crate::vectorization_support() {
+        crate::Vectorization::AVX2 => unsafe { hex_encode_avx2(src, dst) },
+        crate::Vectorization::SSE41 => unsafe { hex_encode_sse41(src, dst) },
+        crate::Vectorization::None => hex_encode_fallback(src, dst),
     }
-
-    hex_encode_fallback(src, dst);
+   
     // Saftey: We just wrote valid utf8 hex string into the dst
     Ok(unsafe { mut_str(dst) })
 }
@@ -157,7 +150,7 @@ pub fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
 mod tests {
     use crate::encode::hex_encode_fallback;
     use proptest::proptest;
-    use std::str;
+    use core::str;
 
     fn _test_encode_fallback(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
