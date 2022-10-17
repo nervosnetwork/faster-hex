@@ -86,10 +86,17 @@ unsafe fn nib2byte_avx2(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> _
 }
 
 pub fn hex_check(src: &[u8]) -> bool {
-    match crate::vectorization_support() {
-        crate::Vectorization::AVX2 | crate::Vectorization::SSE41 => unsafe { hex_check_sse(src) },
-        crate::Vectorization::None => hex_check_fallback(src),
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        return match crate::vectorization_support() {
+            crate::Vectorization::AVX2 | crate::Vectorization::SSE41 => unsafe {
+                hex_check_sse(src)
+            },
+            crate::Vectorization::None => hex_check_fallback(src),
+        };
     }
+
+    hex_check_fallback(src)
 }
 
 pub fn hex_check_fallback(src: &[u8]) -> bool {
@@ -154,10 +161,16 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
 }
 
 pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
-    match crate::vectorization_support() {
-        crate::Vectorization::AVX2 => unsafe { hex_decode_avx2(src, dst) },
-        crate::Vectorization::None | crate::Vectorization::SSE41 => hex_decode_fallback(src, dst),
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        return match crate::vectorization_support() {
+            crate::Vectorization::AVX2 => unsafe { hex_decode_avx2(src, dst) },
+            crate::Vectorization::None | crate::Vectorization::SSE41 => {
+                hex_decode_fallback(src, dst)
+            }
+        };
     }
+    hex_decode_fallback(src, dst);
 }
 
 #[target_feature(enable = "avx2")]

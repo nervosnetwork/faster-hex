@@ -9,9 +9,9 @@ mod error;
 pub use crate::decode::{
     hex_check_fallback, hex_decode, hex_decode_fallback, hex_decode_unchecked,
 };
-pub use crate::encode::{hex_encode, hex_encode_fallback};
 #[cfg(feature = "alloc")]
 pub use crate::encode::hex_string;
+pub use crate::encode::{hex_encode, hex_encode_fallback};
 
 pub use crate::error::Error;
 
@@ -58,7 +58,10 @@ pub(crate) fn vectorization_support() -> Vectorization {
 
 // We enable xsave so it can inline the _xgetbv call.
 #[target_feature(enable = "xsave")]
-#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), target_feature = "sse"))]
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "sse"
+))]
 #[cold]
 unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
     #[cfg(target_arch = "x86")]

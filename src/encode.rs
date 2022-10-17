@@ -37,12 +37,18 @@ pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Erro
         return Err(Error::InvalidLength(len));
     }
 
-    match crate::vectorization_support() {
-        crate::Vectorization::AVX2 => unsafe { hex_encode_avx2(src, dst) },
-        crate::Vectorization::SSE41 => unsafe { hex_encode_sse41(src, dst) },
-        crate::Vectorization::None => hex_encode_fallback(src, dst),
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        match crate::vectorization_support() {
+            crate::Vectorization::AVX2 => unsafe { hex_encode_avx2(src, dst) },
+            crate::Vectorization::SSE41 => unsafe { hex_encode_sse41(src, dst) },
+            crate::Vectorization::None => hex_encode_fallback(src, dst),
+        }
+        // Saftey: We just wrote valid utf8 hex string into the dst
+        return Ok(unsafe { mut_str(dst) });
     }
-   
+
+    hex_encode_fallback(src, dst);
     // Saftey: We just wrote valid utf8 hex string into the dst
     Ok(unsafe { mut_str(dst) })
 }
@@ -149,8 +155,8 @@ pub fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use crate::encode::hex_encode_fallback;
-    use proptest::proptest;
     use core::str;
+    use proptest::proptest;
 
     fn _test_encode_fallback(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
