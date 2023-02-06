@@ -7,7 +7,7 @@ use core::arch::x86_64::*;
 
 use crate::error::Error;
 
-const NIL: u8 = u8::max_value();
+const NIL: u8 = u8::MAX;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 const T_MASK: i32 = 65535;

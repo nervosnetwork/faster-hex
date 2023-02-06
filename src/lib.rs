@@ -9,9 +9,11 @@ mod error;
 pub use crate::decode::{
     hex_check_fallback, hex_decode, hex_decode_fallback, hex_decode_unchecked,
 };
+pub use crate::encode::{
+    hex_encode, hex_encode_fallback, hex_encode_upper, hex_encode_upper_fallback,
+};
 #[cfg(feature = "alloc")]
-pub use crate::encode::hex_string;
-pub use crate::encode::{hex_encode, hex_encode_fallback};
+pub use crate::encode::{hex_string, hex_string_upper};
 
 pub use crate::error::Error;
 
@@ -102,7 +104,7 @@ unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
 mod tests {
     use crate::decode::hex_decode;
     use crate::encode::{hex_encode, hex_string};
-    use crate::{vectorization_support, Vectorization};
+    use crate::{hex_encode_upper, hex_string_upper, vectorization_support, Vectorization};
     use proptest::proptest;
 
     #[test]
@@ -124,12 +126,23 @@ mod tests {
 
     fn _test_hex_encode(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
-        let encode = &*hex_encode(s.as_bytes(), &mut buffer).unwrap();
+        {
+            let encode = &*hex_encode(s.as_bytes(), &mut buffer).unwrap();
 
-        let hex_string = hex_string(s.as_bytes());
+            let hex_string = hex_string(s.as_bytes());
 
-        assert_eq!(encode, hex::encode(s));
-        assert_eq!(hex_string, hex::encode(s));
+            assert_eq!(encode, hex::encode(s));
+            assert_eq!(hex_string, hex::encode(s));
+        }
+
+        {
+            let encode_upper = &*hex_encode_upper(s.as_bytes(), &mut buffer).unwrap();
+
+            let hex_string_upper = hex_string_upper(s.as_bytes());
+
+            assert_eq!(encode_upper, hex::encode_upper(s));
+            assert_eq!(hex_string_upper, hex::encode_upper(s));
+        }
     }
 
     proptest! {
