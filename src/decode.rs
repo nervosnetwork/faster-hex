@@ -88,14 +88,15 @@ unsafe fn nib2byte_avx2(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> _
 pub fn hex_check(src: &[u8]) -> bool {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        return match crate::vectorization_support() {
+        match crate::vectorization_support() {
             crate::Vectorization::AVX2 | crate::Vectorization::SSE41 => unsafe {
                 hex_check_sse(src)
             },
             crate::Vectorization::None => hex_check_fallback(src),
-        };
+        }
     }
 
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     hex_check_fallback(src)
 }
 
@@ -108,6 +109,8 @@ pub fn hex_check_fallback(src: &[u8]) -> bool {
     true
 }
 
+/// # Safety
+/// Check if a byte slice is valid.
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub unsafe fn hex_check_sse(mut src: &[u8]) -> bool {
@@ -172,13 +175,14 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
 pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        return match crate::vectorization_support() {
+        match crate::vectorization_support() {
             crate::Vectorization::AVX2 => unsafe { hex_decode_avx2(src, dst) },
             crate::Vectorization::None | crate::Vectorization::SSE41 => {
                 hex_decode_fallback(src, dst)
             }
-        };
+        }
     }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     hex_decode_fallback(src, dst);
 }
 
@@ -220,7 +224,7 @@ unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
         dst = &mut dst[32..];
         src = &src[64..];
     }
-    hex_decode_fallback(&src, &mut dst)
+    hex_decode_fallback(src, dst)
 }
 
 pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {

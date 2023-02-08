@@ -53,9 +53,12 @@ pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Erro
         return Ok(unsafe { mut_str(dst) });
     }
 
-    hex_encode_fallback(src, dst);
-    // Saftey: We just wrote valid utf8 hex string into the dst
-    Ok(unsafe { mut_str(dst) })
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        hex_encode_fallback(src, dst);
+        // Safety: We just wrote valid utf8 hex string into the dst
+        Ok(unsafe { mut_str(dst) })
+    }
 }
 
 #[deprecated(since = "0.3.0", note = "please use `hex_encode` instead")]
