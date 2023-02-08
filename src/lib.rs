@@ -7,7 +7,8 @@ mod decode;
 mod encode;
 mod error;
 pub use crate::decode::{
-    hex_check_fallback, hex_decode, hex_decode_fallback, hex_decode_unchecked,
+    hex_check, hex_check_fallback, hex_check_with_case, hex_decode, hex_decode_fallback,
+    hex_decode_unchecked,
 };
 pub use crate::encode::{
     hex_encode, hex_encode_fallback, hex_encode_upper, hex_encode_upper_fallback,
@@ -21,7 +22,7 @@ pub use crate::error::Error;
 pub use crate::encode::hex_to;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use crate::decode::hex_check_sse;
+pub use crate::decode::{hex_check_sse, hex_check_sse_with_case};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Vectorization {
@@ -102,7 +103,7 @@ unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::hex_decode;
+    use crate::decode::{hex_decode, hex_decode_with_case, CheckCase};
     use crate::encode::{hex_encode, hex_string};
     use crate::{hex_encode_upper, hex_string_upper, vectorization_support, Vectorization};
     use proptest::proptest;
@@ -154,14 +155,27 @@ mod tests {
 
     fn _test_hex_decode(s: &String) {
         let len = s.as_bytes().len();
-        let mut dst = Vec::with_capacity(len);
-        dst.resize(len, 0);
 
-        let hex_string = hex_string(s.as_bytes());
+        {
+            let mut dst = Vec::with_capacity(len);
+            dst.resize(len, 0);
+            let hex_string = hex_string(s.as_bytes());
 
-        hex_decode(hex_string.as_bytes(), &mut dst).unwrap();
+            hex_decode(hex_string.as_bytes(), &mut dst).unwrap();
 
-        assert_eq!(&dst[..], s.as_bytes());
+            hex_decode_with_case(hex_string.as_bytes(), &mut dst, CheckCase::Lower).unwrap();
+
+            assert_eq!(&dst[..], s.as_bytes());
+        }
+        {
+            let mut dst = Vec::with_capacity(len);
+            dst.resize(len, 0);
+            let hex_string_upper = hex_string_upper(s.as_bytes());
+
+            hex_decode_with_case(hex_string_upper.as_bytes(), &mut dst, CheckCase::Upper).unwrap();
+
+            assert_eq!(&dst[..], s.as_bytes());
+        }
     }
 
     proptest! {
