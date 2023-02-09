@@ -23,6 +23,8 @@ pub fn hex_string(src: &[u8]) -> String {
     }
 }
 
+/// Hex encode src into dst.
+/// The length of dst must be at least src.len() * 2.
 pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
     unsafe fn mut_str(buffer: &mut [u8]) -> &mut str {
         if cfg!(debug_assertions) {
@@ -32,9 +34,12 @@ pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Erro
         }
     }
 
-    let len = src.len().checked_mul(2).unwrap();
-    if dst.len() < len {
-        return Err(Error::InvalidLength(len));
+    let expect_dst_len = src
+        .len()
+        .checked_mul(2)
+        .ok_or(Error::InvalidLength(src.len()))?;
+    if dst.len() < expect_dst_len {
+        return Err(Error::InvalidLength(expect_dst_len));
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -48,9 +53,12 @@ pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Erro
         return Ok(unsafe { mut_str(dst) });
     }
 
-    hex_encode_fallback(src, dst);
-    // Saftey: We just wrote valid utf8 hex string into the dst
-    Ok(unsafe { mut_str(dst) })
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        hex_encode_fallback(src, dst);
+        // Safety: We just wrote valid utf8 hex string into the dst
+        Ok(unsafe { mut_str(dst) })
+    }
 }
 
 #[deprecated(since = "0.3.0", note = "please use `hex_encode` instead")]
