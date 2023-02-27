@@ -7,46 +7,57 @@ use core::arch::x86_64::*;
 
 use crate::error::Error;
 
-const NIL: u8 = u8::max_value();
+const NIL: u8 = u8::MAX;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 const T_MASK: i32 = 65535;
 
+const fn init_unhex_array(check_case: CheckCase) -> [u8; 256] {
+    let mut arr = [0; 256];
+    let mut i = 0;
+    while i < 256 {
+        arr[i] = match i as u8 {
+            b'0'..=b'9' => i as u8 - b'0',
+            b'a'..=b'f' => match check_case {
+                CheckCase::Lower | CheckCase::None => i as u8 - b'a' + 10,
+                _ => NIL,
+            },
+            b'A'..=b'F' => match check_case {
+                CheckCase::Upper | CheckCase::None => i as u8 - b'A' + 10,
+                _ => NIL,
+            },
+            _ => NIL,
+        };
+        i += 1;
+    }
+    arr
+}
+
+const fn init_unhex4_array(check_case: CheckCase) -> [u8; 256] {
+    let unhex_arr = init_unhex_array(check_case);
+
+    let mut unhex4_arr = [NIL; 256];
+    let mut i = 0;
+    while i < 256 {
+        if unhex_arr[i] != NIL {
+            unhex4_arr[i] = unhex_arr[i] << 4;
+        }
+        i += 1;
+    }
+    unhex4_arr
+}
+
 // ASCII -> hex
-pub(crate) static UNHEX: [u8; 256] = [
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, 10, 11, 12, 13, 14, 15, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 10, 11, 12, 13,
-    14, 15, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL,
-];
+pub(crate) static UNHEX: [u8; 256] = init_unhex_array(CheckCase::None);
+
+// ASCII -> hex, lower case
+pub(crate) static UNHEX_LOWER: [u8; 256] = init_unhex_array(CheckCase::Lower);
+
+// ASCII -> hex, upper case
+pub(crate) static UNHEX_UPPER: [u8; 256] = init_unhex_array(CheckCase::Upper);
 
 // ASCII -> hex << 4
-pub(crate) static UNHEX4: [u8; 256] = [
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 0, 16, 32, 48, 64, 80, 96, 112, 128, 144,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, 160, 176, 192, 208, 224, 240, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, 160, 176, 192, 208, 224, 240, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-    NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
-];
+pub(crate) static UNHEX4: [u8; 256] = init_unhex4_array(CheckCase::None);
 
 const _0213: i32 = 0b11011000;
 
@@ -85,35 +96,61 @@ unsafe fn nib2byte_avx2(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> _
     _mm256_permute4x64_epi64(pck1, _0213)
 }
 
+/// Check if the input is valid hex bytes slice
 pub fn hex_check(src: &[u8]) -> bool {
+    hex_check_with_case(src, CheckCase::None)
+}
+
+/// Check if the input is valid hex bytes slice with case check
+pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
             crate::Vectorization::AVX2 | crate::Vectorization::SSE41 => unsafe {
-                hex_check_sse(src)
+                hex_check_sse_with_case(src, check_case)
             },
-            crate::Vectorization::None => hex_check_fallback(src),
+            crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
         }
     }
 
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-    hex_check_fallback(src)
+    hex_check_fallback_with_case(src, check_case)
 }
 
+/// Check if the input is valid hex bytes slice
 pub fn hex_check_fallback(src: &[u8]) -> bool {
-    for &byte in src {
-        if UNHEX[byte as usize] == NIL {
-            return false;
-        }
+    hex_check_fallback_with_case(src, CheckCase::None)
+}
+
+/// Check if the input is valid hex bytes slice with case check
+pub fn hex_check_fallback_with_case(src: &[u8], check_case: CheckCase) -> bool {
+    match check_case {
+        CheckCase::None => src.iter().all(|&x| UNHEX[x as usize] != NIL),
+        CheckCase::Lower => src.iter().all(|&x| UNHEX_LOWER[x as usize] != NIL),
+        CheckCase::Upper => src.iter().all(|&x| UNHEX_UPPER[x as usize] != NIL),
     }
-    true
 }
 
 /// # Safety
 /// Check if a byte slice is valid.
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub unsafe fn hex_check_sse(mut src: &[u8]) -> bool {
+pub unsafe fn hex_check_sse(src: &[u8]) -> bool {
+    hex_check_sse_with_case(src, CheckCase::None)
+}
+
+#[derive(Eq, PartialEq)]
+pub enum CheckCase {
+    None,
+    Lower,
+    Upper,
+}
+
+/// # Safety
+/// Check if a byte slice is valid on given check_case.
+#[target_feature(enable = "sse4.1")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub unsafe fn hex_check_sse_with_case(mut src: &[u8], check_case: CheckCase) -> bool {
     let ascii_zero = _mm_set1_epi8((b'0' - 1) as i8);
     let ascii_nine = _mm_set1_epi8((b'9' + 1) as i8);
     let ascii_ua = _mm_set1_epi8((b'A' - 1) as i8);
@@ -126,18 +163,42 @@ pub unsafe fn hex_check_sse(mut src: &[u8]) -> bool {
 
         let gt0 = _mm_cmpgt_epi8(unchecked, ascii_zero);
         let lt9 = _mm_cmplt_epi8(unchecked, ascii_nine);
-        let outside1 = _mm_and_si128(gt0, lt9);
+        let valid_digit = _mm_and_si128(gt0, lt9);
 
-        let gtua = _mm_cmpgt_epi8(unchecked, ascii_ua);
-        let ltuf = _mm_cmplt_epi8(unchecked, ascii_uf);
-        let outside2 = _mm_and_si128(gtua, ltuf);
+        let (valid_la_lf, valid_ua_uf) = match check_case {
+            CheckCase::None => {
+                let gtua = _mm_cmpgt_epi8(unchecked, ascii_ua);
+                let ltuf = _mm_cmplt_epi8(unchecked, ascii_uf);
 
-        let gtla = _mm_cmpgt_epi8(unchecked, ascii_la);
-        let ltlf = _mm_cmplt_epi8(unchecked, ascii_lf);
-        let outside3 = _mm_and_si128(gtla, ltlf);
+                let gtla = _mm_cmpgt_epi8(unchecked, ascii_la);
+                let ltlf = _mm_cmplt_epi8(unchecked, ascii_lf);
 
-        let tmp = _mm_or_si128(outside1, outside2);
-        let ret = _mm_movemask_epi8(_mm_or_si128(tmp, outside3));
+                (
+                    Some(_mm_and_si128(gtla, ltlf)),
+                    Some(_mm_and_si128(gtua, ltuf)),
+                )
+            }
+            CheckCase::Lower => {
+                let gtla = _mm_cmpgt_epi8(unchecked, ascii_la);
+                let ltlf = _mm_cmplt_epi8(unchecked, ascii_lf);
+
+                (Some(_mm_and_si128(gtla, ltlf)), None)
+            }
+            CheckCase::Upper => {
+                let gtua = _mm_cmpgt_epi8(unchecked, ascii_ua);
+                let ltuf = _mm_cmplt_epi8(unchecked, ascii_uf);
+                (None, Some(_mm_and_si128(gtua, ltuf)))
+            }
+        };
+
+        let valid_letter = match (valid_la_lf, valid_ua_uf) {
+            (Some(valid_lower), Some(valid_upper)) => _mm_or_si128(valid_lower, valid_upper),
+            (Some(valid_lower), None) => valid_lower,
+            (None, Some(valid_upper)) => valid_upper,
+            _ => unreachable!(),
+        };
+
+        let ret = _mm_movemask_epi8(_mm_or_si128(valid_digit, valid_letter));
 
         if ret != T_MASK {
             return false;
@@ -145,13 +206,27 @@ pub unsafe fn hex_check_sse(mut src: &[u8]) -> bool {
 
         src = &src[16..];
     }
-    hex_check_fallback(src)
+    hex_check_fallback_with_case(src, check_case)
 }
 
 /// Hex decode src into dst.
 /// The length of src must be even and not zero.
 /// The length of dst must be at least src.len() / 2.
 pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+    hex_decode_with_case(src, dst, CheckCase::None)
+}
+
+/// Hex decode src into dst.
+/// The length of src must be even and not zero.
+/// The length of dst must be at least src.len() / 2.
+/// when check_case is CheckCase::Lower, the hex string must be lower case.
+/// when check_case is CheckCase::Upper, the hex string must be upper case.
+/// when check_case is CheckCase::None, the hex string can be lower case or upper case.
+pub fn hex_decode_with_case(
+    src: &[u8],
+    dst: &mut [u8],
+    check_case: CheckCase,
+) -> Result<(), Error> {
     if src.is_empty() {
         return Err(Error::InvalidLength(0));
     }
@@ -165,7 +240,7 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     if dst.len() < expect_dst_len {
         return Err(Error::InvalidLength(dst.len()));
     }
-    if !hex_check(src) {
+    if !hex_check_with_case(src, check_case) {
         return Err(Error::InvalidChar);
     }
     hex_decode_unchecked(src, dst);
@@ -237,9 +312,13 @@ pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::hex_check_fallback;
-    use crate::decode::hex_decode_fallback;
-    use crate::encode::hex_string;
+    use crate::decode::NIL;
+    use crate::{
+        decode::{
+            hex_check_fallback, hex_check_fallback_with_case, hex_decode_fallback, CheckCase,
+        },
+        encode::hex_string,
+    };
     use proptest::proptest;
 
     fn _test_decode_fallback(s: &String) {
@@ -263,10 +342,43 @@ mod tests {
 
     fn _test_check_fallback_true(s: &String) {
         assert!(hex_check_fallback(s.as_bytes()));
+        match (
+            s.contains(char::is_lowercase),
+            s.contains(char::is_uppercase),
+        ) {
+            (true, true) => {
+                assert!(!hex_check_fallback_with_case(
+                    s.as_bytes(),
+                    CheckCase::Lower
+                ));
+                assert!(!hex_check_fallback_with_case(
+                    s.as_bytes(),
+                    CheckCase::Upper
+                ));
+            }
+            (true, false) => {
+                assert!(hex_check_fallback_with_case(s.as_bytes(), CheckCase::Lower));
+                assert!(!hex_check_fallback_with_case(
+                    s.as_bytes(),
+                    CheckCase::Upper
+                ));
+            }
+            (false, true) => {
+                assert!(!hex_check_fallback_with_case(
+                    s.as_bytes(),
+                    CheckCase::Lower
+                ));
+                assert!(hex_check_fallback_with_case(s.as_bytes(), CheckCase::Upper));
+            }
+            (false, false) => {
+                assert!(hex_check_fallback_with_case(s.as_bytes(), CheckCase::Lower));
+                assert!(hex_check_fallback_with_case(s.as_bytes(), CheckCase::Upper));
+            }
+        }
     }
 
     proptest! {
-        #[test]
+    #[test]
         fn test_check_fallback_true(ref s in "[0-9a-fA-F]+") {
             _test_check_fallback_true(s);
         }
@@ -274,6 +386,14 @@ mod tests {
 
     fn _test_check_fallback_false(s: &String) {
         assert!(!hex_check_fallback(s.as_bytes()));
+        assert!(!hex_check_fallback_with_case(
+            s.as_bytes(),
+            CheckCase::Upper
+        ));
+        assert!(!hex_check_fallback_with_case(
+            s.as_bytes(),
+            CheckCase::Lower
+        ));
     }
 
     proptest! {
@@ -282,12 +402,66 @@ mod tests {
             _test_check_fallback_false(s);
         }
     }
+
+    #[test]
+    fn test_init_static_array_is_right() {
+        static OLD_UNHEX: [u8; 256] = [
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 0, 1, 2, 3, 4, 5,
+            6, 7, 8, 9, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 10, 11, 12, 13, 14, 15, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, 10, 11, 12, 13, 14, 15, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+        ];
+
+        static OLD_UNHEX4: [u8; 256] = [
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 0, 16, 32, 48,
+            64, 80, 96, 112, 128, 144, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 160, 176, 192, 208, 224,
+            240, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, 160, 176, 192, 208, 224, 240, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+            NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL, NIL,
+        ];
+
+        assert_eq!(OLD_UNHEX, crate::decode::UNHEX);
+        assert_eq!(OLD_UNHEX4, crate::decode::UNHEX4);
+    }
 }
 
 #[cfg(all(test, any(target_arch = "x86", target_arch = "x86_64")))]
 mod test_sse {
     use crate::decode::hex_check_sse;
+    use crate::decode::CheckCase;
     use proptest::proptest;
+
+    use super::hex_check_sse_with_case;
+
+    fn _test_check_sse_with_case(s: &String, check_case: CheckCase, expect_result: bool) {
+        if is_x86_feature_detected!("sse4.1") {
+            assert_eq!(
+                unsafe { hex_check_sse_with_case(s.as_bytes(), check_case) },
+                expect_result
+            )
+        }
+    }
 
     fn _test_check_sse_true(s: &String) {
         if is_x86_feature_detected!("sse4.1") {
@@ -296,9 +470,28 @@ mod test_sse {
     }
 
     proptest! {
-        #[test]
-        fn test_check_sse_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
+    #[test]
+    fn test_check_sse_true(ref s in "([0-9a-fA-F][0-9a-fA-F])+") {
             _test_check_sse_true(s);
+            _test_check_sse_with_case(s, CheckCase::None, true);
+            match (s.contains(char::is_lowercase), s.contains(char::is_uppercase)){
+                (true, true) => {
+                    _test_check_sse_with_case(s, CheckCase::Lower, false);
+                    _test_check_sse_with_case(s, CheckCase::Upper, false);
+                },
+                (true, false) => {
+                    _test_check_sse_with_case(s, CheckCase::Lower, true);
+                    _test_check_sse_with_case(s, CheckCase::Upper, false);
+                },
+                (false, true) => {
+                    _test_check_sse_with_case(s, CheckCase::Lower, false);
+                    _test_check_sse_with_case(s, CheckCase::Upper, true);
+                },
+                (false, false) => {
+                    _test_check_sse_with_case(s, CheckCase::Lower, true);
+                    _test_check_sse_with_case(s, CheckCase::Upper, true);
+                }
+            }
         }
     }
 
@@ -312,6 +505,9 @@ mod test_sse {
         #[test]
         fn test_check_sse_false(ref s in ".{16}[^0-9a-fA-F]+") {
             _test_check_sse_false(s);
+            _test_check_sse_with_case(s, CheckCase::None, false);
+            _test_check_sse_with_case(s, CheckCase::Lower, false);
+            _test_check_sse_with_case(s, CheckCase::Upper, false);
         }
     }
 }
