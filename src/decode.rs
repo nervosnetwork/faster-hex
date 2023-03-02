@@ -217,7 +217,7 @@ pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
 }
 
 /// Hex decode src into dst.
-/// The length of src must be even and not zero.
+/// The length of src must be even, and it's allowed to decode a zero length src.
 /// The length of dst must be at least src.len() / 2.
 /// when check_case is CheckCase::Lower, the hex string must be lower case.
 /// when check_case is CheckCase::Upper, the hex string must be upper case.
@@ -227,10 +227,6 @@ pub fn hex_decode_with_case(
     dst: &mut [u8],
     check_case: CheckCase,
 ) -> Result<(), Error> {
-    if src.is_empty() {
-        return Err(Error::InvalidLength(0));
-    }
-
     if src.len() & 1 != 0 {
         return Err(Error::InvalidLength(src.len()));
     }
@@ -448,11 +444,12 @@ mod tests {
 
 #[cfg(all(test, any(target_arch = "x86", target_arch = "x86_64")))]
 mod test_sse {
-    use crate::decode::hex_check_sse;
-    use crate::decode::CheckCase;
+    use crate::decode::{
+        hex_check, hex_check_fallback, hex_check_fallback_with_case, hex_check_sse,
+        hex_check_sse_with_case, hex_check_with_case, hex_decode, hex_decode_unchecked,
+        hex_decode_with_case, CheckCase,
+    };
     use proptest::proptest;
-
-    use super::hex_check_sse_with_case;
 
     fn _test_check_sse_with_case(s: &String, check_case: CheckCase, expect_result: bool) {
         if is_x86_feature_detected!("sse4.1") {
@@ -509,5 +506,25 @@ mod test_sse {
             _test_check_sse_with_case(s, CheckCase::Lower, false);
             _test_check_sse_with_case(s, CheckCase::Upper, false);
         }
+    }
+
+    #[test]
+    fn test_decode_zero_length_src_should_be_ok() {
+        let src = b"";
+        let mut dst = [0u8; 10];
+        assert!(hex_decode(src, &mut dst).is_ok());
+        assert!(hex_decode_with_case(src, &mut dst, CheckCase::None).is_ok());
+        assert!(hex_check(src));
+        assert!(hex_check_with_case(src, CheckCase::None));
+        assert!(hex_check_fallback(src));
+        assert!(hex_check_fallback_with_case(src, CheckCase::None));
+
+        if is_x86_feature_detected!("sse4.1") {
+            assert!(unsafe { hex_check_sse_with_case(src, CheckCase::None) });
+            assert!(unsafe { hex_check_sse(src) });
+        }
+
+        // this function have no return value, so we just execute it and expect no panic
+        hex_decode_unchecked(src, &mut dst);
     }
 }
