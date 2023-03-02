@@ -216,7 +216,9 @@ pub fn hex_encode_upper_fallback(src: &[u8], dst: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
-    use crate::encode::hex_encode_custom_case_fallback;
+    use crate::encode::{hex_encode, hex_encode_custom_case_fallback};
+
+    use crate::hex_encode_fallback;
     use core::str;
     use proptest::proptest;
 
@@ -238,5 +240,15 @@ mod tests {
             _test_encode_fallback(s, true);
             _test_encode_fallback(s, false);
         }
+    }
+
+    #[test]
+    fn test_encode_zero_length_src_should_be_ok() {
+        let src = b"";
+        let mut dst = [0u8; 10];
+        assert!(hex_encode(src, &mut dst).is_ok());
+
+        // this function have no return value, so we just execute it and expect no panic
+        hex_encode_fallback(src, &mut dst);
     }
 }
