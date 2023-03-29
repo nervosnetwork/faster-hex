@@ -16,10 +16,14 @@ exclude = [
     "CHANGELOG.md"
 ]
 
+[dependencies]
+serde = { version = "1.0", optional = true, features = ["derive"]}
+
 [features]
-default = ["std"]
+default = ["std", "serde"]
 std = ["alloc"]
 alloc = []
+serde = ["dep:serde"]
 
 
 
@@ -28,6 +32,9 @@ criterion = "0.3"
 rustc-hex = "1.0"
 hex = "0.3.2"
 proptest = "1.0"
+serde = { version = "1.0", features = ["derive"]}
+bytes = {version = "1.4.0"}
+serde_json ={ version = "*"}
 
 [[bench]]
 name = "hex"

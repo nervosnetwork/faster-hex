@@ -6,6 +6,10 @@ extern crate alloc;
 mod decode;
 mod encode;
 mod error;
+
+#[cfg(feature = "serde")]
+mod serde;
+
 pub use crate::decode::{
     hex_check, hex_check_fallback, hex_check_with_case, hex_decode, hex_decode_fallback,
     hex_decode_unchecked,
@@ -17,6 +21,12 @@ pub use crate::encode::{
 pub use crate::encode::{hex_string, hex_string_upper};
 
 pub use crate::error::Error;
+
+#[cfg(feature = "serde")]
+pub use crate::serde::{
+    deserialize, nopfx_ignorecase, nopfx_lowercase, nopfx_uppercase, serialize, withpfx_ignorecase,
+    withpfx_lowercase, withpfx_uppercase,
+};
 
 #[allow(deprecated)]
 pub use crate::encode::hex_to;
