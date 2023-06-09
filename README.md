@@ -32,6 +32,62 @@ Compare with [rustc-hex](https://crates.io/crates/rustc-hex):
 * Encoding ~2.5x over
 * Decoding ~7x over
 
+## Examples
+Encode to hex
+
+```rust
+use faster_hex::hex_string;
+
+let result = hex_string(b"Hello world!");
+assert_eq!(result, "48656c6c6f20776f726c6421");
+```
+Encode to upper case hex
+```rust
+use faster_hex::hex_string_upper;
+
+let result = hex_string_upper(b"Hello world!");
+assert_eq!(result, "48656C6C6F20776F726C6421");
+```
+
+Decode
+```rust
+use faster_hex::hex_decode;
+
+let src = b"48656c6c6f20776f726c6421";
+let mut dst = vec![0; src.len() / 2];
+hex_decode(src, &mut dst).unwrap();
+assert_eq!(dst, b"Hello world!");
+```
+Decode with case check
+```rust
+use faster_hex::{hex_decode_with_case, CheckCase};
+
+let src = b"48656c6c6f20776f726c6421";
+let mut dst = vec![0; src.len() / 2];
+
+assert!(hex_decode_with_case(src, &mut dst, CheckCase::Lower).is_ok());
+assert_eq!(dst, b"Hello world!");
+
+assert!(hex_decode_with_case(src, &mut dst, CheckCase::None).is_ok());
+assert_eq!(dst, b"Hello world!");
+
+assert!(hex_decode_with_case(src, &mut dst, CheckCase::Upper).is_err());
+```
+
+Serde feature
+```rust
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Simple {
+  #[serde(with = "faster_hex")]
+  foo: Vec<u8>,
+  #[serde(with = "faster_hex::nopfx_lowercase")]
+  bar: Vec<u8>,
+}
+```
+
 
 ## Notice
 
