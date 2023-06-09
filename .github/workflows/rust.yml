@@ -1,5 +1,5 @@
 
-name: RocksDB CI
+name: nervosnetwork/faster-hex CI
 
 on: [push, pull_request]
 
