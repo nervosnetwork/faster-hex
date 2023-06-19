@@ -1,4 +1,16 @@
-# [0.6.1](https://github.com/nervosnetwork/faster-hex/compare/v0.5.0...v0.6.1) (2021-08-31)
+# [0.8.0](https://github.com/nervosnetwork/faster-hex/compare/v0.7.0...v0.8.0) (2023-02-27)
+
+### Features
+
+* Add serde feature for faster-hex ([pr#28](https://github.com/nervosnetwork/faster-hex/pull/28))
+
+# [0.7.0](https://github.com/nervosnetwork/faster-hex/compare/v0.6.1...v0.7.0) (2023-02-27)
+
+### Features
+
+* Allow faster-hex encode/decode to/from lower/uppercase  ([pr#26](https://github.com/nervosnetwork/faster-hex/pull/26))
+### Bug Fixes
+* Improve encode/decode length check ([pr#27](https://github.com/nervosnetwork/faster-hex/pull/27))
 
 ### Features
 
