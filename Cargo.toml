@@ -34,7 +34,7 @@ hex = "0.3.2"
 proptest = "1.0"
 serde = { version = "1.0", features = ["derive"]}
 bytes = {version = "1.4.0"}
-serde_json ={ version = "*"}
+serde_json ={ version = "1.0"}
 
 [[bench]]
 name = "hex"
