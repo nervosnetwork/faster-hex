@@ -7,6 +7,7 @@ mod internal {
         decode::{hex_decode_with_case, CheckCase},
         encode::hex_encode_custom,
     };
+    use alloc::borrow::Cow;
     use serde::{de::Error, Deserializer, Serializer};
     use std::iter::FromIterator;
 
@@ -50,16 +51,16 @@ mod internal {
         D: Deserializer<'de>,
         T: FromIterator<u8>,
     {
-        let raw_src: &[u8] = serde::Deserialize::deserialize(deserializer)?;
-        if with_prefix && (raw_src.len() < 2 || raw_src[0] != b'0' || raw_src[1] != b'x') {
+        let raw_src: Cow<str> = serde::Deserialize::deserialize(deserializer)?;
+        if with_prefix && !raw_src.starts_with("0x") {
             return Err(D::Error::custom("invalid prefix".to_string()));
         }
 
         let src: &[u8] = {
             if with_prefix {
-                &raw_src[2..]
+                raw_src[2..].as_bytes()
             } else {
-                raw_src
+                raw_src.as_bytes()
             }
         };
 
@@ -94,7 +95,6 @@ where
 }
 
 /// Generate module with serde methods
-#[macro_export]
 macro_rules! faster_hex_serde_macros {
     ($mod_name:ident, $with_pfx:expr, $check_case:expr) => {
         /// Serialize and deserialize with or without 0x-prefix,
@@ -160,6 +160,18 @@ mod tests {
     struct Simple {
         #[serde(with = "faster_hex")]
         bar: Vec<u8>,
+    }
+
+    #[test]
+    fn test_deserialize_escaped() {
+        // 0x03 but escaped.
+        let x: Simple = serde_json::from_str(
+            r#"{
+            "bar": "\u0030x\u00303"
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(x.bar, b"\x03");
     }
 
     fn _test_simple(src: &str) {
