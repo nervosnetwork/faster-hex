@@ -124,8 +124,8 @@ mod tests {
                 Vectorization::AVX2 => assert!(is_x86_feature_detected!("avx2")),
                 Vectorization::SSE41 => assert!(is_x86_feature_detected!("sse4.1")),
                 Vectorization::None => assert!(
-                    !cfg!(target_feature = "sse") ||
-                    !is_x86_feature_detected!("avx2") && !is_x86_feature_detected!("sse4.1")
+                    !cfg!(target_feature = "sse")
+                        || !is_x86_feature_detected!("avx2") && !is_x86_feature_detected!("sse4.1")
                 ),
             }
         }
