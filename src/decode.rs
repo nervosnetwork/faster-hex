@@ -505,11 +505,15 @@ mod test_sse {
     }
 
     #[test]
-    fn test_decode_zero_length_src_should_be_ok() {
+    fn test_decode_zero_length_src_should_not_be_ok() {
         let src = b"";
         let mut dst = [0u8; 10];
-        assert!(hex_decode(src, &mut dst).is_ok());
-        assert!(hex_decode_with_case(src, &mut dst, CheckCase::None).is_ok());
+        assert!(
+            matches!(hex_decode(src, &mut dst), Err(crate::Error::InvalidLength(len)) if len == 20)
+        );
+        assert!(
+            matches!(hex_decode_with_case(src, &mut dst, CheckCase::None), Err(crate::Error::InvalidLength(len)) if len == 20)
+        );
         assert!(hex_check(src));
         assert!(hex_check_with_case(src, CheckCase::None));
         assert!(hex_check_fallback(src));
