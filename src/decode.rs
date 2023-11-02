@@ -210,15 +210,15 @@ pub unsafe fn hex_check_sse_with_case(mut src: &[u8], check_case: CheckCase) -> 
 }
 
 /// Hex decode src into dst.
-/// The length of src must be even and not zero.
-/// The length of dst must be at least src.len() / 2.
+/// The length of src must be even, and it's allowed to decode a zero length src.
+/// The length of dst must be src.len() / 2.
 pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     hex_decode_with_case(src, dst, CheckCase::None)
 }
 
 /// Hex decode src into dst.
 /// The length of src must be even, and it's allowed to decode a zero length src.
-/// The length of dst must be at least src.len() / 2.
+/// The length of dst must be src.len() / 2.
 /// when check_case is CheckCase::Lower, the hex string must be lower case.
 /// when check_case is CheckCase::Upper, the hex string must be upper case.
 /// when check_case is CheckCase::None, the hex string can be lower case or upper case.
@@ -548,6 +548,24 @@ mod test_sse {
             let mut dst = [0u8; 33];
             let result = hex_decode(short_str.as_slice(), &mut dst);
             assert!(matches!(result, Err(crate::Error::InvalidLength(len)) if len == 66))
+        }
+    }
+
+    // if both `src` and `dst` are empty, it's ok
+    // if `src` is empty, but `dst` is not empty, it should be reported as error
+    #[test]
+    fn test_decode_zero_src() {
+        let zero_src = b"";
+        {
+            let mut zero_dst = [];
+            assert!(hex_decode(zero_src, &mut zero_dst).is_ok());
+        }
+
+        {
+            let mut non_zero_dst = [0u8; 1];
+            assert!(
+                matches!(hex_decode(zero_src, &mut non_zero_dst), Err(crate::Error::InvalidLength(len)) if len == 2)
+            );
         }
     }
 }
