@@ -227,15 +227,11 @@ pub fn hex_decode_with_case(
     dst: &mut [u8],
     check_case: CheckCase,
 ) -> Result<(), Error> {
-    if src.len() & 1 != 0 {
-        return Err(Error::InvalidLength(src.len()));
+    let len = dst.len().checked_mul(2).unwrap();
+    if src.len() < len || ((src.len() & 1) != 0) {
+        return Err(Error::InvalidLength(len));
     }
 
-    let expect_dst_len = src.len().checked_div(2).unwrap();
-
-    if dst.len() < expect_dst_len {
-        return Err(Error::InvalidLength(dst.len()));
-    }
     if !hex_check_with_case(src, check_case) {
         return Err(Error::InvalidChar);
     }
