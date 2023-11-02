@@ -523,4 +523,27 @@ mod test_sse {
         // this function have no return value, so we just execute it and expect no panic
         hex_decode_unchecked(src, &mut dst);
     }
+
+    // If `dst's length` is greater than `src's length * 2`, `hex_decode` should return error
+    #[test]
+    fn test_if_dst_len_gt_expect_len_should_return_error() {
+        let short_str = b"8e40af02265360d59f4ecf9ae9ebf8f00a3118408f5a9cdcbcc9c0f93642f3"; // 62 bytes
+        {
+            let mut dst = [0u8; 31];
+            let result = hex_decode(short_str.as_slice(), &mut dst);
+            assert!(result.is_ok());
+        }
+
+        {
+            let mut dst = [0u8; 32];
+            let result = hex_decode(short_str.as_slice(), &mut dst);
+            assert!(matches!(result, Err(crate::Error::InvalidLength(len)) if len == 64))
+        }
+
+        {
+            let mut dst = [0u8; 33];
+            let result = hex_decode(short_str.as_slice(), &mut dst);
+            assert!(matches!(result, Err(crate::Error::InvalidLength(len)) if len == 66))
+        }
+    }
 }
