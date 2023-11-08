@@ -227,7 +227,10 @@ pub fn hex_decode_with_case(
     dst: &mut [u8],
     check_case: CheckCase,
 ) -> Result<(), Error> {
-    let len = dst.len().checked_mul(2).unwrap();
+    let len = dst
+        .len()
+        .checked_mul(2)
+        .ok_or(Error::InvalidLength(dst.len()))?;
     if src.len() < len || ((src.len() & 1) != 0) {
         return Err(Error::InvalidLength(len));
     }
