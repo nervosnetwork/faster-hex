@@ -2,6 +2,7 @@
 pub enum Error {
     InvalidChar,
     InvalidLength(usize),
+    Overflow,
 }
 
 impl ::core::fmt::Debug for Error {
@@ -9,6 +10,7 @@ impl ::core::fmt::Debug for Error {
         match *self {
             Error::InvalidLength(len) => write!(f, "Invalid input length {len}"),
             Error::InvalidChar => write!(f, "Invalid character"),
+            Error::Overflow => write!(f, "Overflow"),
         }
     }
 }
@@ -25,6 +27,7 @@ impl ::std::error::Error for Error {
         match *self {
             Error::InvalidChar => "invalid character",
             Error::InvalidLength(_) => "invalid length",
+            Error::Overflow => "overflow",
         }
     }
 }
