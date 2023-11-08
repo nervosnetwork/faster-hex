@@ -60,7 +60,7 @@ pub(crate) fn vectorization_support() -> Vectorization {
             };
         }
 
-        let val = unsafe { vectorization_support_no_cache_x86() };
+        let val = vectorization_support_no_cache_x86();
 
         FLAGS.store(val as u8, Ordering::Relaxed);
         return val;
@@ -71,7 +71,7 @@ pub(crate) fn vectorization_support() -> Vectorization {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cold]
-unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
+fn vectorization_support_no_cache_x86() -> Vectorization {
     #[cfg(target_arch = "x86")]
     use core::arch::x86::__cpuid_count;
     #[cfg(target_arch = "x86_64")]
@@ -83,7 +83,7 @@ unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
         return Vectorization::None;
     }
 
-    let proc_info_ecx = __cpuid_count(1, 0).ecx;
+    let proc_info_ecx = unsafe { __cpuid_count(1, 0) }.ecx;
     let have_sse4 = (proc_info_ecx >> 19) & 1 == 1;
     // If there's no SSE4 there can't be AVX2.
     if !have_sse4 {
@@ -94,7 +94,8 @@ unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
     let have_osxsave = (proc_info_ecx >> 27) & 1 == 1;
     let have_avx = (proc_info_ecx >> 27) & 1 == 1;
     if have_xsave && have_osxsave && have_avx {
-        if avx2_support_no_cache_x86() {
+        // # Safety: We checked that the processor supports xsave
+        if unsafe { avx2_support_no_cache_x86() } {
             return Vectorization::AVX2;
         }
     }
