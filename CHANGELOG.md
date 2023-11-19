@@ -1,3 +1,16 @@
+# [0.8.2](https://github.com/nervosnetwork/faster-hex/compare/v0.8.1...v0.8.2) (2023-11-19)
+
+### Bug Fixes
+
+* Fix `hex_decode` panic when `dst.len` > `src.len * 2` [pr#38](https://github.com/nervosnetwork/faster-hex/pull/38)
+
+# [0.8.1](https://github.com/nervosnetwork/faster-hex/compare/v0.8.0...v0.8.1) (2023-11-19)
+
+### Bug Fixes
+
+* Fix Fails to build on x86 without SSE2 [pr#33](https://github.com/nervosnetwork/faster-hex/pull/33)
+* Fix deserializing owned hex string [pr#35](https://github.com/nervosnetwork/faster-hex/pull/35)
+
 # [0.8.0](https://github.com/nervosnetwork/faster-hex/compare/v0.7.0...v0.8.0) (2023-02-27)
 
 ### Features
