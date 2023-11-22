@@ -1,6 +1,6 @@
 [package]
 name = "faster-hex"
-version = "0.8.1"
+version = "0.8.2"
 authors = ["zhangsoledad <787953403@qq.com>"]
 edition = "2018"
 keywords = ["simd", "hex", "no-std"]
