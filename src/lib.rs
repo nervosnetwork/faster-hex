@@ -60,7 +60,7 @@ pub(crate) fn vectorization_support() -> Vectorization {
             };
         }
 
-        let val = unsafe { vectorization_support_no_cache_x86() };
+        let val = vectorization_support_no_cache_x86();
 
         FLAGS.store(val as u8, Ordering::Relaxed);
         return val;
@@ -69,15 +69,13 @@ pub(crate) fn vectorization_support() -> Vectorization {
     Vectorization::None
 }
 
-// We enable xsave so it can inline the _xgetbv call.
-#[target_feature(enable = "xsave")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cold]
-unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
+fn vectorization_support_no_cache_x86() -> Vectorization {
     #[cfg(target_arch = "x86")]
-    use core::arch::x86::{__cpuid_count, _xgetbv};
+    use core::arch::x86::__cpuid_count;
     #[cfg(target_arch = "x86_64")]
-    use core::arch::x86_64::{__cpuid_count, _xgetbv};
+    use core::arch::x86_64::__cpuid_count;
 
     // SGX doesn't support CPUID,
     // If there's no SSE there might not be CPUID and there's no SSE4.1/AVX2
@@ -85,27 +83,46 @@ unsafe fn vectorization_support_no_cache_x86() -> Vectorization {
         return Vectorization::None;
     }
 
-    let proc_info_ecx = __cpuid_count(1, 0).ecx;
+    let proc_info_ecx = unsafe { __cpuid_count(1, 0) }.ecx;
     let have_sse4 = (proc_info_ecx >> 19) & 1 == 1;
     // If there's no SSE4 there can't be AVX2.
     if !have_sse4 {
         return Vectorization::None;
     }
+
     let have_xsave = (proc_info_ecx >> 26) & 1 == 1;
     let have_osxsave = (proc_info_ecx >> 27) & 1 == 1;
     let have_avx = (proc_info_ecx >> 27) & 1 == 1;
     if have_xsave && have_osxsave && have_avx {
-        let xcr0 = _xgetbv(0);
-        let os_avx_support = xcr0 & 6 == 6;
-        if os_avx_support {
-            let extended_features_ebx = __cpuid_count(7, 0).ebx;
-            let have_avx2 = (extended_features_ebx >> 5) & 1 == 1;
-            if have_avx2 {
-                return Vectorization::AVX2;
-            }
+        // # Safety: We checked that the processor supports xsave
+        if unsafe { avx2_support_no_cache_x86() } {
+            return Vectorization::AVX2;
         }
     }
     Vectorization::SSE41
+}
+
+// We enable xsave so it can inline the _xgetbv call.
+// # Safety: Safe as long it's only called when xsave is supported
+#[target_feature(enable = "xsave")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cold]
+unsafe fn avx2_support_no_cache_x86() -> bool {
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::{__cpuid_count, _xgetbv};
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::{__cpuid_count, _xgetbv};
+
+    let xcr0 = _xgetbv(0);
+    let os_avx_support = xcr0 & 6 == 6;
+    if os_avx_support {
+        let extended_features_ebx = __cpuid_count(7, 0).ebx;
+        let have_avx2 = (extended_features_ebx >> 5) & 1 == 1;
+        if have_avx2 {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
