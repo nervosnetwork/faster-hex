@@ -43,7 +43,10 @@ pub(crate) enum Vectorization {
 
 #[inline(always)]
 pub(crate) fn vectorization_support() -> Vectorization {
-    #[cfg(all(any(target_arch = "x86", target_arch = "x86_64")))]
+    #[cfg(all(
+              any(target_arch = "x86", target_arch = "x86_64"),
+              target_feature = "sse"
+))]
     {
         use core::sync::atomic::{AtomicU8, Ordering};
         static FLAGS: AtomicU8 = AtomicU8::new(u8::MAX);
