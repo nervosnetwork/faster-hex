@@ -211,14 +211,14 @@ pub unsafe fn hex_check_sse_with_case(mut src: &[u8], check_case: CheckCase) -> 
 
 /// Hex decode src into dst.
 /// The length of src must be even, and it's allowed to decode a zero length src.
-/// The length of dst must be src.len() / 2.
+/// The length of dst must be at least src.len() / 2.
 pub fn hex_decode(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     hex_decode_with_case(src, dst, CheckCase::None)
 }
 
 /// Hex decode src into dst.
 /// The length of src must be even, and it's allowed to decode a zero length src.
-/// The length of dst must be src.len() / 2.
+/// The length of dst must be at least src.len() / 2.
 /// when check_case is CheckCase::Lower, the hex string must be lower case.
 /// when check_case is CheckCase::Upper, the hex string must be upper case.
 /// when check_case is CheckCase::None, the hex string can be lower case or upper case.
