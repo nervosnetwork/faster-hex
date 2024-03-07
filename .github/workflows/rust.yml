@@ -17,14 +17,10 @@ jobs:
           remove-android: 'true'
           remove-haskell: 'true'
       - name: Checkout sources
-        uses: actions/checkout@v2
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
+        uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.73.0
-          components: rustfmt
-          profile: minimal
-          override: true
+          toolchain: 1.71.1
       - name: Run rustfmt
         uses: actions-rs/cargo@v1
         with:
@@ -67,13 +63,9 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: true
-      - name: Install rust
-        uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.73.0
-          target: ${{ matrix.target }}
-          profile: minimal
-          override: true
+          toolchain: 1.71.1
       - name: Run tests
         if: runner.os == 'Linux' || runner.os == 'Windows'
         uses: actions-rs/cargo@v1
