@@ -1,6 +1,7 @@
 ### Features
 
 * Add PartialEq derived macro to Error in order to be able to test error cases
+* Allow `[no_alloc]` for faster-hex (without any feature), hex_string(_upper)() rely on heapless:String
 
 # [0.9.0](https://github.com/nervosnetwork/faster-hex/compare/v0.9.0..v0.8.2) (2023-11-22)
 Re create `v0.9.0`, since `v0.8.2` introduced a [break change](https://github.com/nervosnetwork/faster-hex/issues/43#issuecomment-1822551961), 
