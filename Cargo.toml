@@ -17,11 +17,11 @@ exclude = [
 ]
 
 [dependencies]
-serde = { version = "1.0", optional = true }
+serde = { version = "1.0", default-features = false, optional = true }
 
 [features]
 default = ["std", "serde"]
-std = ["alloc"]
+std = ["alloc", "serde?/std"]
 alloc = []
 serde = ["dep:serde"]
 

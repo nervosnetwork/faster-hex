@@ -11,7 +11,7 @@ use crate::error::Error;
 static TABLE_LOWER: &[u8] = b"0123456789abcdef";
 static TABLE_UPPER: &[u8] = b"0123456789ABCDEF";
 
-#[cfg(any(feature = "alloc", test))]
+#[cfg(feature = "alloc")]
 fn hex_string_custom_case(src: &[u8], upper_case: bool) -> String {
     let mut buffer = vec![0; src.len() * 2];
     if upper_case {
@@ -28,12 +28,12 @@ fn hex_string_custom_case(src: &[u8], upper_case: bool) -> String {
     }
 }
 
-#[cfg(any(feature = "alloc", test))]
+#[cfg(feature = "alloc")]
 pub fn hex_string(src: &[u8]) -> String {
     hex_string_custom_case(src, false)
 }
 
-#[cfg(any(feature = "alloc", test))]
+#[cfg(feature = "alloc")]
 pub fn hex_string_upper(src: &[u8]) -> String {
     hex_string_custom_case(src, true)
 }

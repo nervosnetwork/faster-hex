@@ -130,9 +130,14 @@ unsafe fn avx2_support_no_cache_x86() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::{hex_decode, hex_decode_with_case, CheckCase};
+    use crate::decode::hex_decode;
+    #[cfg(feature = "alloc")]
+    use crate::decode::{hex_decode_with_case, CheckCase};
+    #[cfg(feature = "alloc")]
     use crate::encode::{hex_encode, hex_string};
-    use crate::{hex_encode_upper, hex_string_upper, vectorization_support, Vectorization};
+    #[cfg(feature = "alloc")]
+    use crate::{hex_encode_upper, hex_string_upper};
+    use crate::{vectorization_support, Vectorization};
     use proptest::proptest;
 
     #[test]
@@ -153,6 +158,7 @@ mod tests {
         assert_eq!(vector_support, Vectorization::None);
     }
 
+    #[cfg(feature = "alloc")]
     fn _test_hex_encode(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
         {
@@ -174,6 +180,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "alloc")]
     proptest! {
         #[test]
         fn test_hex_encode(ref s in ".*") {
@@ -181,6 +188,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn _test_hex_decode(s: &String) {
         let len = s.as_bytes().len();
 
@@ -206,6 +214,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "alloc")]
     proptest! {
         #[test]
         fn test_hex_decode(ref s in ".+") {

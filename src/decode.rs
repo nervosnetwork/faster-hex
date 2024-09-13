@@ -304,15 +304,15 @@ pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "alloc")]
+    use crate::decode::hex_decode_fallback;
     use crate::decode::NIL;
-    use crate::{
-        decode::{
-            hex_check_fallback, hex_check_fallback_with_case, hex_decode_fallback, CheckCase,
-        },
-        encode::hex_string,
-    };
+    use crate::decode::{hex_check_fallback, hex_check_fallback_with_case, CheckCase};
+    #[cfg(feature = "alloc")]
+    use crate::encode::hex_string;
     use proptest::proptest;
 
+    #[cfg(feature = "alloc")]
     fn _test_decode_fallback(s: &String) {
         let len = s.as_bytes().len();
         let mut dst = Vec::with_capacity(len);
@@ -325,6 +325,7 @@ mod tests {
         assert_eq!(&dst[..], s.as_bytes());
     }
 
+    #[cfg(feature = "alloc")]
     proptest! {
         #[test]
         fn test_decode_fallback(ref s in ".+") {
