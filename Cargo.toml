@@ -25,7 +25,8 @@ std = ["alloc", "serde?/std"]
 alloc = []
 serde = ["dep:serde"]
 
-
+[target.'cfg(not(feature = "alloc"))'.dependencies]
+heapless = { version = "0.8" }
 
 [dev-dependencies]
 criterion = "0.3"

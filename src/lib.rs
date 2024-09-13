@@ -15,10 +15,9 @@ pub use crate::decode::{
     hex_decode_unchecked,
 };
 pub use crate::encode::{
-    hex_encode, hex_encode_fallback, hex_encode_upper, hex_encode_upper_fallback,
+    hex_encode, hex_encode_fallback, hex_encode_upper, hex_encode_upper_fallback, hex_string,
+    hex_string_upper,
 };
-#[cfg(feature = "alloc")]
-pub use crate::encode::{hex_string, hex_string_upper};
 
 pub use crate::error::Error;
 
@@ -130,15 +129,13 @@ unsafe fn avx2_support_no_cache_x86() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::hex_decode;
-    #[cfg(feature = "alloc")]
-    use crate::decode::{hex_decode_with_case, CheckCase};
-    #[cfg(feature = "alloc")]
+    use crate::decode::{hex_decode, hex_decode_with_case, CheckCase};
     use crate::encode::{hex_encode, hex_string};
-    #[cfg(feature = "alloc")]
-    use crate::{hex_encode_upper, hex_string_upper};
-    use crate::{vectorization_support, Vectorization};
+    use crate::{hex_encode_upper, hex_string_upper, vectorization_support, Vectorization};
     use proptest::proptest;
+
+    #[cfg(not(feature = "alloc"))]
+    const CAPACITY: usize = 128;
 
     #[test]
     fn test_feature_detection() {
@@ -158,25 +155,30 @@ mod tests {
         assert_eq!(vector_support, Vectorization::None);
     }
 
-    #[cfg(feature = "alloc")]
     fn _test_hex_encode(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
         {
             let encode = &*hex_encode(s.as_bytes(), &mut buffer).unwrap();
 
+            #[cfg(feature = "alloc")]
             let hex_string = hex_string(s.as_bytes());
+            #[cfg(not(feature = "alloc"))]
+            let hex_string = hex_string::<CAPACITY>(s.as_bytes());
 
             assert_eq!(encode, hex::encode(s));
-            assert_eq!(hex_string, hex::encode(s));
+            assert_eq!(hex_string.as_str(), hex::encode(s));
         }
 
         {
             let encode_upper = &*hex_encode_upper(s.as_bytes(), &mut buffer).unwrap();
 
+            #[cfg(feature = "alloc")]
             let hex_string_upper = hex_string_upper(s.as_bytes());
+            #[cfg(not(feature = "alloc"))]
+            let hex_string_upper = hex_string_upper::<CAPACITY>(s.as_bytes());
 
             assert_eq!(encode_upper, hex::encode_upper(s));
-            assert_eq!(hex_string_upper, hex::encode_upper(s));
+            assert_eq!(hex_string_upper.as_str(), hex::encode_upper(s));
         }
     }
 
@@ -188,14 +190,23 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(not(feature = "alloc"))]
+    proptest! {
+        #[test]
+        fn test_hex_encode(ref s in ".{0,16}") {
+            _test_hex_encode(s);
+        }
+    }
+
     fn _test_hex_decode(s: &String) {
         let len = s.as_bytes().len();
-
         {
             let mut dst = Vec::with_capacity(len);
             dst.resize(len, 0);
+            #[cfg(feature = "alloc")]
             let hex_string = hex_string(s.as_bytes());
+            #[cfg(not(feature = "alloc"))]
+            let hex_string = hex_string::<CAPACITY>(s.as_bytes());
 
             hex_decode(hex_string.as_bytes(), &mut dst).unwrap();
 
@@ -206,7 +217,10 @@ mod tests {
         {
             let mut dst = Vec::with_capacity(len);
             dst.resize(len, 0);
+            #[cfg(feature = "alloc")]
             let hex_string_upper = hex_string_upper(s.as_bytes());
+            #[cfg(not(feature = "alloc"))]
+            let hex_string_upper = hex_string_upper::<CAPACITY>(s.as_bytes());
 
             hex_decode_with_case(hex_string_upper.as_bytes(), &mut dst, CheckCase::Upper).unwrap();
 
@@ -218,6 +232,14 @@ mod tests {
     proptest! {
         #[test]
         fn test_hex_decode(ref s in ".+") {
+            _test_hex_decode(s);
+        }
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    proptest! {
+        #[test]
+        fn test_hex_decode(ref s in ".{1,16}") {
             _test_hex_decode(s);
         }
     }
