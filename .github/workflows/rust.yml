@@ -9,10 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.71.1
+          toolchain: 1.73.0
+          components: rustfmt
       - name: Run rustfmt
         uses: actions-rs/cargo@v1
         with:
@@ -23,7 +24,7 @@ jobs:
     name: Security audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: actions-rs/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -43,12 +44,13 @@ jobs:
             os: windows-2019
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.71.1
+          toolchain: 1.73.0
+          components: rustfmt
       - name: Run tests
         if: runner.os == 'Linux' || runner.os == 'Windows'
         uses: actions-rs/cargo@v1
