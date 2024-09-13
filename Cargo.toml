@@ -23,7 +23,7 @@ serde = { version = "1.0", default-features = false, optional = true }
 default = ["std", "serde"]
 std = ["alloc", "serde?/std"]
 alloc = []
-serde = ["dep:serde"]
+serde = ["dep:serde", "alloc"]
 
 [target.'cfg(not(feature = "alloc"))'.dependencies]
 heapless = { version = "0.8" }
