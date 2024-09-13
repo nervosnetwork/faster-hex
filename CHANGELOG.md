@@ -1,3 +1,7 @@
+### Features
+
+* Add PartialEq derived macro to Error in order to be able to test error cases
+
 # [0.9.0](https://github.com/nervosnetwork/faster-hex/compare/v0.9.0..v0.8.2) (2023-11-22)
 Re create `v0.9.0`, since `v0.8.2` introduced a [break change](https://github.com/nervosnetwork/faster-hex/issues/43#issuecomment-1822551961), 
 
