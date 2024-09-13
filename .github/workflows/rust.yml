@@ -8,14 +8,6 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 512
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
       - name: Checkout sources
         uses: actions/checkout@v2
       - name: Install rust
@@ -54,15 +46,6 @@ jobs:
           - build: windows-2019
             os: windows-2019
     steps:
-      - name: Maximize build space
-        if: runner.os == 'Linux'
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 512
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
