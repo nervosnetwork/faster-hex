@@ -49,7 +49,7 @@ jobs:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.73.0
+          toolchain: 1.74.0
           components: rustfmt
       - name: Run tests
         if: runner.os == 'Linux' || runner.os == 'Windows'

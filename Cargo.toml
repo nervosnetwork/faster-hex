@@ -29,7 +29,7 @@ serde = ["dep:serde", "alloc"]
 heapless = { version = "0.8" }
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.5"
 rustc-hex = "1.0"
 hex = "0.3.2"
 proptest = "1.0"
