@@ -3,6 +3,9 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+#[cfg(target_arch = "aarch64")]
+use core::arch::aarch64::*;
+
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec};
 
@@ -98,11 +101,22 @@ pub fn hex_encode_custom<'a>(
             crate::Vectorization::AVX2 => unsafe { hex_encode_avx2(src, dst, upper_case) },
             crate::Vectorization::SSE41 => unsafe { hex_encode_sse41(src, dst, upper_case) },
             crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
+            _ => unreachable!(),
         }
         // Safety: We just wrote valid utf8 hex string into the dst
         return Ok(unsafe { mut_str(dst) });
     }
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    #[cfg(target_arch = "aarch64")]
+    {
+        match crate::vectorization_support() {
+            crate::Vectorization::Neon => unsafe { hex_encode_neon(src, dst, upper_case) },
+            crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
+            _ => unreachable!(),
+        }
+        // Safety: We just wrote valid utf8 hex string into the dst
+        return Ok(unsafe { mut_str(dst) });
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     {
         hex_encode_custom_case_fallback(src, dst, upper_case);
         // Saftey: We just wrote valid utf8 hex string into the dst
@@ -207,6 +221,49 @@ unsafe fn hex_encode_sse41(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
 
         _mm_storeu_si128(dst.as_mut_ptr().offset(i * 2) as *mut _, res1);
         _mm_storeu_si128(dst.as_mut_ptr().offset(i * 2 + 16) as *mut _, res2);
+        src = &src[16..];
+        i += 16;
+    }
+
+    let i = i as usize;
+    hex_encode_custom_case_fallback(src, &mut dst[i * 2..], upper_case);
+}
+
+#[target_feature(enable = "neon")]
+#[cfg(target_arch = "aarch64")]
+unsafe fn hex_encode_neon(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
+    let ascii_zero = vdupq_n_u8(b'0');
+    let nines = vdupq_n_u8(9);
+    let ascii_a = if upper_case {
+        vdupq_n_u8(b'A' - 9 - 1)
+    } else {
+        vdupq_n_u8(b'a' - 9 - 1)
+    };
+    let and4bits = vdupq_n_u8(0xf);
+
+    let mut i = 0_isize;
+
+    while src.len() >= 16 {
+        let invec = vld1q_u8(src.as_ptr() as *const _);
+
+        let masked1 = vandq_u8(invec, and4bits);
+        let masked2 = vandq_u8(vshrq_n_u8::<4>(invec), and4bits);
+
+        // return 0xff corresponding to the elements > 9, or 0x00 otherwise
+        let cmpmask1 = vcgtq_u8(masked1, nines);
+        let cmpmask2 = vcgtq_u8(masked2, nines);
+
+        // add '0' or the offset depending on the masks
+        let masked1 = vaddq_u8(masked1, vbslq_u8(cmpmask1, ascii_a, ascii_zero));
+        let masked2 = vaddq_u8(masked2, vbslq_u8(cmpmask2, ascii_a, ascii_zero));
+
+        // interleave masked1 and masked2 bytes
+        let res1 = vzip1q_u8(masked2, masked1);
+        let res2 = vzip2q_u8(masked2, masked1);
+
+        vst1q_u8(dst.as_mut_ptr().offset(i * 2) as *mut _, res1);
+        vst1q_u8(dst.as_mut_ptr().offset(i * 2 + 16) as *mut _, res2);
+
         src = &src[16..];
         i += 16;
     }

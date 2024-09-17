@@ -110,6 +110,7 @@ pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
                 hex_check_sse_with_case(src, check_case)
             },
             crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
+            _ => unreachable!(),
         }
     }
 
@@ -246,7 +247,8 @@ pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
             crate::Vectorization::AVX2 => unsafe { hex_decode_avx2(src, dst) },
             crate::Vectorization::None | crate::Vectorization::SSE41 => {
                 hex_decode_fallback(src, dst)
-            }
+            },
+            _ => unreachable!(),
         }
     }
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
