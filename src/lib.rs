@@ -33,6 +33,9 @@ pub use crate::encode::hex_to;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use crate::decode::{hex_check_sse, hex_check_sse_with_case};
 
+#[cfg(target_arch = "aarch64")]
+pub use crate::decode::{hex_check_neon, hex_check_neon_with_case};
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[allow(dead_code)]
 pub(crate) enum Vectorization {
