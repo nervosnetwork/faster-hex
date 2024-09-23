@@ -94,7 +94,7 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
 
     let have_xsave = (proc_info_ecx >> 26) & 1 == 1;
     let have_osxsave = (proc_info_ecx >> 27) & 1 == 1;
-    let have_avx = (proc_info_ecx >> 27) & 1 == 1;
+    let have_avx = (proc_info_ecx >> 28) & 1 == 1;
     if have_xsave && have_osxsave && have_avx {
         // # Safety: We checked that the processor supports xsave
         if unsafe { avx2_support_no_cache_x86() } {
