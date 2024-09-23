@@ -34,6 +34,7 @@ pub use crate::encode::hex_to;
 pub use crate::decode::{hex_check_sse, hex_check_sse_with_case};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 pub(crate) enum Vectorization {
     None = 0,
     SSE41 = 1,

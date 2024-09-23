@@ -17,16 +17,21 @@ exclude = [
 ]
 
 [dependencies]
+defmt = { version = "0.3", optional = true }
 serde = { version = "1.0", default-features = false, optional = true }
 
 [features]
 default = ["std", "serde"]
 std = ["alloc", "serde?/std"]
-alloc = []
+alloc = ["defmt?/alloc"]
 serde = ["dep:serde", "alloc"]
+defmt-03 = ["dep:defmt"]
 
 [target.'cfg(not(feature = "alloc"))'.dependencies]
 heapless = { version = "0.8" }
+
+[target.'cfg(not(feature = "alloc"))'.features]
+defmt-03 = ["dep:defmt", "heapless/defmt-03"]
 
 [dev-dependencies]
 criterion = "0.5"

@@ -140,6 +140,7 @@ pub unsafe fn hex_check_sse(src: &[u8]) -> bool {
 }
 
 #[derive(Eq, PartialEq)]
+#[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 pub enum CheckCase {
     None,
     Lower,
