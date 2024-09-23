@@ -73,10 +73,7 @@ pub(crate) fn vectorization_support() -> Vectorization {
         return val;
     }
 
-    #[cfg(all(
-        target_arch = "aarch64",
-        target_feature = "neon"
-    ))]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         // reuse flag code from x86 impl
         use core::sync::atomic::{AtomicU8, Ordering};
@@ -88,7 +85,7 @@ pub(crate) fn vectorization_support() -> Vectorization {
                 0 => Vectorization::None,
                 3 => Vectorization::Neon,
                 _ => unreachable!(),
-            }
+            };
         }
 
         let val = vectorization_support_no_cache_arm();
@@ -200,8 +197,7 @@ mod tests {
         match vector_support {
             Vectorization::Neon => assert!(std::arch::is_aarch64_feature_detected!("neon")),
             Vectorization::None => assert!(
-                !cfg!(target_feature = "neon")
-                    || !std::arch::is_aarch64_feature_detected!("neon")
+                !cfg!(target_feature = "neon") || !std::arch::is_aarch64_feature_detected!("neon")
             ),
             _ => unreachable!(),
         }
