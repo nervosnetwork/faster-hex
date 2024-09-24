@@ -43,6 +43,7 @@ pub(crate) enum Vectorization {
     None = 0,
     SSE41 = 1,
     AVX2 = 2,
+    #[cfg(target_arch = "aarch64")]
     Neon = 3,
 }
 
