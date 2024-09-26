@@ -37,7 +37,6 @@ pub use crate::decode::{hex_check_sse, hex_check_sse_with_case};
 pub use crate::decode::{hex_check_neon, hex_check_neon_with_case};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[allow(dead_code)]
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 pub(crate) enum Vectorization {
     None = 0,
@@ -191,7 +190,6 @@ mod tests {
                     !cfg!(target_feature = "sse")
                         || !is_x86_feature_detected!("avx2") && !is_x86_feature_detected!("sse4.1")
                 ),
-                _ => unreachable!(),
             }
         }
 

@@ -101,7 +101,6 @@ pub fn hex_encode_custom<'a>(
             crate::Vectorization::AVX2 => unsafe { hex_encode_avx2(src, dst, upper_case) },
             crate::Vectorization::SSE41 => unsafe { hex_encode_sse41(src, dst, upper_case) },
             crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
-            _ => unreachable!(),
         }
         // Safety: We just wrote valid utf8 hex string into the dst
         return Ok(unsafe { mut_str(dst) });
