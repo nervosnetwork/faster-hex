@@ -120,7 +120,6 @@ pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
         match crate::vectorization_support() {
             crate::Vectorization::Neon => unsafe { hex_check_neon_with_case(src, check_case) },
             crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
-            _ => unreachable!(),
         }
     }
 

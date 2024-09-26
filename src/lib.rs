@@ -40,7 +40,9 @@ pub use crate::decode::{hex_check_neon, hex_check_neon_with_case};
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 pub(crate) enum Vectorization {
     None = 0,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     SSE41 = 1,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     AVX2 = 2,
     #[cfg(target_arch = "aarch64")]
     Neon = 3,
@@ -199,7 +201,6 @@ mod tests {
             Vectorization::None => assert!(
                 !cfg!(target_feature = "neon") || !std::arch::is_aarch64_feature_detected!("neon")
             ),
-            _ => unreachable!(),
         }
 
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
