@@ -33,12 +33,19 @@ pub use crate::encode::hex_to;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use crate::decode::{hex_check_sse, hex_check_sse_with_case};
 
+#[cfg(target_arch = "aarch64")]
+pub use crate::decode::{hex_check_neon, hex_check_neon_with_case};
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 pub(crate) enum Vectorization {
     None = 0,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     SSE41 = 1,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     AVX2 = 2,
+    #[cfg(target_arch = "aarch64")]
+    Neon = 3,
 }
 
 #[inline(always)]
@@ -68,6 +75,27 @@ pub(crate) fn vectorization_support() -> Vectorization {
         FLAGS.store(val as u8, Ordering::Relaxed);
         return val;
     }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        // reuse flag code from x86 impl
+        use core::sync::atomic::{AtomicU8, Ordering};
+        static FLAGS: AtomicU8 = AtomicU8::new(u8::MAX);
+
+        let current_flags = FLAGS.load(Ordering::Relaxed);
+        if current_flags != u8::MAX {
+            return match current_flags {
+                0 => Vectorization::None,
+                3 => Vectorization::Neon,
+                _ => unreachable!(),
+            };
+        }
+
+        let val = vectorization_support_no_cache_arm();
+        FLAGS.store(val as u8, Ordering::Relaxed);
+        return val;
+    }
+
     #[allow(unreachable_code)]
     Vectorization::None
 }
@@ -128,6 +156,20 @@ unsafe fn avx2_support_no_cache_x86() -> bool {
     false
 }
 
+#[cfg(target_arch = "aarch64")]
+#[cold]
+fn vectorization_support_no_cache_arm() -> Vectorization {
+    #[cfg(feature = "std")]
+    if std::arch::is_aarch64_feature_detected!("neon") {
+        return Vectorization::Neon;
+    }
+    #[cfg(target_feature = "neon")]
+    return Vectorization::Neon;
+
+    #[allow(unreachable_code)]
+    Vectorization::None
+}
+
 #[cfg(test)]
 mod tests {
     use crate::decode::{hex_decode, hex_decode_with_case, CheckCase};
@@ -152,7 +194,16 @@ mod tests {
                 ),
             }
         }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+
+        #[cfg(target_arch = "aarch64")]
+        match vector_support {
+            Vectorization::Neon => assert!(std::arch::is_aarch64_feature_detected!("neon")),
+            Vectorization::None => assert!(
+                !cfg!(target_feature = "neon") || !std::arch::is_aarch64_feature_detected!("neon")
+            ),
+        }
+
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         assert_eq!(vector_support, Vectorization::None);
     }
 
