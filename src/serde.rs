@@ -10,7 +10,10 @@ mod internal {
     #[cfg(feature = "alloc")]
     use alloc::{borrow::Cow, format, string::ToString, vec};
     use core::iter::FromIterator;
-    use serde::{de::Error, Deserializer, Serializer};
+    use serde::{
+        de::{Error, IntoDeserializer},
+        Deserializer, Serializer,
+    };
 
     pub(crate) fn serialize<S, T>(
         data: T,
@@ -74,6 +77,42 @@ mod internal {
         hex_decode_with_case(src, &mut dst, check_case)
             .map_err(|e| Error::custom(format!("{:?}", e)))?;
         Ok(dst.into_iter().collect())
+    }
+
+    pub(crate) fn serialize_option<S, T>(
+        option_data: &Option<T>,
+        serializer: S,
+        with_prefix: bool,
+        case: CheckCase,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: AsRef<[u8]>,
+    {
+        match option_data {
+            Some(data) => serialize(data, serializer, with_prefix, case),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub(crate) fn deserialize_option<'de, D, T>(
+        deserializer: D,
+        with_prefix: bool,
+        check_case: CheckCase,
+    ) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: FromIterator<u8>,
+    {
+        let option_str: Option<Cow<str>> = serde::Deserialize::deserialize(deserializer)?;
+        match option_str {
+            Some(raw_src) => {
+                let des: Vec<u8> =
+                    deserialize(raw_src.into_deserializer(), with_prefix, check_case)?;
+                Ok(Some(des.into_iter().collect()))
+            }
+            None => Ok(None),
+        }
     }
 }
 
@@ -145,6 +184,50 @@ faster_hex_serde_macros!(withpfx_uppercase, true, CheckCase::Upper);
 // /// Serialize without 0x-prefix and upper case
 // /// When deserialize, expect without 0x-prefix and upper case
 faster_hex_serde_macros!(nopfx_uppercase, false, CheckCase::Upper);
+
+/// Generate module with serde option methods
+macro_rules! faster_hex_serde_option_macros {
+    ($mod_name:ident, $with_pfx:expr, $check_case:expr) => {
+        /// Serialize and deserialize with or without 0x-prefix,
+        /// and lowercase or uppercase or ignorecase for Option<Vec<u8>>
+        pub mod $mod_name {
+            use crate::decode::CheckCase;
+            use crate::serde::internal;
+            use core::iter::FromIterator;
+
+            /// Serializes `Option<data>` as hex string or null
+            pub fn serialize<S, T>(data: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+                T: AsRef<[u8]>,
+            {
+                internal::serialize_option(data, serializer, $with_pfx, $check_case)
+            }
+
+            /// Deserializes a hex string or null into `Option<Vec<u8>>`.
+            pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+                T: FromIterator<u8>,
+            {
+                internal::deserialize_option(deserializer, $with_pfx, $check_case)
+            }
+        }
+    };
+}
+
+// /// Serialize Option with 0x-prefix and ignorecase
+faster_hex_serde_option_macros!(option_withpfx_ignorecase, true, CheckCase::None);
+// /// Serialize Option without 0x-prefix and ignorecase
+faster_hex_serde_option_macros!(option_nopfx_ignorecase, false, CheckCase::None);
+// /// Serialize Option with 0x-prefix and lowercase
+faster_hex_serde_option_macros!(option_withpfx_lowercase, true, CheckCase::Lower);
+// /// Serialize Option without 0x-prefix and lowercase
+faster_hex_serde_option_macros!(option_nopfx_lowercase, false, CheckCase::Lower);
+// /// Serialize Option with 0x-prefix and uppercase
+faster_hex_serde_option_macros!(option_withpfx_uppercase, true, CheckCase::Upper);
+// /// Serialize Option without 0x-prefix and uppercase
+faster_hex_serde_option_macros!(option_nopfx_uppercase, false, CheckCase::Upper);
 
 #[cfg(test)]
 mod tests {
