@@ -50,3 +50,4 @@ harness = false
 [[bench]]
 name = "check"
 harness = false
+
