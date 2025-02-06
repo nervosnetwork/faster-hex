@@ -23,7 +23,9 @@ pub use crate::error::Error;
 
 #[cfg(feature = "serde")]
 pub use crate::serde::{
-    deserialize, nopfx_ignorecase, nopfx_lowercase, nopfx_uppercase, serialize, withpfx_ignorecase,
+    deserialize, nopfx_ignorecase, nopfx_lowercase, nopfx_uppercase, option_nopfx_ignorecase,
+    option_nopfx_lowercase, option_nopfx_uppercase, option_withpfx_ignorecase,
+    option_withpfx_lowercase, option_withpfx_uppercase, serialize, withpfx_ignorecase,
     withpfx_lowercase, withpfx_uppercase,
 };
 
