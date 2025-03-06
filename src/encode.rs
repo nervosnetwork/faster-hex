@@ -103,7 +103,7 @@ pub fn hex_encode_custom<'a>(
             crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
         }
         // Safety: We just wrote valid utf8 hex string into the dst
-        return Ok(unsafe { mut_str(dst) });
+        Ok(unsafe { mut_str(dst) })
     }
     #[cfg(target_arch = "aarch64")]
     {
