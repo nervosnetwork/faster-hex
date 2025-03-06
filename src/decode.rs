@@ -78,25 +78,25 @@ fn unhex_a(x: usize) -> u8 {
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn unhex_avx2(value: __m256i) -> __m256i {
+unsafe fn unhex_avx2(value: __m256i) -> __m256i { unsafe {
     let sr6 = _mm256_srai_epi16(value, 6);
     let and15 = _mm256_and_si256(value, _mm256_set1_epi16(0xf));
     let mul = _mm256_maddubs_epi16(sr6, _mm256_set1_epi16(9));
     _mm256_add_epi16(mul, and15)
-}
+}}
 
 // (a << 4) | b;
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn nib2byte_avx2(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256i {
+unsafe fn nib2byte_avx2(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256i { unsafe {
     let a4_1 = _mm256_slli_epi16(a1, 4);
     let a4_2 = _mm256_slli_epi16(a2, 4);
     let a4orb_1 = _mm256_or_si256(a4_1, b1);
     let a4orb_2 = _mm256_or_si256(a4_2, b2);
     let pck1 = _mm256_packus_epi16(a4orb_1, a4orb_2);
     _mm256_permute4x64_epi64(pck1, _0213)
-}
+}}
 
 /// Check if the input is valid hex bytes slice
 pub fn hex_check(src: &[u8]) -> bool {
@@ -145,9 +145,9 @@ pub fn hex_check_fallback_with_case(src: &[u8], check_case: CheckCase) -> bool {
 /// Check if a byte slice is valid.
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub unsafe fn hex_check_sse(src: &[u8]) -> bool {
+pub unsafe fn hex_check_sse(src: &[u8]) -> bool { unsafe {
     hex_check_sse_with_case(src, CheckCase::None)
-}
+}}
 
 #[derive(Eq, PartialEq)]
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
@@ -161,7 +161,7 @@ pub enum CheckCase {
 /// Check if a byte slice is valid on given check_case.
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub unsafe fn hex_check_sse_with_case(mut src: &[u8], check_case: CheckCase) -> bool {
+pub unsafe fn hex_check_sse_with_case(mut src: &[u8], check_case: CheckCase) -> bool { unsafe {
     let ascii_zero = _mm_set1_epi8((b'0' - 1) as i8);
     let ascii_nine = _mm_set1_epi8((b'9' + 1) as i8);
     let ascii_ua = _mm_set1_epi8((b'A' - 1) as i8);
@@ -218,7 +218,7 @@ pub unsafe fn hex_check_sse_with_case(mut src: &[u8], check_case: CheckCase) -> 
         src = &src[16..];
     }
     hex_check_fallback_with_case(src, check_case)
-}
+}}
 
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
@@ -332,7 +332,7 @@ pub fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
 
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
+unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) { unsafe {
     // 0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1,
     // 0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1
     let mask_a = _mm256_setr_epi8(
@@ -369,7 +369,7 @@ unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
         src = &src[64..];
     }
     hex_decode_fallback(src, dst)
-}
+}}
 
 pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
     for (slot, bytes) in dst.iter_mut().zip(src.chunks_exact(2)) {

@@ -97,7 +97,7 @@ where
 
 /// Generate module with serde methods
 macro_rules! faster_hex_serde_macros {
-    ($mod_name:ident, $with_pfx:expr, $check_case:expr) => {
+    ($mod_name:ident, $with_pfx:expr_2021, $check_case:expr_2021) => {
         /// Serialize and deserialize with or without 0x-prefix,
         /// and lowercase or uppercase or ignorecase
         pub mod $mod_name {

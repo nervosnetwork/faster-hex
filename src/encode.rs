@@ -79,13 +79,13 @@ pub fn hex_encode_custom<'a>(
     dst: &'a mut [u8],
     upper_case: bool,
 ) -> Result<&'a mut str, Error> {
-    unsafe fn mut_str(buffer: &mut [u8]) -> &mut str {
+    unsafe fn mut_str(buffer: &mut [u8]) -> &mut str { unsafe {
         if cfg!(debug_assertions) {
             core::str::from_utf8_mut(buffer).unwrap()
         } else {
             core::str::from_utf8_unchecked_mut(buffer)
         }
-    }
+    }}
 
     let expect_dst_len = src
         .len()
@@ -139,7 +139,7 @@ pub fn hex_to(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
 
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn hex_encode_avx2(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
+unsafe fn hex_encode_avx2(mut src: &[u8], dst: &mut [u8], upper_case: bool) { unsafe {
     let ascii_zero = _mm256_set1_epi8(b'0' as i8);
     let nines = _mm256_set1_epi8(9);
     let ascii_a = if upper_case {
@@ -183,12 +183,12 @@ unsafe fn hex_encode_avx2(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
 
     let i = i as usize;
     hex_encode_sse41(src, &mut dst[i * 2..], upper_case);
-}
+}}
 
 // copied from https://github.com/Matherunner/bin2hex-sse/blob/master/base16_sse4.cpp
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn hex_encode_sse41(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
+unsafe fn hex_encode_sse41(mut src: &[u8], dst: &mut [u8], upper_case: bool) { unsafe {
     let ascii_zero = _mm_set1_epi8(b'0' as i8);
     let nines = _mm_set1_epi8(9);
     let ascii_a = if upper_case {
@@ -225,7 +225,7 @@ unsafe fn hex_encode_sse41(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
 
     let i = i as usize;
     hex_encode_custom_case_fallback(src, &mut dst[i * 2..], upper_case);
-}
+}}
 
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]

@@ -138,7 +138,7 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
 #[target_feature(enable = "xsave")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cold]
-unsafe fn avx2_support_no_cache_x86() -> bool {
+unsafe fn avx2_support_no_cache_x86() -> bool { unsafe {
     #[cfg(target_arch = "x86")]
     use core::arch::x86::{__cpuid_count, _xgetbv};
     #[cfg(target_arch = "x86_64")]
@@ -154,7 +154,7 @@ unsafe fn avx2_support_no_cache_x86() -> bool {
         }
     }
     false
-}
+}}
 
 #[cfg(target_arch = "aarch64")]
 #[cold]
