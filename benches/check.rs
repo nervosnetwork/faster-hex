@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use faster_hex::hex_check_fallback;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

@@ -4,13 +4,13 @@ use core::iter::FromIterator;
 
 mod internal {
     use crate::{
-        decode::{hex_decode_with_case, CheckCase},
+        decode::{CheckCase, hex_decode_with_case},
         encode::hex_encode_custom,
     };
     #[cfg(feature = "alloc")]
     use alloc::{borrow::Cow, format, string::ToString, vec};
     use core::iter::FromIterator;
-    use serde::{de::Error, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer, de::Error};
 
     pub(crate) fn serialize<S, T>(
         data: T,
@@ -97,7 +97,7 @@ where
 
 /// Generate module with serde methods
 macro_rules! faster_hex_serde_macros {
-    ($mod_name:ident, $with_pfx:expr, $check_case:expr) => {
+    ($mod_name:ident, $with_pfx:expr_2021, $check_case:expr_2021) => {
         /// Serialize and deserialize with or without 0x-prefix,
         /// and lowercase or uppercase or ignorecase
         pub mod $mod_name {
@@ -250,7 +250,7 @@ mod tests {
                 bar_nopfx_ignorecase_bytes: Default::default(),
             };
             let serde_result = serde_json::to_string(&foo_defuault).unwrap();
-            let  expect = "{\"bar_nopfx_lowercase_vec\":\"\",\"bar_nopfx_lowercase_bytes\":\"\",\"bar_withpfx_lowercase_vec\":\"0x\",\"bar_withpfx_lowercase_bytes\":\"0x\",\"bar_nopfx_uppercase_vec\":\"\",\"bar_nopfx_uppercase_bytes\":\"\",\"bar_withpfx_uppercase_vec\":\"0x\",\"bar_withpfx_uppercase_bytes\":\"0x\",\"bar_withpfx_ignorecase_vec\":\"0x\",\"bar_withpfx_ignorecase_bytes\":\"0x\",\"bar_nopfx_ignorecase_vec\":\"\",\"bar_nopfx_ignorecase_bytes\":\"\"}";
+            let expect = "{\"bar_nopfx_lowercase_vec\":\"\",\"bar_nopfx_lowercase_bytes\":\"\",\"bar_withpfx_lowercase_vec\":\"0x\",\"bar_withpfx_lowercase_bytes\":\"0x\",\"bar_nopfx_uppercase_vec\":\"\",\"bar_nopfx_uppercase_bytes\":\"\",\"bar_withpfx_uppercase_vec\":\"0x\",\"bar_withpfx_uppercase_bytes\":\"0x\",\"bar_withpfx_ignorecase_vec\":\"0x\",\"bar_withpfx_ignorecase_bytes\":\"0x\",\"bar_nopfx_ignorecase_vec\":\"\",\"bar_nopfx_ignorecase_bytes\":\"\"}";
             assert_eq!(serde_result, expect);
 
             let foo_src: Foo = serde_json::from_str(&serde_result).unwrap();
@@ -278,20 +278,20 @@ mod tests {
         let hex_str_upper = hex::encode_upper(src);
         let serde_result = serde_json::to_string(&foo).unwrap();
 
-        let  expect = format!("{{\"bar_nopfx_lowercase_vec\":\"{}\",\"bar_nopfx_lowercase_bytes\":\"{}\",\"bar_withpfx_lowercase_vec\":\"0x{}\",\"bar_withpfx_lowercase_bytes\":\"0x{}\",\"bar_nopfx_uppercase_vec\":\"{}\",\"bar_nopfx_uppercase_bytes\":\"{}\",\"bar_withpfx_uppercase_vec\":\"0x{}\",\"bar_withpfx_uppercase_bytes\":\"0x{}\",\"bar_withpfx_ignorecase_vec\":\"0x{}\",\"bar_withpfx_ignorecase_bytes\":\"0x{}\",\"bar_nopfx_ignorecase_vec\":\"{}\",\"bar_nopfx_ignorecase_bytes\":\"{}\"}}",
-                              hex_str,
-                              hex_str,
-                              hex_str,
-                              hex_str,
-                              hex_str_upper,
-                              hex_str_upper,
-                              hex_str_upper,
-                              hex_str_upper,
-                              hex_str,
-                              hex_str,
-                              hex_str,
-                              hex_str,
-
+        let expect = format!(
+            "{{\"bar_nopfx_lowercase_vec\":\"{}\",\"bar_nopfx_lowercase_bytes\":\"{}\",\"bar_withpfx_lowercase_vec\":\"0x{}\",\"bar_withpfx_lowercase_bytes\":\"0x{}\",\"bar_nopfx_uppercase_vec\":\"{}\",\"bar_nopfx_uppercase_bytes\":\"{}\",\"bar_withpfx_uppercase_vec\":\"0x{}\",\"bar_withpfx_uppercase_bytes\":\"0x{}\",\"bar_withpfx_ignorecase_vec\":\"0x{}\",\"bar_withpfx_ignorecase_bytes\":\"0x{}\",\"bar_nopfx_ignorecase_vec\":\"{}\",\"bar_nopfx_ignorecase_bytes\":\"{}\"}}",
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
         );
         assert_eq!(serde_result, expect);
 
@@ -356,10 +356,12 @@ mod tests {
             if hex::encode(src).contains(char::is_lowercase) {
                 // FooNoPfxLower's foo field is lowercase, so we can't deserialize it to FooNoPfxUpper
                 assert!(foo_upper_result.is_err());
-                assert!(foo_upper_result
-                    .unwrap_err()
-                    .to_string()
-                    .contains("Invalid character"));
+                assert!(
+                    foo_upper_result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("Invalid character")
+                );
             }
         }
     }

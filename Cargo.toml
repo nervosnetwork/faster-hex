@@ -2,7 +2,7 @@
 name = "faster-hex"
 version = "0.10.0"
 authors = ["zhangsoledad <787953403@qq.com>"]
-edition = "2018"
+edition = "2024"
 keywords = ["simd", "hex", "no-std"]
 license = "MIT"
 description = "Fast hex encoding."

@@ -10,15 +10,13 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.73.0
+          toolchain: 1.85.0
           components: rustfmt
-      - name: Run rustfmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check    
 
   audit:
     name: Security audit
@@ -49,10 +47,8 @@ jobs:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.74.0
+          toolchain: 1.85.0
           components: rustfmt
       - name: Run tests
         if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
+        run: cargo test
