@@ -79,13 +79,15 @@ pub fn hex_encode_custom<'a>(
     dst: &'a mut [u8],
     upper_case: bool,
 ) -> Result<&'a mut str, Error> {
-    unsafe fn mut_str(buffer: &mut [u8]) -> &mut str { unsafe {
-        if cfg!(debug_assertions) {
-            core::str::from_utf8_mut(buffer).unwrap()
-        } else {
-            core::str::from_utf8_unchecked_mut(buffer)
+    unsafe fn mut_str(buffer: &mut [u8]) -> &mut str {
+        unsafe {
+            if cfg!(debug_assertions) {
+                core::str::from_utf8_mut(buffer).unwrap()
+            } else {
+                core::str::from_utf8_unchecked_mut(buffer)
+            }
         }
-    }}
+    }
 
     let expect_dst_len = src
         .len()
@@ -139,93 +141,99 @@ pub fn hex_to(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
 
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn hex_encode_avx2(mut src: &[u8], dst: &mut [u8], upper_case: bool) { unsafe {
-    let ascii_zero = _mm256_set1_epi8(b'0' as i8);
-    let nines = _mm256_set1_epi8(9);
-    let ascii_a = if upper_case {
-        _mm256_set1_epi8((b'A' - 9 - 1) as i8)
-    } else {
-        _mm256_set1_epi8((b'a' - 9 - 1) as i8)
-    };
-    let and4bits = _mm256_set1_epi8(0xf);
+unsafe fn hex_encode_avx2(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
+    unsafe {
+        let ascii_zero = _mm256_set1_epi8(b'0' as i8);
+        let nines = _mm256_set1_epi8(9);
+        let ascii_a = if upper_case {
+            _mm256_set1_epi8((b'A' - 9 - 1) as i8)
+        } else {
+            _mm256_set1_epi8((b'a' - 9 - 1) as i8)
+        };
+        let and4bits = _mm256_set1_epi8(0xf);
 
-    let mut i = 0_isize;
-    while src.len() >= 32 {
-        // https://stackoverflow.com/questions/47425851/whats-the-difference-between-mm256-lddqu-si256-and-mm256-loadu-si256
-        let invec = _mm256_loadu_si256(src.as_ptr() as *const _);
+        let mut i = 0_isize;
+        while src.len() >= 32 {
+            // https://stackoverflow.com/questions/47425851/whats-the-difference-between-mm256-lddqu-si256-and-mm256-loadu-si256
+            let invec = _mm256_loadu_si256(src.as_ptr() as *const _);
 
-        let masked1 = _mm256_and_si256(invec, and4bits);
-        let masked2 = _mm256_and_si256(_mm256_srli_epi64(invec, 4), and4bits);
+            let masked1 = _mm256_and_si256(invec, and4bits);
+            let masked2 = _mm256_and_si256(_mm256_srli_epi64(invec, 4), and4bits);
 
-        // return 0xff corresponding to the elements > 9, or 0x00 otherwise
-        let cmpmask1 = _mm256_cmpgt_epi8(masked1, nines);
-        let cmpmask2 = _mm256_cmpgt_epi8(masked2, nines);
+            // return 0xff corresponding to the elements > 9, or 0x00 otherwise
+            let cmpmask1 = _mm256_cmpgt_epi8(masked1, nines);
+            let cmpmask2 = _mm256_cmpgt_epi8(masked2, nines);
 
-        // add '0' or the offset depending on the masks
-        let masked1 = _mm256_add_epi8(masked1, _mm256_blendv_epi8(ascii_zero, ascii_a, cmpmask1));
-        let masked2 = _mm256_add_epi8(masked2, _mm256_blendv_epi8(ascii_zero, ascii_a, cmpmask2));
+            // add '0' or the offset depending on the masks
+            let masked1 =
+                _mm256_add_epi8(masked1, _mm256_blendv_epi8(ascii_zero, ascii_a, cmpmask1));
+            let masked2 =
+                _mm256_add_epi8(masked2, _mm256_blendv_epi8(ascii_zero, ascii_a, cmpmask2));
 
-        // interleave masked1 and masked2 bytes
-        let res1 = _mm256_unpacklo_epi8(masked2, masked1);
-        let res2 = _mm256_unpackhi_epi8(masked2, masked1);
+            // interleave masked1 and masked2 bytes
+            let res1 = _mm256_unpacklo_epi8(masked2, masked1);
+            let res2 = _mm256_unpackhi_epi8(masked2, masked1);
 
-        // Store everything into the right destination now
-        let base = dst.as_mut_ptr().offset(i * 2);
-        let base1 = base.offset(0) as *mut _;
-        let base2 = base.offset(16) as *mut _;
-        let base3 = base.offset(32) as *mut _;
-        let base4 = base.offset(48) as *mut _;
-        _mm256_storeu2_m128i(base3, base1, res1);
-        _mm256_storeu2_m128i(base4, base2, res2);
-        src = &src[32..];
-        i += 32;
+            // Store everything into the right destination now
+            let base = dst.as_mut_ptr().offset(i * 2);
+            let base1 = base.offset(0) as *mut _;
+            let base2 = base.offset(16) as *mut _;
+            let base3 = base.offset(32) as *mut _;
+            let base4 = base.offset(48) as *mut _;
+            _mm256_storeu2_m128i(base3, base1, res1);
+            _mm256_storeu2_m128i(base4, base2, res2);
+            src = &src[32..];
+            i += 32;
+        }
+
+        let i = i as usize;
+        hex_encode_sse41(src, &mut dst[i * 2..], upper_case);
     }
-
-    let i = i as usize;
-    hex_encode_sse41(src, &mut dst[i * 2..], upper_case);
-}}
+}
 
 // copied from https://github.com/Matherunner/bin2hex-sse/blob/master/base16_sse4.cpp
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn hex_encode_sse41(mut src: &[u8], dst: &mut [u8], upper_case: bool) { unsafe {
-    let ascii_zero = _mm_set1_epi8(b'0' as i8);
-    let nines = _mm_set1_epi8(9);
-    let ascii_a = if upper_case {
-        _mm_set1_epi8((b'A' - 9 - 1) as i8)
-    } else {
-        _mm_set1_epi8((b'a' - 9 - 1) as i8)
-    };
-    let and4bits = _mm_set1_epi8(0xf);
+unsafe fn hex_encode_sse41(mut src: &[u8], dst: &mut [u8], upper_case: bool) {
+    unsafe {
+        let ascii_zero = _mm_set1_epi8(b'0' as i8);
+        let nines = _mm_set1_epi8(9);
+        let ascii_a = if upper_case {
+            _mm_set1_epi8((b'A' - 9 - 1) as i8)
+        } else {
+            _mm_set1_epi8((b'a' - 9 - 1) as i8)
+        };
+        let and4bits = _mm_set1_epi8(0xf);
 
-    let mut i = 0_isize;
-    while src.len() >= 16 {
-        let invec = _mm_loadu_si128(src.as_ptr() as *const _);
+        let mut i = 0_isize;
+        while src.len() >= 16 {
+            let invec = _mm_loadu_si128(src.as_ptr() as *const _);
 
-        let masked1 = _mm_and_si128(invec, and4bits);
-        let masked2 = _mm_and_si128(_mm_srli_epi64(invec, 4), and4bits);
+            let masked1 = _mm_and_si128(invec, and4bits);
+            let masked2 = _mm_and_si128(_mm_srli_epi64(invec, 4), and4bits);
 
-        // return 0xff corresponding to the elements > 9, or 0x00 otherwise
-        let cmpmask1 = _mm_cmpgt_epi8(masked1, nines);
-        let cmpmask2 = _mm_cmpgt_epi8(masked2, nines);
+            // return 0xff corresponding to the elements > 9, or 0x00 otherwise
+            let cmpmask1 = _mm_cmpgt_epi8(masked1, nines);
+            let cmpmask2 = _mm_cmpgt_epi8(masked2, nines);
 
-        // add '0' or the offset depending on the masks
-        let masked1 = _mm_add_epi8(masked1, _mm_blendv_epi8(ascii_zero, ascii_a, cmpmask1));
-        let masked2 = _mm_add_epi8(masked2, _mm_blendv_epi8(ascii_zero, ascii_a, cmpmask2));
+            // add '0' or the offset depending on the masks
+            let masked1 = _mm_add_epi8(masked1, _mm_blendv_epi8(ascii_zero, ascii_a, cmpmask1));
+            let masked2 = _mm_add_epi8(masked2, _mm_blendv_epi8(ascii_zero, ascii_a, cmpmask2));
 
-        // interleave masked1 and masked2 bytes
-        let res1 = _mm_unpacklo_epi8(masked2, masked1);
-        let res2 = _mm_unpackhi_epi8(masked2, masked1);
+            // interleave masked1 and masked2 bytes
+            let res1 = _mm_unpacklo_epi8(masked2, masked1);
+            let res2 = _mm_unpackhi_epi8(masked2, masked1);
 
-        _mm_storeu_si128(dst.as_mut_ptr().offset(i * 2) as *mut _, res1);
-        _mm_storeu_si128(dst.as_mut_ptr().offset(i * 2 + 16) as *mut _, res2);
-        src = &src[16..];
-        i += 16;
+            _mm_storeu_si128(dst.as_mut_ptr().offset(i * 2) as *mut _, res1);
+            _mm_storeu_si128(dst.as_mut_ptr().offset(i * 2 + 16) as *mut _, res2);
+            src = &src[16..];
+            i += 16;
+        }
+
+        let i = i as usize;
+        hex_encode_custom_case_fallback(src, &mut dst[i * 2..], upper_case);
     }
-
-    let i = i as usize;
-    hex_encode_custom_case_fallback(src, &mut dst[i * 2..], upper_case);
-}}
+}
 
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]

@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use faster_hex::{
     hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_encode_fallback, hex_string,
 };
