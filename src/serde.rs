@@ -10,7 +10,10 @@ mod internal {
     #[cfg(feature = "alloc")]
     use alloc::{borrow::Cow, format, string::ToString, vec};
     use core::iter::FromIterator;
-    use serde::{de::Error, Deserializer, Serializer};
+    use serde::{
+        de::{Error, IntoDeserializer},
+        Deserializer, Serializer,
+    };
 
     pub(crate) fn serialize<S, T>(
         data: T,
@@ -74,6 +77,42 @@ mod internal {
         hex_decode_with_case(src, &mut dst, check_case)
             .map_err(|e| Error::custom(format!("{:?}", e)))?;
         Ok(dst.into_iter().collect())
+    }
+
+    pub(crate) fn serialize_option<S, T>(
+        option_data: &Option<T>,
+        serializer: S,
+        with_prefix: bool,
+        case: CheckCase,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: AsRef<[u8]>,
+    {
+        match option_data {
+            Some(data) => serialize(data, serializer, with_prefix, case),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub(crate) fn deserialize_option<'de, D, T>(
+        deserializer: D,
+        with_prefix: bool,
+        check_case: CheckCase,
+    ) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: FromIterator<u8>,
+    {
+        let option_str: Option<Cow<str>> = serde::Deserialize::deserialize(deserializer)?;
+        match option_str {
+            Some(raw_src) => {
+                let des: Vec<u8> =
+                    deserialize(raw_src.into_deserializer(), with_prefix, check_case)?;
+                Ok(Some(des.into_iter().collect()))
+            }
+            None => Ok(None),
+        }
     }
 }
 
@@ -146,10 +185,56 @@ faster_hex_serde_macros!(withpfx_uppercase, true, CheckCase::Upper);
 // /// When deserialize, expect without 0x-prefix and upper case
 faster_hex_serde_macros!(nopfx_uppercase, false, CheckCase::Upper);
 
+/// Generate module with serde option methods
+macro_rules! faster_hex_serde_option_macros {
+    ($mod_name:ident, $with_pfx:expr, $check_case:expr) => {
+        /// Serialize and deserialize with or without 0x-prefix,
+        /// and lowercase or uppercase or ignorecase for Option<Vec<u8>>
+        pub mod $mod_name {
+            use crate::decode::CheckCase;
+            use crate::serde::internal;
+            use core::iter::FromIterator;
+
+            /// Serializes `Option<data>` as hex string or null
+            pub fn serialize<S, T>(data: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+                T: AsRef<[u8]>,
+            {
+                internal::serialize_option(data, serializer, $with_pfx, $check_case)
+            }
+
+            /// Deserializes a hex string or null into `Option<Vec<u8>>`.
+            pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+                T: FromIterator<u8>,
+            {
+                internal::deserialize_option(deserializer, $with_pfx, $check_case)
+            }
+        }
+    };
+}
+
+// /// Serialize Option with 0x-prefix and ignorecase
+faster_hex_serde_option_macros!(option_withpfx_ignorecase, true, CheckCase::None);
+// /// Serialize Option without 0x-prefix and ignorecase
+faster_hex_serde_option_macros!(option_nopfx_ignorecase, false, CheckCase::None);
+// /// Serialize Option with 0x-prefix and lowercase
+faster_hex_serde_option_macros!(option_withpfx_lowercase, true, CheckCase::Lower);
+// /// Serialize Option without 0x-prefix and lowercase
+faster_hex_serde_option_macros!(option_nopfx_lowercase, false, CheckCase::Lower);
+// /// Serialize Option with 0x-prefix and uppercase
+faster_hex_serde_option_macros!(option_withpfx_uppercase, true, CheckCase::Upper);
+// /// Serialize Option without 0x-prefix and uppercase
+faster_hex_serde_option_macros!(option_nopfx_uppercase, false, CheckCase::Upper);
+
 #[cfg(test)]
 mod tests {
     use super::{
-        nopfx_ignorecase, nopfx_lowercase, nopfx_uppercase, withpfx_ignorecase, withpfx_lowercase,
+        nopfx_ignorecase, nopfx_lowercase, nopfx_uppercase, option_nopfx_ignorecase,
+        option_nopfx_lowercase, option_nopfx_uppercase, option_withpfx_ignorecase,
+        option_withpfx_lowercase, option_withpfx_uppercase, withpfx_ignorecase, withpfx_lowercase,
         withpfx_uppercase,
     };
     use crate as faster_hex;
@@ -230,6 +315,36 @@ mod tests {
         bar_nopfx_ignorecase_vec: Vec<u8>,
         #[serde(with = "nopfx_ignorecase")]
         bar_nopfx_ignorecase_bytes: Bytes,
+
+        #[serde(with = "option_nopfx_ignorecase")]
+        bar_nopfx_ignorecase_vec_option: Option<Vec<u8>>,
+        #[serde(with = "option_nopfx_ignorecase")]
+        bar_nopfx_ignorecase_bytes_option: Option<Bytes>,
+
+        #[serde(with = "option_withpfx_ignorecase")]
+        bar_withpfx_ignorecase_vec_option: Option<Vec<u8>>,
+        #[serde(with = "option_withpfx_ignorecase")]
+        bar_withpfx_ignorecase_bytes_option: Option<Bytes>,
+
+        #[serde(with = "option_nopfx_lowercase")]
+        bar_nopfx_lowercase_vec_option: Option<Vec<u8>>,
+        #[serde(with = "option_nopfx_lowercase")]
+        bar_nopfx_lowercase_bytes_option: Option<Bytes>,
+
+        #[serde(with = "option_withpfx_lowercase")]
+        bar_withpfx_lowercase_vec_option: Option<Vec<u8>>,
+        #[serde(with = "option_withpfx_lowercase")]
+        bar_withpfx_lowercase_bytes_option: Option<Bytes>,
+
+        #[serde(with = "option_nopfx_uppercase")]
+        bar_nopfx_uppercase_vec_option: Option<Vec<u8>>,
+        #[serde(with = "option_nopfx_uppercase")]
+        bar_nopfx_uppercase_bytes_option: Option<Bytes>,
+
+        #[serde(with = "option_withpfx_uppercase")]
+        bar_withpfx_uppercase_vec_option: Option<Vec<u8>>,
+        #[serde(with = "option_withpfx_uppercase")]
+        bar_withpfx_uppercase_bytes_option: Option<Bytes>,
     }
 
     #[test]
@@ -248,9 +363,47 @@ mod tests {
                 bar_withpfx_ignorecase_bytes: Default::default(),
                 bar_nopfx_ignorecase_vec: vec![],
                 bar_nopfx_ignorecase_bytes: Default::default(),
+                bar_nopfx_ignorecase_vec_option: Default::default(),
+                bar_nopfx_ignorecase_bytes_option: Default::default(),
+                bar_withpfx_ignorecase_vec_option: Default::default(),
+                bar_withpfx_ignorecase_bytes_option: Default::default(),
+                bar_nopfx_lowercase_vec_option: Default::default(),
+                bar_nopfx_lowercase_bytes_option: Default::default(),
+                bar_withpfx_lowercase_vec_option: Default::default(),
+                bar_withpfx_lowercase_bytes_option: Default::default(),
+                bar_nopfx_uppercase_vec_option: Default::default(),
+                bar_nopfx_uppercase_bytes_option: Default::default(),
+                bar_withpfx_uppercase_vec_option: Default::default(),
+                bar_withpfx_uppercase_bytes_option: Default::default(),
             };
             let serde_result = serde_json::to_string(&foo_defuault).unwrap();
-            let  expect = "{\"bar_nopfx_lowercase_vec\":\"\",\"bar_nopfx_lowercase_bytes\":\"\",\"bar_withpfx_lowercase_vec\":\"0x\",\"bar_withpfx_lowercase_bytes\":\"0x\",\"bar_nopfx_uppercase_vec\":\"\",\"bar_nopfx_uppercase_bytes\":\"\",\"bar_withpfx_uppercase_vec\":\"0x\",\"bar_withpfx_uppercase_bytes\":\"0x\",\"bar_withpfx_ignorecase_vec\":\"0x\",\"bar_withpfx_ignorecase_bytes\":\"0x\",\"bar_nopfx_ignorecase_vec\":\"\",\"bar_nopfx_ignorecase_bytes\":\"\"}";
+            let expect = r#"
+{"bar_nopfx_lowercase_vec":"",
+"bar_nopfx_lowercase_bytes":"",
+"bar_withpfx_lowercase_vec":"0x",
+"bar_withpfx_lowercase_bytes":"0x",
+"bar_nopfx_uppercase_vec":"",
+"bar_nopfx_uppercase_bytes":"",
+"bar_withpfx_uppercase_vec":"0x",
+"bar_withpfx_uppercase_bytes":"0x",
+"bar_withpfx_ignorecase_vec":"0x",
+"bar_withpfx_ignorecase_bytes":"0x",
+"bar_nopfx_ignorecase_vec":"",
+"bar_nopfx_ignorecase_bytes":"",
+"bar_nopfx_ignorecase_vec_option":null,
+"bar_nopfx_ignorecase_bytes_option":null,
+"bar_withpfx_ignorecase_vec_option":null,
+"bar_withpfx_ignorecase_bytes_option":null,
+"bar_nopfx_lowercase_vec_option":null,
+"bar_nopfx_lowercase_bytes_option":null,
+"bar_withpfx_lowercase_vec_option":null,
+"bar_withpfx_lowercase_bytes_option":null,
+"bar_nopfx_uppercase_vec_option":null,
+"bar_nopfx_uppercase_bytes_option":null,
+"bar_withpfx_uppercase_vec_option":null,
+"bar_withpfx_uppercase_bytes_option":null}"#;
+
+            let expect = expect.replace('\n', "");
             assert_eq!(serde_result, expect);
 
             let foo_src: Foo = serde_json::from_str(&serde_result).unwrap();
@@ -273,26 +426,74 @@ mod tests {
             bar_withpfx_ignorecase_bytes: Bytes::from(Vec::from(src)),
             bar_nopfx_ignorecase_vec: Vec::from(src),
             bar_nopfx_ignorecase_bytes: Bytes::from(Vec::from(src)),
+            bar_withpfx_ignorecase_vec_option: Some(Vec::from(src)),
+            bar_nopfx_ignorecase_bytes_option: Some(Bytes::from(Vec::from(src))),
+            bar_nopfx_ignorecase_vec_option: Some(Vec::from(src)),
+            bar_withpfx_ignorecase_bytes_option: Some(Bytes::from(Vec::from(src))),
+            bar_nopfx_lowercase_vec_option: Some(Vec::from(src)),
+            bar_nopfx_lowercase_bytes_option: Some(Bytes::from(Vec::from(src))),
+            bar_withpfx_lowercase_vec_option: Some(Vec::from(src)),
+            bar_withpfx_lowercase_bytes_option: Some(Bytes::from(Vec::from(src))),
+            bar_nopfx_uppercase_vec_option: Some(Vec::from(src)),
+            bar_nopfx_uppercase_bytes_option: Some(Bytes::from(Vec::from(src))),
+            bar_withpfx_uppercase_vec_option: Some(Vec::from(src)),
+            bar_withpfx_uppercase_bytes_option: Some(Bytes::from(Vec::from(src))),
         };
         let hex_str = hex::encode(src);
         let hex_str_upper = hex::encode_upper(src);
         let serde_result = serde_json::to_string(&foo).unwrap();
 
-        let  expect = format!("{{\"bar_nopfx_lowercase_vec\":\"{}\",\"bar_nopfx_lowercase_bytes\":\"{}\",\"bar_withpfx_lowercase_vec\":\"0x{}\",\"bar_withpfx_lowercase_bytes\":\"0x{}\",\"bar_nopfx_uppercase_vec\":\"{}\",\"bar_nopfx_uppercase_bytes\":\"{}\",\"bar_withpfx_uppercase_vec\":\"0x{}\",\"bar_withpfx_uppercase_bytes\":\"0x{}\",\"bar_withpfx_ignorecase_vec\":\"0x{}\",\"bar_withpfx_ignorecase_bytes\":\"0x{}\",\"bar_nopfx_ignorecase_vec\":\"{}\",\"bar_nopfx_ignorecase_bytes\":\"{}\"}}",
-                              hex_str,
-                              hex_str,
-                              hex_str,
-                              hex_str,
-                              hex_str_upper,
-                              hex_str_upper,
-                              hex_str_upper,
-                              hex_str_upper,
-                              hex_str,
-                              hex_str,
-                              hex_str,
-                              hex_str,
-
+        let expect = format!(
+            r#"{{"bar_nopfx_lowercase_vec":"{}",
+"bar_nopfx_lowercase_bytes":"{}",
+"bar_withpfx_lowercase_vec":"0x{}",
+"bar_withpfx_lowercase_bytes":"0x{}",
+"bar_nopfx_uppercase_vec":"{}",
+"bar_nopfx_uppercase_bytes":"{}",
+"bar_withpfx_uppercase_vec":"0x{}",
+"bar_withpfx_uppercase_bytes":"0x{}",
+"bar_withpfx_ignorecase_vec":"0x{}",
+"bar_withpfx_ignorecase_bytes":"0x{}",
+"bar_nopfx_ignorecase_vec":"{}",
+"bar_nopfx_ignorecase_bytes":"{}",
+"bar_nopfx_ignorecase_vec_option":"{}",
+"bar_nopfx_ignorecase_bytes_option":"{}",
+"bar_withpfx_ignorecase_vec_option":"0x{}",
+"bar_withpfx_ignorecase_bytes_option":"0x{}",
+"bar_nopfx_lowercase_vec_option":"{}",
+"bar_nopfx_lowercase_bytes_option":"{}",
+"bar_withpfx_lowercase_vec_option":"0x{}",
+"bar_withpfx_lowercase_bytes_option":"0x{}",
+"bar_nopfx_uppercase_vec_option":"{}",
+"bar_nopfx_uppercase_bytes_option":"{}",
+"bar_withpfx_uppercase_vec_option":"0x{}",
+"bar_withpfx_uppercase_bytes_option":"0x{}"}}"#,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str_upper,
+            hex_str_upper,
         );
+        let expect = expect.replace('\n', "");
         assert_eq!(serde_result, expect);
 
         let foo_src: Foo = serde_json::from_str(&serde_result).unwrap();
