@@ -3,18 +3,14 @@ name = "faster-hex"
 version = "0.10.0"
 authors = ["zhangsoledad <787953403@qq.com>"]
 edition = "2018"
+rust-version = "1.61.0"
 keywords = ["simd", "hex", "no-std"]
 license = "MIT"
 description = "Fast hex encoding."
 repository = "https://github.com/NervosFoundation/faster-hex"
 homepage = "https://github.com/NervosFoundation/faster-hex"
 readme = "README.md"
-exclude = [
-    "afl/*",
-    "benches/*",
-    "fuzz/*",
-    "CHANGELOG.md"
-]
+exclude = ["afl/*", "benches/*", "fuzz/*", "CHANGELOG.md"]
 
 [dependencies]
 defmt = { version = "0.3", optional = true }
@@ -38,9 +34,9 @@ criterion = "0.5"
 rustc-hex = "1.0"
 hex = "0.3.2"
 proptest = "1.0"
-serde = { version = "1.0", features = ["derive"]}
-bytes = {version = "1.4.0"}
-serde_json ={ version = "1.0"}
+serde = { version = "1.0", features = ["derive"] }
+bytes = { version = "1.4.0" }
+serde_json = { version = "1.0" }
 
 [[bench]]
 name = "hex"
