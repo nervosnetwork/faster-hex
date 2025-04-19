@@ -29,7 +29,7 @@ fn hex_string_custom_case(src: &[u8], upper_case: bool) -> String {
     if cfg!(debug_assertions) {
         String::from_utf8(buffer).unwrap()
     } else {
-        // Saftey: We just wrote valid utf8 hex string into the dst
+        // Safety: We just wrote valid utf8 hex string into the dst
         unsafe { String::from_utf8_unchecked(buffer) }
     }
 }
@@ -49,7 +49,7 @@ fn hex_string_custom_case<const N: usize>(src: &[u8], upper_case: bool) -> Strin
     if cfg!(debug_assertions) {
         String::from_utf8(buffer).unwrap()
     } else {
-        // Saftey: We just wrote valid utf8 hex string into the dst
+        // Safety: We just wrote valid utf8 hex string into the dst
         unsafe { String::from_utf8_unchecked(buffer) }
     }
 }
@@ -117,7 +117,7 @@ pub fn hex_encode_custom<'a>(
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     {
         hex_encode_custom_case_fallback(src, dst, upper_case);
-        // Saftey: We just wrote valid utf8 hex string into the dst
+        // Safety: We just wrote valid utf8 hex string into the dst
         Ok(unsafe { mut_str(dst) })
     }
 }
