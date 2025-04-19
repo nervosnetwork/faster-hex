@@ -46,3 +46,6 @@ harness = false
 [[bench]]
 name = "check"
 harness = false
+
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"
