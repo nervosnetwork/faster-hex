@@ -15,8 +15,8 @@ pub use crate::decode::{
     hex_decode_unchecked,
 };
 pub use crate::encode::{
-    hex_encode, hex_encode_fallback, hex_encode_upper, hex_encode_upper_fallback, hex_string,
-    hex_string_upper,
+    hex_encode, hex_encode_fallback, hex_encode_into, hex_encode_upper, hex_encode_upper_fallback,
+    hex_string, hex_string_upper,
 };
 
 pub use crate::error::Error;
