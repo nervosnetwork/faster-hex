@@ -14,6 +14,7 @@ exclude = ["afl/*", "benches/*", "fuzz/*", "CHANGELOG.md"]
 
 [dependencies]
 defmt = { version = "0.3", optional = true }
+heapless = { version = "0.8", optional = true }
 serde = { version = "1.0", default-features = false, optional = true }
 
 [features]
@@ -21,13 +22,8 @@ default = ["std", "serde"]
 std = ["alloc", "serde?/std"]
 alloc = ["defmt?/alloc"]
 serde = ["dep:serde", "alloc"]
-defmt-03 = ["dep:defmt"]
-
-[target.'cfg(not(feature = "alloc"))'.dependencies]
-heapless = { version = "0.8" }
-
-[target.'cfg(not(feature = "alloc"))'.features]
-defmt-03 = ["dep:defmt", "heapless/defmt-03"]
+defmt-03 = ["dep:defmt", "heapless?/defmt-03"]
+heapless = ["dep:heapless"]
 
 [dev-dependencies]
 criterion = "0.5"
@@ -41,11 +37,13 @@ serde_json = { version = "1.0" }
 [[bench]]
 name = "hex"
 harness = false
+required-features = ["alloc"]
 
 
 [[bench]]
 name = "check"
 harness = false
+required-features = ["alloc"]
 
 [lints.clippy]
 undocumented_unsafe_blocks = "warn"

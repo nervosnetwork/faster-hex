@@ -9,7 +9,7 @@ use core::arch::aarch64::*;
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec};
 
-#[cfg(not(feature = "alloc"))]
+#[cfg(feature = "heapless")]
 use heapless::{String, Vec};
 
 use crate::error::Error;
@@ -34,7 +34,7 @@ fn hex_string_custom_case(src: &[u8], upper_case: bool) -> String {
     }
 }
 
-#[cfg(not(feature = "alloc"))]
+#[cfg(feature = "heapless")]
 fn hex_string_custom_case<const N: usize>(src: &[u8], upper_case: bool) -> String<N> {
     let mut buffer = Vec::<_, N>::new();
     buffer
@@ -59,7 +59,7 @@ pub fn hex_string(src: &[u8]) -> String {
     hex_string_custom_case(src, false)
 }
 
-#[cfg(not(feature = "alloc"))]
+#[cfg(feature = "heapless")]
 pub fn hex_string<const N: usize>(src: &[u8]) -> String<N> {
     hex_string_custom_case(src, false)
 }
@@ -69,7 +69,7 @@ pub fn hex_string_upper(src: &[u8]) -> String {
     hex_string_custom_case(src, true)
 }
 
-#[cfg(not(feature = "alloc"))]
+#[cfg(feature = "heapless")]
 pub fn hex_string_upper<const N: usize>(src: &[u8]) -> String<N> {
     hex_string_custom_case(src, true)
 }

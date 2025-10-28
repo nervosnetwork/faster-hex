@@ -382,17 +382,17 @@ pub fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use crate::decode::NIL;
-    use crate::{
-        decode::{
-            hex_check_fallback, hex_check_fallback_with_case, hex_decode_fallback, CheckCase,
-        },
-        encode::hex_string,
+    use crate::decode::{
+        hex_check_fallback, hex_check_fallback_with_case, hex_decode_fallback, CheckCase,
     };
+    #[cfg(any(feature = "alloc", feature = "heapless"))]
+    use crate::encode::hex_string;
     use proptest::proptest;
 
-    #[cfg(not(feature = "alloc"))]
+    #[cfg(feature = "heapless")]
     const CAPACITY: usize = 128;
 
+    #[cfg(any(feature = "alloc", feature = "heapless"))]
     fn _test_decode_fallback(s: &String) {
         let len = s.as_bytes().len();
         let mut dst = Vec::with_capacity(len);
@@ -400,7 +400,7 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         let hex_string = hex_string(s.as_bytes());
-        #[cfg(not(feature = "alloc"))]
+        #[cfg(feature = "heapless")]
         let hex_string = hex_string::<CAPACITY>(s.as_bytes());
 
         hex_decode_fallback(hex_string.as_bytes(), &mut dst);
@@ -416,7 +416,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "alloc"))]
+    #[cfg(feature = "heapless")]
     proptest! {
         #[test]
         fn test_decode_fallback(ref s in ".{1,16}") {

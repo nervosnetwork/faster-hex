@@ -15,9 +15,10 @@ pub use crate::decode::{
     hex_decode_unchecked,
 };
 pub use crate::encode::{
-    hex_encode, hex_encode_fallback, hex_encode_upper, hex_encode_upper_fallback, hex_string,
-    hex_string_upper,
+    hex_encode, hex_encode_fallback, hex_encode_upper, hex_encode_upper_fallback,
 };
+#[cfg(any(feature = "alloc", feature = "heapless"))]
+pub use crate::encode::{hex_string, hex_string_upper};
 
 pub use crate::error::Error;
 
@@ -175,11 +176,13 @@ fn vectorization_support_no_cache_arm() -> Vectorization {
 #[cfg(test)]
 mod tests {
     use crate::decode::{hex_decode, hex_decode_with_case, CheckCase};
-    use crate::encode::{hex_encode, hex_string};
-    use crate::{hex_encode_upper, hex_string_upper, vectorization_support, Vectorization};
+    use crate::encode::hex_encode;
+    #[cfg(any(feature = "alloc", feature = "heapless"))]
+    use crate::{encode::hex_string, hex_string_upper};
+    use crate::{hex_encode_upper, vectorization_support, Vectorization};
     use proptest::proptest;
 
-    #[cfg(not(feature = "alloc"))]
+    #[cfg(feature = "heapless")]
     const CAPACITY: usize = 128;
 
     #[test]
@@ -209,6 +212,7 @@ mod tests {
         assert_eq!(vector_support, Vectorization::None);
     }
 
+    #[cfg(any(feature = "alloc", feature = "heapless"))]
     fn _test_hex_encode(s: &String) {
         let mut buffer = vec![0; s.as_bytes().len() * 2];
         {
@@ -216,7 +220,7 @@ mod tests {
 
             #[cfg(feature = "alloc")]
             let hex_string = hex_string(s.as_bytes());
-            #[cfg(not(feature = "alloc"))]
+            #[cfg(feature = "heapless")]
             let hex_string = hex_string::<CAPACITY>(s.as_bytes());
 
             assert_eq!(encode, hex::encode(s));
@@ -228,7 +232,7 @@ mod tests {
 
             #[cfg(feature = "alloc")]
             let hex_string_upper = hex_string_upper(s.as_bytes());
-            #[cfg(not(feature = "alloc"))]
+            #[cfg(feature = "heapless")]
             let hex_string_upper = hex_string_upper::<CAPACITY>(s.as_bytes());
 
             assert_eq!(encode_upper, hex::encode_upper(s));
@@ -244,7 +248,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "alloc"))]
+    #[cfg(feature = "heapless")]
     proptest! {
         #[test]
         fn test_hex_encode(ref s in ".{0,16}") {
@@ -252,6 +256,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(feature = "alloc", feature = "heapless"))]
     fn _test_hex_decode(s: &String) {
         let len = s.as_bytes().len();
         {
@@ -259,7 +264,7 @@ mod tests {
             dst.resize(len, 0);
             #[cfg(feature = "alloc")]
             let hex_string = hex_string(s.as_bytes());
-            #[cfg(not(feature = "alloc"))]
+            #[cfg(feature = "heapless")]
             let hex_string = hex_string::<CAPACITY>(s.as_bytes());
 
             hex_decode(hex_string.as_bytes(), &mut dst).unwrap();
@@ -273,7 +278,7 @@ mod tests {
             dst.resize(len, 0);
             #[cfg(feature = "alloc")]
             let hex_string_upper = hex_string_upper(s.as_bytes());
-            #[cfg(not(feature = "alloc"))]
+            #[cfg(feature = "heapless")]
             let hex_string_upper = hex_string_upper::<CAPACITY>(s.as_bytes());
 
             hex_decode_with_case(hex_string_upper.as_bytes(), &mut dst, CheckCase::Upper).unwrap();
@@ -290,7 +295,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "alloc"))]
+    #[cfg(feature = "heapless")]
     proptest! {
         #[test]
         fn test_hex_decode(ref s in ".{1,16}") {
