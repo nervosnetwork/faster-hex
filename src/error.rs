@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 pub enum Error {
     InvalidChar,
@@ -22,8 +22,7 @@ impl ::core::fmt::Display for Error {
     }
 }
 
-#[cfg(feature = "std")]
-impl ::std::error::Error for Error {
+impl core::error::Error for Error {
     fn description(&self) -> &str {
         match *self {
             Error::InvalidChar => "invalid character",
