@@ -128,6 +128,18 @@ pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Erro
     hex_encode_custom(src, dst, false)
 }
 
+pub fn hex_encode_into<'a>(src: &[u8], dst: &'a mut String) -> &'a mut str {
+    let additional = src.len() * 2;
+    let base = dst.len();
+    dst.reserve(additional);
+    unsafe {
+        let dst_vec = dst.as_mut_vec();
+        dst_vec.set_len(base + additional);
+        hex_encode(src, &mut dst_vec[base..])
+            .expect("hex_encode always succeeds because we reserved enough space")
+    }
+}
+
 pub fn hex_encode_upper<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
     hex_encode_custom(src, dst, true)
 }
