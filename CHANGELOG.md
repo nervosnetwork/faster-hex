@@ -1,3 +1,11 @@
+# Unreleased
+
+### Bug Fixes
+
+* Don't pull `heapless` into `std`/`alloc` builds: `[target.'cfg(not(feature = "alloc"))']` predicates are not supported by Cargo and match unconditionally, so `heapless` was compiled into every build while only no-`alloc` code used it ([#65](https://github.com/nervosnetwork/faster-hex/issues/65)). It is now an optional dependency behind the new additive `heapless` feature. **BREAKING**: in builds without `alloc`, `hex_string`/`hex_string_upper` are replaced by `hex_string_heapless`/`hex_string_upper_heapless`, gated behind that feature; `alloc` and `std` users are unaffected.
+
+# [0.10.0](https://github.com/nervosnetwork/faster-hex/compare/v0.9.0...a7ce51feb378bc713f7e39f2f3c3172372abc4ec) (2024-09-14)
+
 ### Features
 
 * Add PartialEq derived macro to Error in order to be able to test error cases

@@ -89,6 +89,11 @@ struct Simple {
 ```
 
 
+heapless feature (`no-std` without `alloc`)
+```rust
+let hex: heapless::String<24> = faster_hex::hex_string_heapless(b"Hello world!");
+```
+
 ## Notice
 
 Major version zero (0.y.z) is for initial development. Anything MAY change at any time. The public API SHOULD NOT be considered stable.

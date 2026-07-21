@@ -9,9 +9,6 @@ use core::arch::aarch64::*;
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec};
 
-#[cfg(not(feature = "alloc"))]
-use heapless::{String, Vec};
-
 use crate::error::Error;
 
 static TABLE_LOWER: &[u8] = b"0123456789abcdef";
@@ -34,9 +31,12 @@ fn hex_string_custom_case(src: &[u8], upper_case: bool) -> String {
     }
 }
 
-#[cfg(not(feature = "alloc"))]
-fn hex_string_custom_case<const N: usize>(src: &[u8], upper_case: bool) -> String<N> {
-    let mut buffer = Vec::<_, N>::new();
+#[cfg(feature = "heapless")]
+fn hex_string_heapless_custom_case<const N: usize>(
+    src: &[u8],
+    upper_case: bool,
+) -> heapless::String<N> {
+    let mut buffer = heapless::Vec::<u8, N>::new();
     buffer
         .resize(src.len() * 2, 0)
         .expect("String<N> capacity too short");
@@ -47,10 +47,10 @@ fn hex_string_custom_case<const N: usize>(src: &[u8], upper_case: bool) -> Strin
     }
 
     if cfg!(debug_assertions) {
-        String::from_utf8(buffer).unwrap()
+        heapless::String::from_utf8(buffer).unwrap()
     } else {
         // Safety: We just wrote valid utf8 hex string into the dst
-        unsafe { String::from_utf8_unchecked(buffer) }
+        unsafe { heapless::String::from_utf8_unchecked(buffer) }
     }
 }
 
@@ -59,19 +59,29 @@ pub fn hex_string(src: &[u8]) -> String {
     hex_string_custom_case(src, false)
 }
 
-#[cfg(not(feature = "alloc"))]
-pub fn hex_string<const N: usize>(src: &[u8]) -> String<N> {
-    hex_string_custom_case(src, false)
-}
-
 #[cfg(feature = "alloc")]
 pub fn hex_string_upper(src: &[u8]) -> String {
     hex_string_custom_case(src, true)
 }
 
-#[cfg(not(feature = "alloc"))]
-pub fn hex_string_upper<const N: usize>(src: &[u8]) -> String<N> {
-    hex_string_custom_case(src, true)
+/// Hex encode src into a fixed-capacity [`heapless::String`], lower case.
+///
+/// # Panics
+///
+/// Panics if the capacity `N` is less than `src.len() * 2`.
+#[cfg(feature = "heapless")]
+pub fn hex_string_heapless<const N: usize>(src: &[u8]) -> heapless::String<N> {
+    hex_string_heapless_custom_case(src, false)
+}
+
+/// Hex encode src into a fixed-capacity [`heapless::String`], upper case.
+///
+/// # Panics
+///
+/// Panics if the capacity `N` is less than `src.len() * 2`.
+#[cfg(feature = "heapless")]
+pub fn hex_string_upper_heapless<const N: usize>(src: &[u8]) -> heapless::String<N> {
+    hex_string_heapless_custom_case(src, true)
 }
 
 pub fn hex_encode_custom<'a>(
