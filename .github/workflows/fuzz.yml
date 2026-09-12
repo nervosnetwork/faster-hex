@@ -113,13 +113,20 @@ jobs:
         with:
           path: target/fuzz-corpus/afl
           key: ${{ steps.corpus.outputs.cache-primary-key }}
+      # AFL queue and crash filenames contain colons, which artifacts reject.
+      - name: Archive AFL results
+        if: always()
+        run: |
+          if [ -d target/afl-results ]; then
+            tar -czf target/afl-results.tar.gz -C target afl-results
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: afl-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 30
           path: |
-            target/afl-results
+            target/afl-results.tar.gz
             target/fuzz-corpus/afl
             afl/Cargo.lock
           if-no-files-found: error

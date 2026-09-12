@@ -94,6 +94,14 @@ fn errors_have_stable_precedence_and_do_not_write() {
 }
 
 #[test]
+#[cfg(feature = "defmt-03")]
+fn defmt_formats_on_host_without_an_embedded_logger() {
+    let error = hex_decode(b"0g", &mut [0]).unwrap_err();
+    defmt::println!("{:?} {:?}", error, CheckCase::Lower);
+    defmt::flush();
+}
+
+#[test]
 #[cfg(not(miri))]
 fn every_character_pair_in_scalar_and_vector_sized_inputs() {
     for a in 0..=255 {

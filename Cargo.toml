@@ -32,6 +32,8 @@ heapless-08 = ["dep:heapless"]
 criterion = "0.5"
 const-hex = "1.19"
 data-encoding = "2"
+# Host tests have no embedded defmt logger or linker script.
+defmt = { version = "0.3", features = ["unstable-test"] }
 hex = "0.4"
 hex-simd = "0.8"
 libc = "0.2"
