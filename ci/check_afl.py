@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from corpus import merge, replace
+from corpus import contents, merge, replace
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -76,12 +76,18 @@ save()
 # Each showmap invocation must finish after one input. afl.rs otherwise defaults
 # to an effectively unbounded persistent loop; batch cmin can then time out and
 # silently discard every input on macOS. Fuzzing itself keeps persistent mode.
+# AFL++ 4.40c probes the occupied edge count, but afl.rs' persistent runtime
+# still clears the default 64 KiB map. A smaller allocation crashes batch
+# replay, which cmin can silently reduce to an empty corpus.
 run("minimize", ["cargo", "afl", "cmin", "-i", str(files[0].parent / "queue"),
                  "-o", str(out / "minimized"), "-t", "10000", "-m", "none", "--",
-                 str(target / "debug/faster-hex-afl")], env_extra={"AFL_FUZZER_LOOPCOUNT": "1"})
-run("coverage", ["python3", "ci/check_fuzz_coverage.py", "--corpus", str(out / "minimized"),
-                 "--out", str(out / "coverage")])
+                 str(target / "debug/faster-hex-afl")],
+    env_extra={"AFL_FUZZER_LOOPCOUNT": "1", "AFL_MAP_SIZE": "65536"})
 try:
+    if not contents(out / "minimized"):
+        raise ValueError("AFL minimization produced an empty corpus; inspect minimize.log")
+    run("coverage", ["python3", "ci/check_fuzz_coverage.py", "--corpus", str(out / "minimized"),
+                     "--out", str(out / "coverage")])
     report["saved"] = replace(out / "minimized", corpus)
 except (OSError, ValueError) as error:
     report.update(status="failed", error=str(error))

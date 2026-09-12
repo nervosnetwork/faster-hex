@@ -121,6 +121,48 @@ raise SystemExit(23)
             self.assertIn("intentional consumer compiler failure", (report / "core/check.log").read_text())
 
 
+class AflReportTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "the AFL stub uses a POSIX shebang")
+    def test_successful_but_empty_minimization_preserves_saved_corpus(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cargo = root / "cargo"
+            cargo.write_text('''#!/usr/bin/env python3
+from pathlib import Path
+import sys
+command = sys.argv[2]
+if command in ("fuzz", "cmin"):
+    output = Path(sys.argv[sys.argv.index("-o") + 1])
+    output.mkdir(parents=True)
+    if command == "fuzz":
+        queue = output / "default/queue"
+        queue.mkdir(parents=True)
+        (queue / "id:000000").write_bytes(b"ff")
+        (queue.parent / "fuzzer_stats").write_text(
+            "execs_done : 10\\nsaved_crashes : 0\\nsaved_hangs : 0\\n")
+    else:
+        print("narrowed down to 0 files")
+''')
+            cargo.chmod(0o755)
+            saved = root / "saved"
+            saved.mkdir()
+            (saved / "keep").write_bytes(b"old corpus")
+            output = root / "output"
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name("check_afl.py")),
+                                     "--seconds", "1", "--out", str(output), "--corpus", str(saved)],
+                                    capture_output=True, text=True,
+                                    env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"]})
+            self.assertNotEqual(result.returncode, 0)
+            report = json.loads((output / "results.json").read_text())
+            self.assertEqual(report["status"], "failed")
+            self.assertIn("empty corpus", report["error"])
+            self.assertEqual(report["commands"][-1]["name"], "minimize")
+            self.assertEqual(report["commands"][-1]["exit_code"], 0)
+            self.assertFalse((output / "coverage").exists())
+            self.assertEqual(list(contents(saved).values()), [b"old corpus"])
+            self.assertIn("narrowed down to 0 files", (output / "minimize.log").read_text())
+
+
 class CoverageTests(unittest.TestCase):
     def profile(self, backends):
         return {"data": [{"functions": [
