@@ -65,7 +65,13 @@ def main():
             # Use libFuzzer's merge mode through `run`: cargo-fuzz 0.13.2's
             # `cmin` returns success even when the underlying merge fails.
             run(name + "-minimize", [*command, str(minimized), str(working), "--", "-merge=1", *common])
-            case["saved"] = replace(minimized, saved)
+        run("coverage", ["python3", "ci/check_fuzz_coverage.py", "--out", str(out / "coverage"),
+                         *[arg for name in ["all", "core", "alloc"]
+                           for arg in ["--corpus", str(out / "minimized" / name)]]])
+        # Keep the previous corpus intact if minimization loses core coverage.
+        for case in report["cases"]:
+            name = case["name"]
+            case["saved"] = replace(out / "minimized" / name, corpus / name)
             save()
         report["status"] = "passed"
     except (OSError, ValueError) as error:

@@ -11,7 +11,7 @@ core = root / "faster-hex"
 serde = root / "serde"
 core.mkdir(parents=True, exist_ok=True)
 serde.mkdir(parents=True, exist_ok=True)
-for length in [0, 1, 2, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 4096]:
+for length in [0, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 4096]:
     raw = bytes((i * 37 + length) % 256 for i in range(length))
     for kind, data in [("binary", raw), ("lower", raw.hex().encode()),
                        ("upper", raw.hex().upper().encode())]:
@@ -23,6 +23,10 @@ for length in [0, 1, 2, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
         if data:
             data[position] = 255
         (core / f"invalid-{length}-{position}").write_bytes(bytes([1, 31]) + length.to_bytes(2, "little") + data)
+# Exercise every length selector and invalid-byte value in the shared core
+# harness, including short inputs that it expands to multi-block payloads.
+for control in range(256):
+    (core / f"control-{control}").write_bytes(bytes([control % 32, (control * 7) % 32, control, control]))
 for name, data in {
     "empty": b'"0x"', "mixed": b'"0x0123aBcDeF"', "null": b"null",
     "escaped": b'"\\u0030x\\u00303"', "odd": b'"0xa"',

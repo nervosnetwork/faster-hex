@@ -605,7 +605,7 @@ pub fn hex_decode_vec_with_case(
 }
 
 #[inline]
-fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
+pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
     #[cfg(target_arch = "aarch64")]
     let len = dst.len();
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

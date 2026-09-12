@@ -375,7 +375,7 @@ unsafe fn encode_sse41_16(src: &[u8; 16], dst: &mut [MaybeUninit<u8>; 32], table
 
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
-unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
+pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
     if src.len() < 8 {
         return hex_encode_custom_case_fallback(src, dst, upper_case);
     }
@@ -430,7 +430,11 @@ const fn encode_pairs(alphabet: &[u8; 16]) -> [[u8; 2]; 256] {
 static PAIRS_LOWER: [[u8; 2]; 256] = encode_pairs(TABLE_LOWER);
 static PAIRS_UPPER: [[u8; 2]; 256] = encode_pairs(TABLE_UPPER);
 
-fn hex_encode_custom_case_fallback(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
+pub(crate) fn hex_encode_custom_case_fallback(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+    upper_case: bool,
+) {
     // Arithmetic lets LLVM vectorize longer inputs on baseline SIMD targets.
     // Pair lookup avoids per-nibble branches for short or non-SIMD inputs.
     if cfg!(any(

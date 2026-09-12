@@ -2,6 +2,9 @@ use faster_hex::{
     hex_check_with_case, hex_decode_with_case, hex_encode, hex_encode_upper, CheckCase, Error,
 };
 
+#[path = "core.rs"]
+mod core;
+
 fn digit(byte: u8, case: CheckCase) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
@@ -12,6 +15,7 @@ fn digit(byte: u8, case: CheckCase) -> Option<u8> {
 }
 
 pub fn exercise(data: &[u8]) {
+    core::exercise(data);
     let (header, input) = data.split_at(data.len().min(4));
     let control = |i| header.get(i).copied().unwrap_or(0);
     let source_offset = usize::from(control(0) % 32);

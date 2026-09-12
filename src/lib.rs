@@ -164,6 +164,13 @@ mod encode;
 mod error;
 mod format;
 
+// Both cargo-fuzz and cargo-afl set this cfg. It is deliberately not a Cargo
+// feature: regular builds (including --all-features) have no backend API.
+#[cfg(fuzzing)]
+#[doc(hidden)]
+#[allow(missing_docs)]
+pub mod fuzzing;
+
 #[cfg(feature = "heapless-08")]
 #[cfg_attr(docsrs, doc(cfg(feature = "heapless-08")))]
 pub mod heapless_08;

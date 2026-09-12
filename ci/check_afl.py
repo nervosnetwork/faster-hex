@@ -48,7 +48,8 @@ run("version", ["cargo", "afl", "--version"])
 run("build", ["cargo", "afl", "build", "--manifest-path", "afl/Cargo.toml"])
 seeds = out / "seeds"
 corpus = args.corpus.resolve()
-report["restored_and_seeded"] = merge([corpus, root / "afl/in"], seeds)
+run("seed", ["python3", "fuzz/seed.py", "--out", str(out / "generated-seeds")])
+report["restored_and_seeded"] = merge([corpus, root / "afl/in", out / "generated-seeds/faster-hex"], seeds)
 tracing = ["-c", "-"] if args.no_cmplog else []
 run("fuzz", ["cargo", "afl", "fuzz", *tracing, "-i", str(seeds), "-o", str(out / "findings"),
              "-V", str(args.seconds), "-G", "8192", str(target / "debug/faster-hex-afl")])
@@ -78,6 +79,8 @@ save()
 run("minimize", ["cargo", "afl", "cmin", "-i", str(files[0].parent / "queue"),
                  "-o", str(out / "minimized"), "-t", "10000", "-m", "none", "--",
                  str(target / "debug/faster-hex-afl")], env_extra={"AFL_FUZZER_LOOPCOUNT": "1"})
+run("coverage", ["python3", "ci/check_fuzz_coverage.py", "--corpus", str(out / "minimized"),
+                 "--out", str(out / "coverage")])
 try:
     report["saved"] = replace(out / "minimized", corpus)
 except (OSError, ValueError) as error:
