@@ -103,7 +103,9 @@ jobs:
           path: target/fuzz-corpus/afl
           key: fuzz-corpus-v1-afl-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: fuzz-corpus-v1-afl-${{ runner.arch }}-
-      - run: cargo install cargo-afl --version 0.18.2 --locked
+      # The binary cache omits afl.rs runtime data. Reinstall so its build
+      # script rebuilds the runtime for the active Rust toolchain.
+      - run: cargo install cargo-afl --version 0.18.2 --locked --force
       - name: Configure crash reporting on the disposable runner
         run: sudo sysctl -w kernel.core_pattern=core
       - run: python3 ci/check_afl.py --seconds "$FUZZ_SECONDS"
