@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run and retain native x86 checks; refuse missing vendors/backends or translation."""
+"""Verify native x86 backends; refuse missing vendors/ISAs or translated execution."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -64,15 +64,12 @@ def test_completed(log, name):
     return record is not None and record.group(1).strip().splitlines()[-1:] == ["ok"]
 
 
-files = read(["git", "ls-files", "src", "tests", "benches", "fuzz", "ci", ".github/workflows",
-              "Cargo.toml", "README.md", "rust-toolchain.toml"]).splitlines()
 metadata = dict(commit=read(["git", "rev-parse", "HEAD"]),
                 git_status=read(["git", "status", "--porcelain"]),
                 timestamp_utc=datetime.now(timezone.utc).isoformat(),
                 rustc=read(["rustc", "-Vv"]), platform=platform.platform(), machine=platform.machine(),
                 expected_vendor=args.vendor,
                 nightly_toolchain=args.nightly,
-                source_sha256={file: hashlib.sha256((root / file).read_bytes()).hexdigest() for file in files},
                 runner={key: os.environ.get(key) for key in ["RUNNER_OS", "RUNNER_ARCH", "ImageOS", "ImageVersion",
                         "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"]},
                 limitations="Native instruction execution on hosted runners; these checks do not measure performance.")
@@ -107,22 +104,19 @@ required_tests = ["forced_backends_preserve_order_at_independent_alignments",
                   "conversions_and_checks_stop_at_guard_pages"]
 for name, flags, extra in [("test-debug", [], {}), ("test-release", ["--release"], {}),
                            ("test-static-avx2", ["--release"], {"RUSTFLAGS": "-Ctarget-feature=+avx2"})]:
-    log = run(name, ["cargo", "test", "--all-features", *flags, "--", "--nocapture", "--test-threads=1"], extra)
+    # The main workflow covers public integration tests and packaging. This job
+    # proves the forced kernels and guard-page tests ran on each physical vendor.
+    log = run(name, ["cargo", "test", "--lib", "--all-features", *flags,
+                     "--", "--nocapture", "--test-threads=1"], extra)
     coverage = {test: test_completed(log, test) for test in required_tests}
     coverage["sse41_and_avx2_executed"] = "forced x86 backends: SSE4.1=true, AVX2=true" in log
     save(f"{name}-coverage.json", coverage)
     if not all(coverage.values()):
         raise SystemExit(f"{name} did not execute the required backend and guard-page tests")
-run("package", ["cargo", "package", "--all-features", "--locked"])
-run("package-contents", [sys.executable, "ci/check_package.py", "--report", str(out / "package.json")])
-run("fuzz-seed", [sys.executable, "fuzz/seed.py"])
-fuzz_env = {"CARGO_TARGET_DIR": str(root / "target/native-fuzz")}
-for name, target, features in [("fuzz-all", "faster-hex", ["--all-features"]),
-                               ("fuzz-core", "faster-hex", ["--no-default-features"]),
-                               ("fuzz-alloc", "faster-hex", ["--no-default-features", "--features", "alloc"]),
-                               ("fuzz-serde", "serde", [])]:
-    run(name, ["cargo", f"+{args.nightly}", "fuzz", "run", target, *features, "--sanitizer", "address", "--",
-               "-max_total_time=30", "-max_len=8192", "-dict=fuzz/hex.dict"], fuzz_env)
+run("fuzz", [sys.executable, "ci/check_fuzz.py", "--out", str(out / "fuzz"),
+             "--corpus", str(out / "corpus")],
+    {"RUSTUP_TOOLCHAIN": args.nightly, "CARGO_TARGET_DIR": str(root / "target/native-fuzz"),
+     "FUZZ_REQUIRED_BACKENDS": "scalar,sse41,avx2"})
 
 save("complete.json", dict(commit=metadata["commit"], vendor=probe["vendor"], status="passed",
                             timestamp_utc=datetime.now(timezone.utc).isoformat()))

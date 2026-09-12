@@ -40,7 +40,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
-          components: rust-src
+          components: rust-src, llvm-tools-preview
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: native-${{ matrix.vendor }}-${{ env.NIGHTLY_TOOLCHAIN }}
@@ -58,5 +58,6 @@ jobs:
             target/native-validation/**/*.json
             target/native-validation/**/*.log
             target/native-validation/**/*Cargo.lock
-            fuzz/artifacts
+            target/native-validation/fuzz
+            target/native-validation/corpus
           if-no-files-found: error
