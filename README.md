@@ -46,6 +46,54 @@ adapters exist only under `cfg(fuzzing)`, not in normal or `--all-features` buil
 After minimization, LLVM coverage replay must still reach the scalar and available
 SIMD kernels. JSON and HTML coverage reports are retained with the fuzz artifacts.
 
+## Benchmarks
+
+For development, run `cargo bench-dev` from this checkout. It measures eight
+cases: encoding and decoding 8, 32, 256 and 4096 bytes through the public API.
+Buffers are allocated before timing; validation and CPU dispatch are included.
+Each case uses 0.2 seconds of warm-up and 1 second of sampling, so expect roughly
+10–20 seconds after compilation.
+
+Save a baseline before editing, then compare the same cases after your change:
+
+```sh
+cargo bench-dev --save-baseline before
+# Edit the implementation.
+cargo bench-dev --baseline before
+```
+
+Criterion's `change: time` reports the change in latency: negative is faster,
+positive is slower. It also reports whether the change is statistically
+significant. `--baseline before` keeps the saved baseline unchanged, so you can
+compare multiple edits against it. Results live in `target/criterion`; keep that
+directory when switching between commits. Use the same machine, Rust toolchain,
+features and `Cargo.lock`, and run one benchmark process at a time.
+
+To compare with `hex`, `const-hex`, `hex-simd` and `data-encoding`, run:
+
+```sh
+cargo bench-compare
+```
+
+This runs 40 cases at the same four sizes, taking roughly a minute after
+compilation. All libraries receive the same input and reuse their output buffer.
+Encoding is lowercase; decoding accepts mixed case. Sizes and throughput count
+binary payload bytes: `decode/faster_hex_mixed/32` reads 64 hex characters and
+produces 32 bytes. Append `--list` to either command to inspect the selected cases.
+
+For a small performance difference, confirm the affected cases using Criterion's
+longer default sampling, saving and comparing a new baseline as above:
+
+```sh
+cargo bench --bench hex -- '^encode/faster_hex/32$' --save-baseline confirm
+# Edit the implementation, then rerun with --baseline confirm.
+```
+
+The full matrix (`cargo bench --all-features --benches`) also covers invalid
+inputs, alignment, mixed-size batches, owned output, formatting and Serde. It has
+703 cases and takes roughly 90 minutes or more with default sampling. CI uses
+`--test` to exercise those cases and their assertions without collecting timings.
+
 ## License
 
 [MIT](LICENSE). Third-party notices are in [LICENSE-THIRD-PARTY](LICENSE-THIRD-PARTY).

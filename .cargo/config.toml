@@ -1,0 +1,16 @@
+[alias]
+# Eight cases for comparing an implementation change with a saved baseline.
+bench-dev = [
+    "bench", "--bench", "hex", "--",
+    "^(encode/faster_hex|decode/faster_hex_mixed)/(8|32|256|4096)$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]
+
+# Forty cases: identical lowercase encoding and mixed-case decoding inputs.
+bench-compare = [
+    "bench", "--bench", "hex", "--",
+    "^(encode/(faster_hex|hex|const_hex|hex_simd|data_encoding)|decode/(faster_hex_mixed|hex|const_hex|hex_simd|data_encoding))/(8|32|256|4096)$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]

@@ -10,7 +10,7 @@ description = "Fast, checked hex encoding and decoding with SIMD and no_std supp
 repository = "https://github.com/nervosnetwork/faster-hex"
 homepage = "https://github.com/nervosnetwork/faster-hex"
 readme = "README.md"
-exclude = ["afl/*", "benches/*", "fuzz/*", "ci/*", ".github/*", "cliff.toml", "proptest-regressions/*"]
+exclude = ["afl/*", "benches/*", "fuzz/*", "ci/*", ".github/*", ".cargo/*", "cliff.toml", "proptest-regressions/*"]
 
 [package.metadata.docs.rs]
 all-features = true
