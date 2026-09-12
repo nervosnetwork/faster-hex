@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify native x86 backends; refuse missing vendors/ISAs or translated execution."""
+"""Verify native Intel/AMD backends; require both ISAs and reject translated execution."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -15,7 +15,8 @@ import time
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--vendor", choices=["intel", "amd"], required=True)
+parser.add_argument("--vendor", choices=["auto", "intel", "amd"], required=True,
+                    help="auto accepts either Intel or AMD; explicit vendors must match")
 parser.add_argument("--nightly", default=os.environ.get("NIGHTLY_TOOLCHAIN", "nightly-2026-08-21"))
 parser.add_argument("--out", type=Path, default=root / "target/native-validation")
 args = parser.parse_args()
@@ -92,9 +93,11 @@ run("build-cpu-probe", ["rustc", "--edition=2021", "ci/cpu_probe.rs", "-o", str(
 probe = dict(line.split("=", 1) for line in run("cpu-probe", [str(out / "cpu-probe")]).splitlines())
 metadata["cpu_probe"] = probe
 save("environment.json", metadata)
-expected = {"intel": "GenuineIntel", "amd": "AuthenticAMD"}[args.vendor]
-if probe != dict(arch="x86_64", vendor=expected, sse41="true", avx2="true"):
-    raise SystemExit(f"This runner does not satisfy the required vendor and SSE4.1/AVX2 coverage: {probe}")
+vendors = {"intel": "GenuineIntel", "amd": "AuthenticAMD"}
+expected = probe.get("vendor") if args.vendor == "auto" else vendors[args.vendor]
+if (expected not in vendors.values()
+        or probe != dict(arch="x86_64", vendor=expected, sse41="true", avx2="true")):
+    raise SystemExit(f"This runner does not satisfy vendor={args.vendor} and SSE4.1/AVX2 requirements: {probe}")
 metadata["nightly_rustc"] = run("nightly-rustc", ["rustc", f"+{args.nightly}", "-Vv"]).strip()
 metadata["cargo_fuzz"] = run("cargo-fuzz-version", ["cargo", f"+{args.nightly}", "fuzz", "--version"]).strip()
 save("environment.json", metadata)
@@ -105,7 +108,7 @@ required_tests = ["forced_backends_preserve_order_at_independent_alignments",
 for name, flags, extra in [("test-debug", [], {}), ("test-release", ["--release"], {}),
                            ("test-static-avx2", ["--release"], {"RUSTFLAGS": "-Ctarget-feature=+avx2"})]:
     # The main workflow covers public integration tests and packaging. This job
-    # proves the forced kernels and guard-page tests ran on each physical vendor.
+    # proves the forced kernels and guard-page tests ran on the recorded CPU.
     log = run(name, ["cargo", "test", "--lib", "--all-features", *flags,
                      "--", "--nocapture", "--test-threads=1"], extra)
     coverage = {test: test_completed(log, test) for test in required_tests}

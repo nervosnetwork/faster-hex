@@ -19,7 +19,7 @@ env:
 
 jobs:
   native:
-    name: Native ${{ matrix.vendor }}
+    name: Native x86 / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
@@ -27,7 +27,8 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            vendor: amd
+            # Standard Linux runners do not guarantee a particular CPU vendor.
+            vendor: auto
           - os: macos-15-intel
             vendor: intel
     steps:
@@ -43,7 +44,7 @@ jobs:
           components: rust-src, llvm-tools-preview
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: native-${{ matrix.vendor }}-${{ env.NIGHTLY_TOOLCHAIN }}
+          key: native-${{ matrix.os }}-${{ env.NIGHTLY_TOOLCHAIN }}
           workspaces: |
             . -> target/native-cargo
             fuzz -> ../target/native-fuzz
@@ -52,7 +53,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: native-${{ matrix.vendor }}-${{ github.sha }}-${{ github.run_attempt }}
+          name: native-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 30
           path: |
             target/native-validation/**/*.json
