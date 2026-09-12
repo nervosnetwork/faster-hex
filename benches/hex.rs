@@ -47,6 +47,21 @@ fn conversion(c: &mut Criterion) {
                 ));
             });
         });
+        group.bench_with_input(BenchmarkId::new("fashex", len), &input, |b, src| {
+            b.iter(|| {
+                black_box(
+                    fashex::encode::<false>(black_box(src), black_box(output.as_mut_slice()))
+                        .unwrap(),
+                );
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("better_hex", len), &input, |b, src| {
+            b.iter(|| {
+                black_box(
+                    better_hex::encode_to_slice(black_box(src), black_box(&mut output)).unwrap(),
+                );
+            });
+        });
         group.bench_with_input(BenchmarkId::new("data_encoding", len), &input, |b, src| {
             b.iter(|| {
                 data_encoding::HEXLOWER.encode_mut(black_box(src), black_box(&mut output));
@@ -99,6 +114,18 @@ fn conversion(c: &mut Criterion) {
                     hex_simd::decode(black_box(src), black_box(output.as_mut_slice()).as_out())
                         .unwrap(),
                 );
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("fashex", len), &mixed, |b, src| {
+            b.iter(|| {
+                fashex::decode(black_box(src), black_box(output.as_mut_slice())).unwrap();
+                black_box(&output);
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("better_hex", len), &mixed, |b, src| {
+            b.iter(|| {
+                better_hex::decode_to_slice(black_box(src), black_box(&mut output)).unwrap();
+                black_box(&output);
             });
         });
         group.bench_with_input(BenchmarkId::new("data_encoding", len), &mixed, |b, src| {
@@ -193,44 +220,104 @@ fn alignment(c: &mut Criterion) {
     group.finish();
 }
 
-fn rotating(c: &mut Criterion) {
-    let mut group = c.benchmark_group("rotating_encode");
-    for len in [1, 4, 8, 15, 16, 31, 32, 33, 64] {
-        let pool = support::bytes(len * 4096);
-        let mut output = vec![0; len * 2];
-        group.throughput(Throughput::Bytes(len as u64));
-        group.bench_function(BenchmarkId::new("faster_hex", len), |b| {
-            let mut cursor = 0;
-            b.iter(|| {
-                let input = &pool[cursor * len..][..len];
-                cursor = (cursor + 1) & 4095;
-                black_box(hex_encode(black_box(input), black_box(&mut output)).unwrap());
-            });
-        });
-        group.bench_function(BenchmarkId::new("const_hex", len), |b| {
-            let mut cursor = 0;
-            b.iter(|| {
-                let input = &pool[cursor * len..][..len];
-                cursor = (cursor + 1) & 4095;
-                black_box(
-                    const_hex::encode_to_str(black_box(input), black_box(&mut output)).unwrap(),
-                );
-            });
-        });
-        group.bench_function(BenchmarkId::new("hex_simd", len), |b| {
-            let mut cursor = 0;
-            b.iter(|| {
-                let input = &pool[cursor * len..][..len];
-                cursor = (cursor + 1) & 4095;
-                black_box(hex_simd::encode_as_str(
-                    black_box(input),
-                    black_box(output.as_mut_slice()).as_out(),
-                    AsciiCase::Lower,
-                ));
-            });
-        });
+fn rotating_case(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    name: &str,
+    input: &[u8],
+    expected: &[u8],
+    payload_len: usize,
+    mut convert: impl FnMut(&[u8], &mut [u8]),
+) {
+    let input_len = input.len() / 4096;
+    let output_len = expected.len() / 4096;
+    let mut output = vec![0; output_len];
+    for (src, expected) in input
+        .chunks_exact(input_len)
+        .zip(expected.chunks_exact(output_len))
+    {
+        convert(src, &mut output);
+        assert_eq!(output, expected);
     }
-    group.finish();
+    group.throughput(Throughput::Bytes(payload_len as u64));
+    group.bench_function(BenchmarkId::new(name, payload_len), |b| {
+        let mut cursor = 0;
+        b.iter(|| {
+            let src = &input[cursor * input_len..][..input_len];
+            cursor = (cursor + 1) & 4095;
+            convert(black_box(src), black_box(&mut output));
+            black_box(&output);
+        });
+    });
+}
+
+fn rotating(c: &mut Criterion) {
+    for encode in [true, false] {
+        let mut group = c.benchmark_group(if encode {
+            "rotating_encode"
+        } else {
+            "rotating_decode"
+        });
+        for len in [1, 4, 8, 15, 16, 31, 32, 33, 64] {
+            let binary = support::bytes(len * 4096);
+            let lower = hex::encode(&binary).into_bytes();
+            let mixed: Vec<_> = lower
+                .iter()
+                .enumerate()
+                .map(|(i, byte)| {
+                    if i % 2 == 0 {
+                        byte.to_ascii_uppercase()
+                    } else {
+                        *byte
+                    }
+                })
+                .collect();
+            let (input, expected) = if encode {
+                (&binary, &lower)
+            } else {
+                (&mixed, &binary)
+            };
+            // Expand each concrete closure here so the timer has no function-pointer dispatch.
+            macro_rules! case {
+                ($name:literal, $convert:expr) => {
+                    rotating_case(&mut group, $name, input, expected, len, $convert);
+                };
+            }
+            if encode {
+                case!("faster_hex", |src, dst| {
+                    hex_encode(src, dst).unwrap();
+                });
+                case!("const_hex", |src, dst| {
+                    const_hex::encode_to_str(src, dst).unwrap();
+                });
+                case!("hex_simd", |src, dst| {
+                    let _ = hex_simd::encode_as_str(src, dst.as_out(), AsciiCase::Lower);
+                });
+                case!("fashex", |src, dst| {
+                    fashex::encode::<false>(src, dst).unwrap();
+                });
+                case!("better_hex", |src, dst| {
+                    better_hex::encode_to_slice(src, dst).unwrap();
+                });
+            } else {
+                case!("faster_hex", |src, dst| {
+                    hex_decode(src, dst).unwrap();
+                });
+                case!("const_hex", |src, dst| {
+                    const_hex::decode_to_slice(src, dst).unwrap();
+                });
+                case!("hex_simd", |src, dst| {
+                    hex_simd::decode(src, dst.as_out()).unwrap();
+                });
+                case!("fashex", |src, dst| {
+                    fashex::decode(src, dst).unwrap();
+                });
+                case!("better_hex", |src, dst| {
+                    better_hex::decode_to_slice(src, dst).unwrap();
+                });
+            }
+        }
+        group.finish();
+    }
 }
 
 fn text(c: &mut Criterion) {

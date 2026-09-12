@@ -8,13 +8,18 @@ import subprocess
 
 
 KERNELS = {
-    "scalar": ["hex_encode_custom_case_fallback", "hex_check_fallback_with_case", "hex_decode_fallback"],
+    "scalar": ["hex_encode_custom_case_fallback", "hex_encode_pairs",
+               "hex_check_fallback_with_case", "hex_decode_fallback"],
     "sse41": ["hex_encode_sse41", "encode_sse41_16", "hex_check_sse_with_case",
-              "hex_decode_sse41_checked", "hex_decode_sse41", "decode_sse41_block"],
+              "hex_decode_sse41_checked", "hex_decode_sse41", "decode_sse41_block",
+              "decode_sse41_nibbles", "pack_sse41"],
     "avx2": ["hex_encode_avx2", "encode_avx2_32", "hex_check_avx2_with_case",
-             "hex_decode_avx2_checked", "hex_decode_avx2", "decode_avx2_block"],
-    "neon": ["hex_encode_neon", "encode_neon_8", "encode_neon_16", "hex_check_neon_with_case",
-             "hex_decode_short_neon", "hex_decode_bounded_neon", "hex_decode_neon", "decode_neon_block"],
+             "hex_decode_avx2_checked", "hex_decode_avx2", "decode_avx2_block",
+             "decode_avx2_nibbles", "pack_avx2"],
+    "neon": ["hex_encode_neon", "encode_neon_8", "encode_neon_16",
+             "hex_check_neon_with_case", "hex_check_neon_short",
+             "hex_decode_short_neon", "hex_decode_bounded_neon", "hex_decode_neon",
+             "decode_neon_block", "decode_neon_nibbles"],
 }
 
 

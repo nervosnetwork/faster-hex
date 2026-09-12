@@ -29,9 +29,11 @@ defmt-03 = ["dep:defmt", "heapless?/defmt-03"]
 heapless-08 = ["dep:heapless"]
 
 [dev-dependencies]
+better-hex = "1.0"
 criterion = "0.5"
 const-hex = "1.19"
 data-encoding = "2"
+fashex = "0.1"
 # Host tests have no embedded defmt logger or linker script.
 defmt = { version = "0.3", features = ["unstable-test"] }
 hex = "0.4"

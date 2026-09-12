@@ -125,12 +125,16 @@ fn encode<'a>(
     }
     #[cfg(target_arch = "aarch64")]
     {
-        match crate::vectorization_support() {
-            crate::Vectorization::Neon => {
-                // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
-                unsafe { hex_encode_neon(src, dst, upper_case) }
+        if src.len() < 8 {
+            hex_encode_pairs(src, dst, upper_case);
+        } else {
+            match crate::vectorization_support() {
+                crate::Vectorization::Neon => {
+                    // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
+                    unsafe { hex_encode_neon(src, dst, upper_case) }
+                }
+                crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
             }
-            crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
         }
     }
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
@@ -297,14 +301,15 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     if src.len() < 32 {
         return hex_encode_sse41(src, dst, upper_case);
     }
-    let letters = _mm256_set1_epi8(if upper_case { b'A' - 10 } else { b'a' - 10 } as i8);
+    let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
+    let table = _mm256_broadcastsi128_si256(_mm_loadu_si128(table.as_ptr().cast()));
     let (blocks, tail) = src.as_chunks::<32>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
-        encode_avx2_32(input, output, letters);
+        encode_avx2_32(input, output, table);
     }
     if !tail.is_empty() {
         if let (Some(input), Some(output)) = (src.last_chunk::<32>(), dst.last_chunk_mut::<64>()) {
-            encode_avx2_32(input, output, letters);
+            encode_avx2_32(input, output, table);
         }
     }
 }
@@ -312,30 +317,20 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn encode_avx2_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], letters: __m256i) {
+unsafe fn encode_avx2_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], table: __m256i) {
     let bytes = _mm256_loadu_si256(src.as_ptr().cast());
     let mask = _mm256_set1_epi8(15);
-    let ascii = |nibble| {
-        _mm256_add_epi8(
-            nibble,
-            _mm256_blendv_epi8(
-                _mm256_set1_epi8(b'0' as i8),
-                letters,
-                _mm256_cmpgt_epi8(nibble, _mm256_set1_epi8(9)),
-            ),
-        )
-    };
-    let high = ascii(_mm256_and_si256(_mm256_srli_epi16::<4>(bytes), mask));
-    let low = ascii(_mm256_and_si256(bytes, mask));
+    let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), mask);
+    let low = _mm256_and_si256(bytes, mask);
     let a = _mm256_unpacklo_epi8(high, low);
     let b = _mm256_unpackhi_epi8(high, low);
     _mm256_storeu_si256(
         dst.as_mut_ptr().cast(),
-        _mm256_permute2x128_si256::<0x20>(a, b),
+        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x20>(a, b)),
     );
     _mm256_storeu_si256(
         dst.as_mut_ptr().add(32).cast(),
-        _mm256_permute2x128_si256::<0x31>(a, b),
+        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x31>(a, b)),
     );
 }
 
@@ -373,6 +368,7 @@ unsafe fn encode_sse41_16(src: &[u8; 16], dst: &mut [MaybeUninit<u8>; 32], table
     );
 }
 
+#[inline]
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
@@ -393,8 +389,20 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
-    let (blocks, tail) = src.as_chunks::<16>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
+    let (batches, rest) = src.as_chunks::<64>();
+    let (outputs, remaining) = dst.as_chunks_mut::<128>();
+    for (input, output) in batches.iter().zip(outputs) {
+        for (input, output) in input
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .zip(output.as_chunks_mut::<32>().0)
+        {
+            encode_neon_16(input, output, table);
+        }
+    }
+    let (blocks, tail) = rest.as_chunks::<16>();
+    for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<32>().0) {
         encode_neon_16(input, output, table);
     }
     if !tail.is_empty() {
@@ -450,14 +458,19 @@ pub(crate) fn hex_encode_custom_case_fallback(
             pair[1].write(ascii(byte & 15));
         }
     } else {
-        let table = if upper_case {
-            &PAIRS_UPPER
-        } else {
-            &PAIRS_LOWER
-        };
-        for (&byte, pair) in src.iter().zip(dst.as_chunks_mut::<2>().0) {
-            *pair = table[byte as usize].map(MaybeUninit::new);
-        }
+        hex_encode_pairs(src, dst, upper_case);
+    }
+}
+
+#[inline]
+fn hex_encode_pairs(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
+    let table = if upper_case {
+        &PAIRS_UPPER
+    } else {
+        &PAIRS_LOWER
+    };
+    for (&byte, pair) in src.iter().zip(dst.as_chunks_mut::<2>().0) {
+        *pair = table[byte as usize].map(MaybeUninit::new);
     }
 }
 

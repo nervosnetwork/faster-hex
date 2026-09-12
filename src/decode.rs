@@ -1,5 +1,7 @@
 // SIMD decoding includes work derived from fast-hex under the MIT license.
 // See https://github.com/zbjornson/fast-hex and LICENSE-THIRD-PARTY/fast-hex.
+// Saturating nibble mapping is adapted from const-hex under the MIT license;
+// see LICENSE-THIRD-PARTY/const-hex.
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -269,25 +271,111 @@ unsafe fn valid_neon(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
     vorrq_u8(digit, letter)
 }
 
+// Map valid ASCII to 0..=15 and every invalid byte to >=16. This is the
+// saturating-arithmetic idea in Muła and Langdale's hex parser, with a strict
+// case policy and validation completed before any output is written:
+// http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html
+// Wrapping (x - 58), saturating subtraction of 6, then wrapping +16 maps
+// '0'..='9' to 0..=9 and everything else to >=16. The letter candidate maps
+// its first six values to 10..=15; unsigned min chooses the valid candidate.
+#[inline]
+#[target_feature(enable = "sse4.1")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn decode_sse41_nibbles(bytes: __m128i, case: CheckCase) -> __m128i {
+    let digit = _mm_sub_epi8(
+        _mm_subs_epu8(_mm_add_epi8(bytes, _mm_set1_epi8(-58)), _mm_set1_epi8(6)),
+        _mm_set1_epi8(-16),
+    );
+    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+    let letter = _mm_sub_epi8(
+        _mm_or_si128(bytes, _mm_set1_epi8(fold)),
+        _mm_set1_epi8(first as i8),
+    );
+    _mm_min_epu8(digit, _mm_adds_epu8(letter, _mm_set1_epi8(10)))
+}
+
+#[inline]
+#[target_feature(enable = "avx2")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> __m256i {
+    let digit = _mm256_sub_epi8(
+        _mm256_subs_epu8(
+            _mm256_add_epi8(bytes, _mm256_set1_epi8(-58)),
+            _mm256_set1_epi8(6),
+        ),
+        _mm256_set1_epi8(-16),
+    );
+    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+    let letter = _mm256_sub_epi8(
+        _mm256_or_si256(bytes, _mm256_set1_epi8(fold)),
+        _mm256_set1_epi8(first as i8),
+    );
+    _mm256_min_epu8(digit, _mm256_adds_epu8(letter, _mm256_set1_epi8(10)))
+}
+
+#[inline]
+#[target_feature(enable = "neon")]
+#[cfg(target_arch = "aarch64")]
+unsafe fn decode_neon_nibbles(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
+    let digit = vsubq_u8(
+        vqsubq_u8(vaddq_u8(bytes, vdupq_n_u8(198)), vdupq_n_u8(6)),
+        vdupq_n_u8(240),
+    );
+    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+    let letter = vsubq_u8(vorrq_u8(bytes, vdupq_n_u8(fold)), vdupq_n_u8(first));
+    vminq_u8(digit, vqaddq_u8(letter, vdupq_n_u8(10)))
+}
+
+#[inline]
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase) -> bool {
-    if src.len() < 16 {
-        return hex_check_fallback_with_case(src, check_case);
+    if src.len() < 64 {
+        return hex_check_neon_short(src, check_case);
     }
-    let (blocks, tail) = src.as_chunks::<16>();
-    for block in blocks {
-        if vminvq_u8(valid_neon(vld1q_u8(block.as_ptr()), check_case)) == 0 {
+    let (batches, rest) = src.as_chunks::<64>();
+    for batch in batches {
+        let a = valid_neon(vld1q_u8(batch.as_ptr()), check_case);
+        let b = valid_neon(vld1q_u8(batch.as_ptr().add(16)), check_case);
+        let c = valid_neon(vld1q_u8(batch.as_ptr().add(32)), check_case);
+        let d = valid_neon(vld1q_u8(batch.as_ptr().add(48)), check_case);
+        if vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d))) == 0 {
             return false;
         }
     }
-    if tail.is_empty() {
-        true
-    } else if let Some(last) = src.last_chunk::<16>() {
-        vminvq_u8(valid_neon(vld1q_u8(last.as_ptr()), check_case)) != 0
-    } else {
-        hex_check_fallback_with_case(tail, check_case)
+    rest.is_empty() || hex_check_neon_short(&src[src.len() - rest.len().max(16)..], check_case)
+}
+
+// At most 64 bytes. Overlapping blocks cover the complete input, with only
+// one horizontal reduction. The caller handles longer inputs in 64-byte batches.
+#[inline]
+#[target_feature(enable = "neon")]
+#[cfg(target_arch = "aarch64")]
+unsafe fn hex_check_neon_short(src: &[u8], check_case: CheckCase) -> bool {
+    if src.len() < 16 {
+        return hex_check_fallback_with_case(src, check_case);
     }
+    let a = valid_neon(vld1q_u8(src.as_ptr()), check_case);
+    if src.len() == 16 {
+        return vminvq_u8(a) != 0;
+    }
+    let b = valid_neon(vld1q_u8(src.as_ptr().add(src.len() - 16)), check_case);
+    let valid = if src.len() <= 32 {
+        vandq_u8(a, b)
+    } else {
+        let c = valid_neon(vld1q_u8(src.as_ptr().add(16)), check_case);
+        let valid = vandq_u8(vandq_u8(a, b), c);
+        if src.len() <= 48 {
+            valid
+        } else {
+            let d = valid_neon(vld1q_u8(src.as_ptr().add(src.len() - 32)), check_case);
+            vandq_u8(valid, d)
+        }
+    };
+    vminvq_u8(valid) != 0
 }
 
 #[inline]
@@ -296,9 +384,10 @@ pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase)
 unsafe fn decode_neon_block(a: uint8x16_t, b: uint8x16_t) -> uint8x16_t {
     // For valid ASCII hex, letters need nine added to their low nibble.
     let nibble = |bytes| {
-        vaddq_u8(
+        vmlaq_u8(
             vandq_u8(bytes, vdupq_n_u8(15)),
-            vandq_u8(vcgtq_u8(bytes, vdupq_n_u8(b'9')), vdupq_n_u8(9)),
+            vshrq_n_u8::<6>(bytes),
+            vdupq_n_u8(9),
         )
     };
     let a = nibble(a);
@@ -308,28 +397,15 @@ unsafe fn decode_neon_block(a: uint8x16_t, b: uint8x16_t) -> uint8x16_t {
 
 // 16..=32 decoded bytes fit in four input registers. Overlapping end
 // blocks cover the complete input; validate all registers before either store.
+#[inline]
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 unsafe fn hex_decode_bounded_neon(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
-    let convert = |bytes| {
-        let digit = vsubq_u8(bytes, vdupq_n_u8(b'0'));
-        let fold = if case == CheckCase::None { 0x20 } else { 0 };
-        let first = if case == CheckCase::Upper { b'A' } else { b'a' };
-        let letter = vsubq_u8(vorrq_u8(bytes, vdupq_n_u8(fold)), vdupq_n_u8(first));
-        let valid = vorrq_u8(
-            vcleq_u8(digit, vdupq_n_u8(9)),
-            vcleq_u8(letter, vdupq_n_u8(5)),
-        );
-        // For a valid character, only one range distance is small. Saturation
-        // keeps the Upper policy's '7'..='9' letter distances from wrapping to 0..2.
-        let nibble = vminq_u8(digit, vqaddq_u8(letter, vdupq_n_u8(10)));
-        (nibble, valid)
-    };
-    let (a, va) = convert(vld1q_u8(src.as_ptr()));
-    let (b, vb) = convert(vld1q_u8(src.as_ptr().add(16)));
-    let (c, vc) = convert(vld1q_u8(src.as_ptr().add(src.len() - 32)));
-    let (d, vd) = convert(vld1q_u8(src.as_ptr().add(src.len() - 16)));
-    if vminvq_u8(vandq_u8(vandq_u8(va, vb), vandq_u8(vc, vd))) == 0 {
+    let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
+    let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), case);
+    let c = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 32)), case);
+    let d = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
+    if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
         return Err(());
     }
     let pack = |hi, lo| vorrq_u8(vshlq_n_u8::<4>(vuzp1q_u8(hi, lo)), vuzp2q_u8(hi, lo));
@@ -338,14 +414,28 @@ unsafe fn hex_decode_bounded_neon(src: &[u8], dst: &mut [u8], case: CheckCase) -
     Ok(())
 }
 
+#[inline]
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 unsafe fn hex_decode_neon(src: &[u8], dst: &mut [u8]) {
     if src.len() < 32 {
         return hex_decode_fallback(src, dst);
     }
-    let (blocks, tail) = src.as_chunks::<32>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<16>().0) {
+    let (batches, rest) = src.as_chunks::<128>();
+    let (outputs, remaining) = dst.as_chunks_mut::<64>();
+    for (input, output) in batches.iter().zip(outputs) {
+        for (input, output) in input
+            .as_chunks::<32>()
+            .0
+            .iter()
+            .zip(output.as_chunks_mut::<16>().0)
+        {
+            let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
+            vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
+        }
+    }
+    let (blocks, tail) = rest.as_chunks::<32>();
+    for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<16>().0) {
         let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
         vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
     }
@@ -608,6 +698,14 @@ pub fn hex_decode_vec_with_case(
 pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
     #[cfg(target_arch = "aarch64")]
     let len = dst.len();
+    #[cfg(target_arch = "aarch64")]
+    if len < 8 {
+        if !hex_check_fallback_with_case(src, check_case) {
+            return Err(());
+        }
+        hex_decode_fallback(src, dst);
+        return Ok(());
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
@@ -725,34 +823,39 @@ pub(crate) unsafe fn hex_decode_sse41_checked(
     case: CheckCase,
 ) -> Result<(), ()> {
     if (16..=32).contains(&src.len()) {
-        let a = _mm_loadu_si128(src.as_ptr().cast());
-        let b = _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast());
-        let valid = _mm_and_si128(valid_sse(a, case), valid_sse(b, case));
-        if _mm_movemask_epi8(valid) != 0xffff {
+        let a = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), case);
+        let b = decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
+            case,
+        );
+        if _mm_testz_si128(_mm_or_si128(a, b), _mm_set1_epi8(-16)) == 0 {
             return Err(());
         }
-        let decoded = decode_sse41_block(a, b);
+        let decoded = pack_sse41(a, b);
         _mm_storel_epi64(dst.as_mut_ptr().cast(), decoded);
         _mm_storel_epi64(
             dst.as_mut_ptr().add(dst.len() - 8).cast(),
             _mm_srli_si128::<8>(decoded),
         );
     } else if (32..=64).contains(&src.len()) {
-        let a = _mm_loadu_si128(src.as_ptr().cast());
-        let b = _mm_loadu_si128(src.as_ptr().add(16).cast());
-        let c = _mm_loadu_si128(src.as_ptr().add(src.len() - 32).cast());
-        let d = _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast());
-        let valid = _mm_and_si128(
-            _mm_and_si128(valid_sse(a, case), valid_sse(b, case)),
-            _mm_and_si128(valid_sse(c, case), valid_sse(d, case)),
+        let a = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), case);
+        let b = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().add(16).cast()), case);
+        let c = decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(src.len() - 32).cast()),
+            case,
         );
-        if _mm_movemask_epi8(valid) != 0xffff {
+        let d = decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
+            case,
+        );
+        let combined = _mm_or_si128(_mm_or_si128(a, b), _mm_or_si128(c, d));
+        if _mm_testz_si128(combined, _mm_set1_epi8(-16)) == 0 {
             return Err(());
         }
-        _mm_storeu_si128(dst.as_mut_ptr().cast(), decode_sse41_block(a, b));
+        _mm_storeu_si128(dst.as_mut_ptr().cast(), pack_sse41(a, b));
         _mm_storeu_si128(
             dst.as_mut_ptr().add(dst.len() - 16).cast(),
-            decode_sse41_block(c, d),
+            pack_sse41(c, d),
         );
     } else {
         if !hex_check_sse_with_case(src, case) {
@@ -775,13 +878,12 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
     }
 
     if src.len() == 64 {
-        let a = _mm256_loadu_si256(src.as_ptr().cast());
-        let b = _mm256_loadu_si256(src.as_ptr().add(32).cast());
-        let valid = _mm256_and_si256(valid_avx2(a, case), valid_avx2(b, case));
-        if _mm256_movemask_epi8(valid) != -1 {
+        let a = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
+        let b = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
+        if _mm256_testz_si256(_mm256_or_si256(a, b), _mm256_set1_epi8(-16)) == 0 {
             return Err(());
         }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), decode_avx2_block(a, b));
+        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
     } else {
         if !hex_check_avx2_with_case(src, case) {
             return Err(());
@@ -795,37 +897,54 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn decode_sse41_block(a: __m128i, b: __m128i) -> __m128i {
-    let pairs = |bytes| {
-        // Valid ASCII letters add nine to their low nibble. PMADDUBSW then
-        // combines adjacent characters with [16, 1]; the maximum result is 255.
-        let nibble = _mm_add_epi8(
+    let nibble = |bytes| {
+        // Valid ASCII letters add nine to their low nibble.
+        _mm_add_epi8(
             _mm_and_si128(bytes, _mm_set1_epi8(15)),
             _mm_and_si128(
                 _mm_cmpgt_epi8(bytes, _mm_set1_epi8(b'9' as i8)),
                 _mm_set1_epi8(9),
             ),
-        );
-        _mm_maddubs_epi16(nibble, _mm_set1_epi16(0x0110))
+        )
     };
-    _mm_packus_epi16(pairs(a), pairs(b))
+    pack_sse41(nibble(a), nibble(b))
 }
 
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn decode_avx2_block(a: __m256i, b: __m256i) -> __m256i {
-    let pairs = |bytes| {
-        let nibble = _mm256_add_epi8(
+    let nibble = |bytes| {
+        _mm256_add_epi8(
             _mm256_and_si256(bytes, _mm256_set1_epi8(15)),
             _mm256_and_si256(
                 _mm256_cmpgt_epi8(bytes, _mm256_set1_epi8(b'9' as i8)),
                 _mm256_set1_epi8(9),
             ),
-        );
-        _mm256_maddubs_epi16(nibble, _mm256_set1_epi16(0x0110))
+        )
     };
+    pack_avx2(nibble(a), nibble(b))
+}
+
+#[inline]
+#[target_feature(enable = "sse4.1")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn pack_sse41(a: __m128i, b: __m128i) -> __m128i {
+    // PMADDUBSW combines adjacent nibbles with [16, 1]; no result exceeds 255.
+    let weights = _mm_set1_epi16(0x0110);
+    _mm_packus_epi16(_mm_maddubs_epi16(a, weights), _mm_maddubs_epi16(b, weights))
+}
+
+#[inline]
+#[target_feature(enable = "avx2")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn pack_avx2(a: __m256i, b: __m256i) -> __m256i {
+    let weights = _mm256_set1_epi16(0x0110);
     // Packing is lane-local; restore the original order of the four 8-byte groups.
-    _mm256_permute4x64_epi64::<0xd8>(_mm256_packus_epi16(pairs(a), pairs(b)))
+    _mm256_permute4x64_epi64::<0xd8>(_mm256_packus_epi16(
+        _mm256_maddubs_epi16(a, weights),
+        _mm256_maddubs_epi16(b, weights),
+    ))
 }
 
 #[target_feature(enable = "sse4.1")]
@@ -881,20 +1000,28 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
     }
 }
 
+#[inline]
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 unsafe fn hex_decode_short_neon(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
-    let a = vld1q_u8(src.as_ptr());
-    let b = vld1q_u8(src.as_ptr().add(src.len() - 16));
-    if vminvq_u8(vandq_u8(valid_neon(a, case), valid_neon(b, case))) == 0 {
-        return Err(());
-    }
-    let pack = |bytes| {
-        vget_low_u8(decode_neon_block(
-            vuzp1q_u8(bytes, bytes),
-            vuzp2q_u8(bytes, bytes),
+    let pack = |nibbles| {
+        vget_low_u8(vorrq_u8(
+            vshlq_n_u8::<4>(vuzp1q_u8(nibbles, nibbles)),
+            vuzp2q_u8(nibbles, nibbles),
         ))
     };
+    let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
+    if src.len() == 16 {
+        if vmaxvq_u8(a) > 15 {
+            return Err(());
+        }
+        vst1_u8(dst.as_mut_ptr(), pack(a));
+        return Ok(());
+    }
+    let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
+    if vmaxvq_u8(vorrq_u8(a, b)) > 15 {
+        return Err(());
+    }
     vst1_u8(dst.as_mut_ptr(), pack(a));
     vst1_u8(dst.as_mut_ptr().add(dst.len() - 8), pack(b));
     Ok(())

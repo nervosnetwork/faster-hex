@@ -28,7 +28,8 @@ def inspect_package(archive, name, version, commit):
             files[path] = package.extractfile(member).read()
 
     required = {"Cargo.toml", "src/lib.rs", "README.md", "LICENSE", "CHANGELOG.md", "MIGRATION.md",
-                ".cargo_vcs_info.json", "LICENSE-THIRD-PARTY/Rust Project Developers", "LICENSE-THIRD-PARTY/fast-hex"}
+                ".cargo_vcs_info.json", "LICENSE-THIRD-PARTY/Rust Project Developers",
+                "LICENSE-THIRD-PARTY/fast-hex", "LICENSE-THIRD-PARTY/const-hex"}
     if missing := required - files.keys():
         raise ValueError(f"missing release files: {sorted(missing)}")
     vcs = json.loads(files[".cargo_vcs_info.json"])
@@ -43,7 +44,8 @@ def inspect_package(archive, name, version, commit):
     # an empty or truncated notice is not a usable license in a release archive.
     notices = {"LICENSE": "Copyright (c) 2018 Nervos Foundation",
                "LICENSE-THIRD-PARTY/Rust Project Developers": "Copyright (c) 2017 The Rust Project Developers",
-               "LICENSE-THIRD-PARTY/fast-hex": "Copyright (c) 2017 Zach Bjornson"}
+               "LICENSE-THIRD-PARTY/fast-hex": "Copyright (c) 2017 Zach Bjornson",
+               "LICENSE-THIRD-PARTY/const-hex": "const-hex 1.19.1"}
     grant = " ".join(files["LICENSE"].decode().split()).split("Permission is hereby granted", 1)
     ending = "THE SOFTWARE."
     if len(grant) != 2 or ending not in grant[1]:

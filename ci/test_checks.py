@@ -257,9 +257,11 @@ class PackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.archive = Path(self.temporary.name) / "example.crate"
         self.files = {path: b"" for path in ["src/lib.rs", "LICENSE", "CHANGELOG.md", "MIGRATION.md",
-                      "LICENSE-THIRD-PARTY/Rust Project Developers", "LICENSE-THIRD-PARTY/fast-hex"]}
+                      "LICENSE-THIRD-PARTY/Rust Project Developers", "LICENSE-THIRD-PARTY/fast-hex",
+                      "LICENSE-THIRD-PARTY/const-hex"]}
         root = Path(__file__).resolve().parents[1]
-        for path in ["LICENSE", "LICENSE-THIRD-PARTY/Rust Project Developers", "LICENSE-THIRD-PARTY/fast-hex"]:
+        for path in ["LICENSE", "LICENSE-THIRD-PARTY/Rust Project Developers",
+                     "LICENSE-THIRD-PARTY/fast-hex", "LICENSE-THIRD-PARTY/const-hex"]:
             self.files[path] = (root / path).read_bytes()
         self.files.update({"Cargo.toml": b'[package]\nname = "example"\nversion = "1.0.0"\nlicense = "MIT"\n',
                            "README.md": b'[Guide](MIGRATION.md#changes) [Web](https://example.com)\n'

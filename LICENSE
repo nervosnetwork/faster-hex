@@ -33,3 +33,7 @@ Their copyright and permission notices are included with this distribution:
 * fast-hex (SIMD decoding), Zach Bjornson:
   https://github.com/zbjornson/fast-hex
   See LICENSE-THIRD-PARTY/fast-hex.
+
+* const-hex (saturating nibble mapping):
+  https://github.com/DaniPopes/const-hex
+  See LICENSE-THIRD-PARTY/const-hex.

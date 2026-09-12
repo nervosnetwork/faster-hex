@@ -69,17 +69,18 @@ compare multiple edits against it. Results live in `target/criterion`; keep that
 directory when switching between commits. Use the same machine, Rust toolchain,
 features and `Cargo.lock`, and run one benchmark process at a time.
 
-To compare with `hex`, `const-hex`, `hex-simd` and `data-encoding`, run:
+To compare with `hex`, `const-hex`, `hex-simd`, `fashex`, `better-hex` and
+`data-encoding`, run:
 
 ```sh
 cargo bench-compare
 ```
 
-This runs 40 cases at the same four sizes, taking roughly a minute after
+This runs 56 cases at the same four sizes, taking roughly 70 seconds after
 compilation. All libraries receive the same input and reuse their output buffer.
 Encoding is lowercase; decoding accepts mixed case. Sizes and throughput count
 binary payload bytes: `decode/faster_hex_mixed/32` reads 64 hex characters and
-produces 32 bytes. Append `--list` to either command to inspect the selected cases.
+produces 32 bytes. Append `--list` to a command to inspect the selected cases.
 
 For a small performance difference, confirm the affected cases using Criterion's
 longer default sampling, saving and comparing a new baseline as above:
@@ -89,9 +90,22 @@ cargo bench --bench hex -- '^encode/faster_hex/32$' --save-baseline confirm
 # Edit the implementation, then rerun with --baseline confirm.
 ```
 
+For Hash256 work, `cargo bench-hash` selects 24 cases at 32 binary bytes / 64
+hex characters, taking roughly 30 seconds after compilation. It compares hot
+encoding/decoding, rotation through 4096 different hashes, and validation-only
+checks (fashex has no public checker). Rotation and buffer reuse happen inside
+the timer; input generation and reference-output assertions happen before it.
+Use `--save-baseline before` / `--baseline before` here too. Always rerun
+`bench-dev` to check other lengths after a Hash256 optimization.
+
+When comparing separate checkouts, give them separate `CARGO_TARGET_DIR` values
+and a shared `CRITERION_HOME` for reports. Reusing a build directory across copies
+of the same package can select stale artifacts. Keep compiler flags, features
+and the dependency lockfile identical on both sides.
+
 The full matrix (`cargo bench --all-features --benches`) also covers invalid
-inputs, alignment, mixed-size batches, owned output, formatting and Serde. It has
-703 cases and takes roughly 90 minutes or more with default sampling. CI uses
+inputs, alignment, short rotating inputs, owned output, formatting and Serde.
+It takes well over an hour with default sampling. CI uses
 `--test` to exercise those cases and their assertions without collecting timings.
 
 ## License
