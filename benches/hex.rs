@@ -1,91 +1,259 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use faster_hex::{
-    hex_decode, hex_decode_fallback, hex_decode_unchecked, hex_encode_fallback, hex_string,
-};
-use rustc_hex::{FromHex, ToHex};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use faster_hex::{hex_append, hex_decode, hex_encode, hex_encode_upper, hex_string};
+use hex_simd::{AsOut, AsciiCase};
+use std::hint::black_box;
 
-fn bench(c: &mut Criterion) {
-    let s = "Day before yesterday I saw a rabbit, and yesterday a deer, and today, you.";
+mod support;
 
-    c.bench_function("bench_rustc_hex_encode", move |b| {
-        b.iter(|| {
-            let ret = s.as_bytes().to_hex();
-            black_box(ret);
-        })
-    });
+fn conversion(c: &mut Criterion) {
+    let mut group = c.benchmark_group("encode");
+    for &len in support::LENGTHS {
+        let input = support::bytes(len);
+        let mut output = vec![0; len * 2];
+        group.throughput(Throughput::Bytes(len as u64));
+        group.bench_with_input(BenchmarkId::new("faster_hex", len), &input, |b, src| {
+            b.iter(|| {
+                black_box(hex_encode(black_box(src), black_box(&mut output)).unwrap());
+            });
+        });
+        group.bench_with_input(
+            BenchmarkId::new("faster_hex_upper", len),
+            &input,
+            |b, src| {
+                b.iter(|| {
+                    black_box(hex_encode_upper(black_box(src), black_box(&mut output)).unwrap());
+                });
+            },
+        );
+        group.bench_with_input(BenchmarkId::new("hex", len), &input, |b, src| {
+            b.iter(|| {
+                hex::encode_to_slice(black_box(src), black_box(&mut output)).unwrap();
+                black_box(&output);
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("const_hex", len), &input, |b, src| {
+            b.iter(|| {
+                black_box(
+                    const_hex::encode_to_str(black_box(src), black_box(&mut output)).unwrap(),
+                );
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("hex_simd", len), &input, |b, src| {
+            b.iter(|| {
+                black_box(hex_simd::encode_as_str(
+                    black_box(src),
+                    black_box(output.as_mut_slice()).as_out(),
+                    AsciiCase::Lower,
+                ));
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("data_encoding", len), &input, |b, src| {
+            b.iter(|| {
+                data_encoding::HEXLOWER.encode_mut(black_box(src), black_box(&mut output));
+                black_box(&output);
+            });
+        });
+    }
+    group.finish();
 
-    c.bench_function("bench_hex_encode", move |b| {
-        b.iter(|| {
-            let ret = hex::encode(s);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_encode", move |b| {
-        b.iter(|| {
-            let ret = hex_string(s.as_bytes());
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_encode_fallback", move |b| {
-        b.iter(|| {
-            let bytes = s.as_bytes();
-            let mut buffer = vec![0; bytes.len() * 2];
-            let ret = hex_encode_fallback(bytes, &mut buffer);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_rustc_hex_decode", move |b| {
-        let hex = s.as_bytes().to_hex();
-        b.iter(|| {
-            let ret: Vec<u8> = hex.from_hex().unwrap();
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_hex_decode", move |b| {
-        let hex = s.as_bytes().to_hex();
-        b.iter(|| {
-            let ret: Vec<u8> = hex::decode(&hex).unwrap();
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_decode", move |b| {
-        let hex = hex_string(s.as_bytes());
-        let len = s.as_bytes().len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            let ret = hex_decode(hex.as_bytes(), &mut dst);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_decode_unchecked", move |b| {
-        let hex = hex_string(s.as_bytes());
-        let len = s.as_bytes().len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            let ret = hex_decode_unchecked(hex.as_bytes(), &mut dst);
-            black_box(ret);
-        })
-    });
-
-    c.bench_function("bench_faster_hex_decode_fallback", move |b| {
-        let hex = hex_string(s.as_bytes());
-        let len = s.as_bytes().len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            let ret = hex_decode_fallback(hex.as_bytes(), &mut dst);
-            black_box(ret);
-        })
-    });
+    let mut group = c.benchmark_group("decode");
+    for &len in support::LENGTHS {
+        let lower = hex::encode(support::bytes(len)).into_bytes();
+        let mixed: Vec<u8> = lower
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                if i % 2 == 0 {
+                    b.to_ascii_uppercase()
+                } else {
+                    *b
+                }
+            })
+            .collect();
+        let mut output = vec![0; len];
+        // Throughput uses decoded bytes for direct comparison with encode.
+        group.throughput(Throughput::Bytes(len as u64));
+        for (name, input) in [("faster_hex", &lower), ("faster_hex_mixed", &mixed)] {
+            group.bench_with_input(BenchmarkId::new(name, len), input, |b, src| {
+                b.iter(|| {
+                    hex_decode(black_box(src), black_box(&mut output)).unwrap();
+                    black_box(&output);
+                });
+            });
+        }
+        group.bench_with_input(BenchmarkId::new("hex", len), &mixed, |b, src| {
+            b.iter(|| {
+                hex::decode_to_slice(black_box(src), black_box(&mut output)).unwrap();
+                black_box(&output);
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("const_hex", len), &mixed, |b, src| {
+            b.iter(|| {
+                const_hex::decode_to_slice(black_box(src), black_box(&mut output)).unwrap();
+                black_box(&output);
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("hex_simd", len), &mixed, |b, src| {
+            b.iter(|| {
+                black_box(
+                    hex_simd::decode(black_box(src), black_box(output.as_mut_slice()).as_out())
+                        .unwrap(),
+                );
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("data_encoding", len), &mixed, |b, src| {
+            b.iter(|| {
+                data_encoding::HEXLOWER_PERMISSIVE
+                    .decode_mut(black_box(src), black_box(&mut output))
+                    .unwrap();
+                black_box(&output);
+            });
+        });
+    }
+    group.finish();
 }
 
-criterion_group!(benches, bench);
+fn allocation(c: &mut Criterion) {
+    let mut group = c.benchmark_group("string");
+    for len in [8, 32, 64, 4096, 65536] {
+        let input = support::bytes(len);
+        let mut output = String::with_capacity(len * 2);
+        group.bench_with_input(
+            BenchmarkId::new("faster_hex_alloc", len),
+            &input,
+            |b, src| {
+                b.iter(|| black_box(hex_string(black_box(src))));
+            },
+        );
+        group.bench_with_input(BenchmarkId::new("hex_alloc", len), &input, |b, src| {
+            b.iter(|| black_box(hex::encode(black_box(src))));
+        });
+        group.bench_with_input(
+            BenchmarkId::new("const_hex_alloc", len),
+            &input,
+            |b, src| {
+                b.iter(|| black_box(const_hex::encode(black_box(src))));
+            },
+        );
+        group.bench_with_input(BenchmarkId::new("hex_simd_alloc", len), &input, |b, src| {
+            b.iter(|| black_box(hex_simd::encode_to_string(black_box(src), AsciiCase::Lower)));
+        });
+        group.bench_with_input(BenchmarkId::new("hex_simd_reuse", len), &input, |b, src| {
+            b.iter(|| {
+                output.clear();
+                hex_simd::encode_append(black_box(src), black_box(&mut output), AsciiCase::Lower);
+                black_box(&output);
+            });
+        });
+        group.bench_with_input(
+            BenchmarkId::new("faster_hex_reuse", len),
+            &input,
+            |b, src| {
+                b.iter(|| {
+                    output.clear();
+                    black_box(hex_append(black_box(src), black_box(&mut output)));
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+fn alignment(c: &mut Criterion) {
+    let mut group = c.benchmark_group("alignment");
+    for len in [31, 32, 33, 4096] {
+        let binary = support::bytes(len + 32);
+        let encoded = hex::encode(&binary).into_bytes();
+        for offset in [0, 1, 7, 15, 31] {
+            let mut output = vec![0; len * 2 + 32];
+            group.bench_function(format!("encode/{len}/{offset}"), |b| {
+                b.iter(|| {
+                    black_box(
+                        hex_encode(
+                            black_box(&binary[offset..offset + len]),
+                            black_box(&mut output[(offset * 7) % 32..][..len * 2]),
+                        )
+                        .unwrap(),
+                    );
+                });
+            });
+            group.bench_function(format!("decode/{len}/{offset}"), |b| {
+                b.iter(|| {
+                    let dst = &mut output[(offset * 7) % 32..][..len];
+                    hex_decode(
+                        black_box(&encoded[offset..offset + len * 2]),
+                        black_box(&mut *dst),
+                    )
+                    .unwrap();
+                    black_box(dst);
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
+fn rotating(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rotating_encode");
+    for len in [1, 4, 8, 15, 16, 31, 32, 33, 64] {
+        let pool = support::bytes(len * 4096);
+        let mut output = vec![0; len * 2];
+        group.throughput(Throughput::Bytes(len as u64));
+        group.bench_function(BenchmarkId::new("faster_hex", len), |b| {
+            let mut cursor = 0;
+            b.iter(|| {
+                let input = &pool[cursor * len..][..len];
+                cursor = (cursor + 1) & 4095;
+                black_box(hex_encode(black_box(input), black_box(&mut output)).unwrap());
+            });
+        });
+        group.bench_function(BenchmarkId::new("const_hex", len), |b| {
+            let mut cursor = 0;
+            b.iter(|| {
+                let input = &pool[cursor * len..][..len];
+                cursor = (cursor + 1) & 4095;
+                black_box(
+                    const_hex::encode_to_str(black_box(input), black_box(&mut output)).unwrap(),
+                );
+            });
+        });
+        group.bench_function(BenchmarkId::new("hex_simd", len), |b| {
+            let mut cursor = 0;
+            b.iter(|| {
+                let input = &pool[cursor * len..][..len];
+                cursor = (cursor + 1) & 4095;
+                black_box(hex_simd::encode_as_str(
+                    black_box(input),
+                    black_box(output.as_mut_slice()).as_out(),
+                    AsciiCase::Lower,
+                ));
+            });
+        });
+    }
+    group.finish();
+}
+
+fn text(c: &mut Criterion) {
+    let input = support::TEXT;
+    let expected = hex::encode(input);
+    let mut encoded = vec![0; expected.len()];
+    let mut decoded = vec![0; input.len()];
+    let mut group = c.benchmark_group("text");
+    group.throughput(Throughput::Bytes(input.len() as u64));
+    group.bench_function("encode", |b| {
+        b.iter(|| {
+            black_box(hex_encode(black_box(input), black_box(&mut encoded)).unwrap());
+        });
+        assert_eq!(encoded, expected.as_bytes());
+    });
+    group.bench_function("decode", |b| {
+        b.iter(|| {
+            black_box(hex_decode(black_box(expected.as_bytes()), black_box(&mut decoded)).unwrap());
+        });
+        assert_eq!(decoded, input);
+    });
+    group.finish();
+}
+
+criterion_group!(benches, conversion, allocation, alignment, rotating, text);
 criterion_main!(benches);

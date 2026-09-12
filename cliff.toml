@@ -1,0 +1,54 @@
+# Changelog drafts only; review and merge the relevant notes into CHANGELOG.md.
+# Tested with git-cliff 2.14.1.
+# Install: cargo install git-cliff --locked --version 2.14.1
+# On macOS, Homebrew also provides it: brew install git-cliff
+#
+# The published 0.10.0 crate records this commit in .cargo_vcs_info.json.
+# There is no v0.10.0 tag locally, so use its actual release boundary for 1.0:
+#   mkdir -p target
+#   git cliff a7ce51feb378bc713f7e39f2f3c3172372abc4ec..HEAD \
+#     --output target/CHANGELOG.draft.md
+# After releases have matching tags:
+#   git cliff --unreleased --output target/CHANGELOG.draft.md
+# Keep the candidate marked unreleased until it is published. Draft generation
+# does not set a version, create a Git tag, or publish a package.
+
+[changelog]
+header = ""
+body = """
+{% if version %}
+## {{ version | trim_start_matches(pat="v") }}
+{% else %}
+## Unreleased
+{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.breaking %}**Breaking:** {% endif %}{{ commit.message | split(pat="\n") | first | upper_first }}{% if commit.breaking_description %}. {{ commit.breaking_description | trim | replace(from="\n", to=" ") }}{% endif %} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/nervosnetwork/faster-hex/commit/{{ commit.id }}))
+{% endfor %}
+{% endfor %}
+"""
+footer = ""
+trim = true
+format = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = true
+commit_parsers = [
+    { message = "^Merge ", skip = true },
+    { message = '^docs\(changelog\)', skip = true },
+    { message = '^chore\(release\)', skip = true },
+    { message = "^feat", group = "<!-- 0 -->Added" },
+    { message = "^fix", group = "<!-- 1 -->Fixed" },
+    { message = "^perf", group = "<!-- 2 -->Performance" },
+    { message = "^doc", group = "<!-- 3 -->Documentation" },
+    { message = "^(test|ci)", group = "<!-- 4 -->Validation" },
+    { message = "^(refactor|build|chore|cargo)", group = "<!-- 5 -->Changed" },
+    { message = ".*", group = "<!-- 6 -->Other changes" },
+]
+tag_pattern = '^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+].*)?$'
+topo_order = true
+sort_commits = "oldest"

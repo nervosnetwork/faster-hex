@@ -1,46 +1,86 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use faster_hex::hex_check_fallback;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use faster_hex::{hex_check, hex_check_with_case, hex_decode, CheckCase};
+use std::hint::black_box;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use faster_hex::hex_check_sse;
+mod support;
 
-fn bench(c: &mut Criterion) {
-    let s1 = "Bf9E2d38aceDeeCbbAfccc4B4B7AE";
-    let s2 = "ed136fFDdCcC1DbaFE8CB6Df1AdDBAea44aCcC17b0DbC2741F9CeEeaFbE7A51D";
-    let s3 = " \u{0} 𐀀G\u{0}𐀀 GG\u{0}𐀀G\u{0}Gࠀ\u{0} 𐀀   \u{0}:\u{0}\u{0}gࠀG  G::GG::g𐀀G𐀀\u{0}\u{0}¡𐀀ࠀ\u{0}:GGG Gg𐀀 :\u{0}:gG ¡";
-    let s4 = "ed136fFDdCcC1DbaFE8CB6Df1AdDBAea44aCcC17b0DbC2741F9CeEeaFbE7A51D\u{0} 𐀀G\u{0}𐀀 GG\u{0}𐀀G\u{0}Gࠀ\u{0} 𐀀   \u{0}:\u{0}\u{0}gࠀG  G::GG::g𐀀G𐀀\u{0}\u{0}¡𐀀ࠀ\u{0}:GGG Gg𐀀 :\u{0}:gG ¡";
-
-    c.bench_function("bench_check_fallback", move |b| {
-        b.iter(|| {
-            let ret1 = hex_check_fallback(s1.as_bytes());
-            black_box(ret1);
-            let ret2 = hex_check_fallback(s2.as_bytes());
-            black_box(ret2);
-            let ret3 = hex_check_fallback(s3.as_bytes());
-            black_box(ret3);
-            let ret4 = hex_check_fallback(s4.as_bytes());
-            black_box(ret4);
-        })
-    });
-
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        if is_x86_feature_detected!("sse4.1") {
-            c.bench_function("bench_check_sse", move |b| {
-                b.iter(|| {
-                    let ret1 = unsafe { hex_check_sse(s1.as_bytes()) };
-                    black_box(ret1);
-                    let ret2 = unsafe { hex_check_sse(s2.as_bytes()) };
-                    black_box(ret2);
-                    let ret3 = unsafe { hex_check_sse(s3.as_bytes()) };
-                    black_box(ret3);
-                    let ret4 = unsafe { hex_check_sse(s4.as_bytes()) };
-                    black_box(ret4);
-                })
+fn check(c: &mut Criterion) {
+    let mut group = c.benchmark_group("check_valid");
+    for &len in support::LENGTHS {
+        let src = hex::encode(support::bytes(len));
+        group.throughput(Throughput::Bytes(len as u64));
+        group.bench_with_input(BenchmarkId::new("either", len), &src, |b, src| {
+            b.iter(|| black_box(hex_check(black_box(src.as_bytes()))));
+        });
+        group.bench_with_input(BenchmarkId::new("lower", len), &src, |b, src| {
+            b.iter(|| {
+                black_box(hex_check_with_case(
+                    black_box(src.as_bytes()),
+                    CheckCase::Lower,
+                ))
             });
-        }
+        });
+        let upper = src.to_ascii_uppercase();
+        group.bench_with_input(BenchmarkId::new("upper", len), &upper, |b, src| {
+            b.iter(|| {
+                black_box(hex_check_with_case(
+                    black_box(src.as_bytes()),
+                    CheckCase::Upper,
+                ))
+            });
+        });
     }
+    group.finish();
+
+    // Failed inputs report latency, not misleading whole-input throughput.
+    let mut group = c.benchmark_group("invalid");
+    for len in [1, 8, 16, 31, 32, 33, 64, 4096, 65536] {
+        let valid = hex::encode(support::bytes(len)).into_bytes();
+        let mut output = vec![0xa5; len];
+        for (name, position) in [("first", 0), ("middle", len), ("last", len * 2 - 1)] {
+            let mut src = valid.clone();
+            src[position] = b'g';
+            group.bench_function(format!("check/{name}/{len}"), |b| {
+                b.iter(|| black_box(hex_check(black_box(&src))));
+            });
+            group.bench_function(format!("decode/{name}/{len}"), |b| {
+                b.iter(|| {
+                    black_box(hex_decode(black_box(&src), black_box(&mut output)).unwrap_err());
+                    black_box(&output);
+                });
+            });
+            for (case_name, byte, case) in [
+                ("lower", b'A', CheckCase::Lower),
+                ("upper", b'a', CheckCase::Upper),
+            ] {
+                let mut source = vec![b'0'; len * 2];
+                source[position] = byte;
+                assert!(!hex_check_with_case(&source, case));
+                group.bench_function(format!("case/{case_name}/{name}/{len}"), |b| {
+                    b.iter(|| black_box(hex_check_with_case(black_box(&source), case)));
+                });
+            }
+        }
+        group.bench_function(format!("decode/odd/{len}"), |b| {
+            b.iter(|| {
+                black_box(
+                    hex_decode(black_box(&valid[..valid.len() - 1]), black_box(&mut output))
+                        .unwrap_err(),
+                );
+                black_box(&output);
+            });
+        });
+        group.bench_function(format!("decode/short_dst/{len}"), |b| {
+            b.iter(|| {
+                black_box(
+                    hex_decode(black_box(&valid), black_box(&mut output[..len - 1])).unwrap_err(),
+                );
+                black_box(&output);
+            });
+        });
+    }
+    group.finish();
 }
 
-criterion_group!(benches, bench);
+criterion_group!(benches, check);
 criterion_main!(benches);
