@@ -37,6 +37,25 @@ def inspect_package(archive, name, version, commit):
     manifest = tomllib.loads(files["Cargo.toml"].decode())
     if (manifest["package"]["name"], manifest["package"]["version"]) != (name, version):
         raise ValueError("packaged manifest name/version differs from the checkout")
+    if manifest["package"].get("license") != "MIT":
+        raise ValueError("packaged manifest must declare the MIT license")
+    # Check the grant, inclusion condition and disclaimer, not just filenames:
+    # an empty or truncated notice is not a usable license in a release archive.
+    notices = {"LICENSE": "Copyright (c) 2018 Nervos Foundation",
+               "LICENSE-THIRD-PARTY/Rust Project Developers": "Copyright (c) 2017 The Rust Project Developers",
+               "LICENSE-THIRD-PARTY/fast-hex": "Copyright (c) 2017 Zach Bjornson"}
+    grant = " ".join(files["LICENSE"].decode().split()).split("Permission is hereby granted", 1)
+    ending = "THE SOFTWARE."
+    if len(grant) != 2 or ending not in grant[1]:
+        raise ValueError("incomplete MIT license text")
+    terms = "Permission is hereby granted" + grant[1].split(ending, 1)[0] + ending
+    if not all(clause in terms for clause in ["free of charge", "this permission notice shall be included",
+                                              'THE SOFTWARE IS PROVIDED "AS IS"', "LIABILITY"]):
+        raise ValueError("incomplete MIT license text")
+    for path, holder in notices.items():
+        text = " ".join(files[path].decode().split())
+        if holder not in text or terms not in text:
+            raise ValueError(f"missing original copyright or complete MIT terms: {path}")
 
     links = []
     for path, content in files.items():

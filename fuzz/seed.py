@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Generate deterministic boundary seeds; libFuzzer grows these ignored corpora."""
 from pathlib import Path
+import argparse
 import json
 
-root = Path(__file__).resolve().parent / "corpus"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parent / "corpus")
+root = parser.parse_args().out
 core = root / "faster-hex"
 serde = root / "serde"
 core.mkdir(parents=True, exist_ok=True)

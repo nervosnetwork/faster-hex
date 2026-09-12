@@ -1,3 +1,6 @@
+// SIMD encoding includes work derived from stdsimd under the MIT license.
+// See LICENSE-THIRD-PARTY/Rust Project Developers.
+
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]

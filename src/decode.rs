@@ -1,4 +1,5 @@
-// avx2 decode modified from https://github.com/zbjornson/fast-hex/blob/master/src/hex.cc
+// SIMD decoding includes work derived from fast-hex under the MIT license.
+// See https://github.com/zbjornson/fast-hex and LICENSE-THIRD-PARTY/fast-hex.
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;

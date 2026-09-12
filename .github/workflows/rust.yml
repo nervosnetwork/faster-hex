@@ -43,7 +43,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo fmt --manifest-path fuzz/Cargo.toml --all -- --check
       - run: cargo fmt --manifest-path afl/Cargo.toml --all -- --check
-      - run: rustfmt --edition 2021 --check ci/cpu_probe.rs ci/wasm_runtime.rs
+      - run: rustfmt --edition 2021 --check ci/cpu_probe.rs ci/wasm_runtime.rs ci/api_traits.rs
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --doc --all-features
       - run: cargo test --doc --no-default-features
@@ -131,6 +131,40 @@ jobs:
           path: target/ci/features
           if-no-files-found: error
 
+  api:
+    name: API compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The API baseline is an immutable commit, including before 1.0 is tagged.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: api-compatibility
+          workspaces: . -> target/api-cargo
+      - name: Install pinned API checker
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import subprocess
+          import tomllib
+          version = tomllib.loads(Path("ci/api-baseline.toml").read_text())["cargo-semver-checks"]
+          subprocess.run(["cargo", "install", "cargo-semver-checks", "--version", version, "--locked"], check=True)
+          PYTHON
+      - run: python3 ci/check_api.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: api-compatibility-${{ github.run_attempt }}
+          path: target/ci/api
+          if-no-files-found: error
+
   miri:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -165,72 +199,9 @@ jobs:
           if-no-files-found: ignore
 
   fuzz:
-    name: Fuzz / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    env:
-      RUSTUP_TOOLCHAIN: nightly-2026-08-21
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target/fuzz
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: nightly-2026-08-21
-          components: rust-src
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: fuzz-${{ matrix.os }}
-          workspaces: fuzz -> ../target/fuzz
-      - run: cargo install cargo-fuzz --version 0.13.2 --locked
-      - run: rustc -Vv
-      - run: cargo fuzz --version
-      - run: python3 fuzz/seed.py
-      - run: cargo fuzz run faster-hex --all-features --sanitizer address -- -max_total_time=30 -max_len=8192 -dict=fuzz/hex.dict
-      - run: cargo fuzz run faster-hex --no-default-features --sanitizer address -- -max_total_time=30 -max_len=8192 -dict=fuzz/hex.dict
-      - run: cargo fuzz run faster-hex --no-default-features --features alloc --sanitizer address -- -max_total_time=30 -max_len=8192 -dict=fuzz/hex.dict
-      - run: cargo fuzz run serde --sanitizer address -- -max_total_time=30 -max_len=8192 -dict=fuzz/hex.dict
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: fuzz-diagnostics-${{ matrix.os }}-${{ github.run_attempt }}
-          path: |
-            fuzz/artifacts
-            fuzz/Cargo.lock
-          if-no-files-found: ignore
-
-  afl:
-    name: AFL runtime
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: afl
-          workspaces: afl -> ../target/afl-runtime
-      - run: cargo install cargo-afl --version 0.18.2 --locked
-      - name: Configure crash reporting on the disposable runner
-        run: sudo sysctl -w kernel.core_pattern=core
-      - run: python3 ci/check_afl.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: afl-diagnostics-${{ github.run_attempt }}
-          path: |
-            target/afl-results
-            afl/Cargo.lock
-          if-no-files-found: error
+    uses: ./.github/workflows/fuzz.yml
+    with:
+      seconds: 30
 
   wasm:
     name: Wasm runtime
@@ -324,7 +295,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [quality, test, features, miri, fuzz, afl, wasm, benchmarks, audit, package]
+    needs: [quality, test, features, api, miri, fuzz, wasm, benchmarks, audit, package]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
