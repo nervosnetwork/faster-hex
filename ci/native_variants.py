@@ -1,4 +1,49 @@
-"""Source transformations for isolated short-input experiments, not public features."""
+"""Source transformations for isolated native experiments, not public features."""
+
+
+def short_decode(work):
+    path = work / "src/decode.rs"
+    text = path.read_text()
+    begin = text.index('pub(crate) fn decode_checked(')
+    end = text.index('    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]', begin)
+    block = text[begin:end].replace('#[cfg(target_arch = "aarch64")]',
+        '#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]')
+    path.write_text(text[:begin] + block + text[end:])
+
+
+def inline_case(work, sse=False, avx512=False):
+    path = work / "src/decode.rs"
+    text = path.read_text()
+    functions = ["hex_decode_avx2_checked", "hex_check_avx2_with_case"]
+    if sse:
+        functions += ["hex_decode_sse41_checked", "hex_check_sse_with_case"]
+    if avx512:
+        functions += ["hex_decode_avx512_checked", "hex_check_avx512_with_case"]
+    for name in functions:
+        before = "pub(crate) unsafe fn " + name
+        assert text.count(before) == 1
+        text = text.replace(before, "#[inline]\n" + before)
+    path.write_text(text)
+
+
+def paired_check(work):
+    path = work / "src/decode.rs"
+    text = path.read_text()
+    begin = text.index("pub(crate) unsafe fn hex_check_avx2_with_case(")
+    end = text.index("// Wrapping subtraction", begin)
+    block = text[begin:end]
+    before = "    let (blocks, tail) = src.as_chunks::<32>();"
+    assert block.count(before) == 1
+    block = block.replace(before, '''    let (batches, rest) = src.as_chunks::<64>();
+    for batch in batches {
+        let a = valid_avx2(_mm256_loadu_si256(batch.as_ptr().cast()), case);
+        let b = valid_avx2(_mm256_loadu_si256(batch.as_ptr().add(32).cast()), case);
+        if _mm256_movemask_epi8(_mm256_and_si256(a, b)) != -1 {
+            return false;
+        }
+    }
+    let (blocks, tail) = rest.as_chunks::<32>();''')
+    path.write_text(text[:begin] + block + text[end:])
 
 
 def short_x86(work):

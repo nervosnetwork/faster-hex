@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: native-benchmark-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   RUSTUP_TOOLCHAIN: 1.95.0
@@ -29,6 +29,8 @@ jobs:
             sample: 1
           - os: ubuntu-24.04
             sample: 2
+          - os: ubuntu-24.04
+            sample: 3
           - os: macos-15-intel
             sample: 1
     steps:

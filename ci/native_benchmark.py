@@ -55,8 +55,11 @@ metadata = dict(commit=read(["git", "rev-parse", "HEAD"]), timestamp=datetime.no
 print("ENVIRONMENT " + json.dumps(metadata), flush=True)
 
 variants = {"baseline": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "avx512": "HEAD", "short_x86": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "avx2_predicate": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed"}
+            "inline_avx2": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
+            "inline_x86": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
+            "paired_check": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
+            "short_decode": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
+            "avx512_inline": "HEAD"}
 artifacts = {}
 for variant, revision in variants.items():
     work = out / "build" / variant
@@ -67,16 +70,13 @@ for variant, revision in variants.items():
     shutil.copytree(root / "benches", work / "benches")
     shutil.copyfile(root / "Cargo.toml", work / "Cargo.toml")
     shutil.copyfile(root / "ci/native-bench.lock", work / "Cargo.lock")
-    if variant == "short_x86":
-        from native_variants import short_x86
-        short_x86(work)
-    if variant == "avx2_predicate":
-        path = work / "src/decode.rs"
-        text = path.read_text()
-        before = "_mm256_testz_si256(_mm256_or_si256(a, b), _mm256_set1_epi8(-16)) == 0"
-        after = "_mm256_movemask_epi8(_mm256_adds_epu8(_mm256_or_si256(a, b), _mm256_set1_epi8(112))) != 0"
-        assert text.count(before) == 1
-        path.write_text(text.replace(before, after))
+    from native_variants import inline_case, paired_check, short_decode
+    if variant in ["inline_avx2", "inline_x86", "paired_check", "avx512_inline"]:
+        inline_case(work, sse=variant == "inline_x86", avx512=variant == "avx512_inline")
+    if variant == "paired_check":
+        paired_check(work)
+    if variant == "short_decode":
+        short_decode(work)
     metadata["variants"][variant] = dict(source=revision, transformation=variant)
     for path in [*work.glob("src/**/*.rs"), *work.glob("benches/**/*.rs"), work / "Cargo.toml", work / "Cargo.lock"]:
         metadata["files"][f"{variant}/{path.relative_to(work)}"] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -107,16 +107,13 @@ run("core-coverage", ["python3", "ci/check_fuzz_coverage.py", "--out", str(out /
 print("CORE_COVERAGE " + (out / "coverage/results.json").read_text().replace("\n", " "), flush=True)
 (out / "environment.json").write_text(json.dumps(metadata, indent=2) + "\n")
 filters = {
-    "hex": r"^((encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex|better_hex))/32|(encode/faster_hex|decode/faster_hex_mixed)/(1|8|16|64|65|256|4096))$",
-    "format": r"^format/(borrowed|padded_upper|per_byte)/(1|10|32|65|4096)$",
-    "consumers": r"^((ckb_fixed_(buffer|json|parse))/(faster_hex|const_hex|hex_simd)/(10|32)|molecule_(string|display)/(faster_hex|const_hex|hex_simd)/(1|10|32)|molecule_display/faster_hex_borrowed/(1|10|32)|ckb_pool_rpc/(faster_hex|const_hex|hex_simd)/256)$",
-    "check": r"^check_compare/(faster_hex|const_hex|hex_simd|better_hex)/(1|8|32|256|4096)$",
+    "hex": r"^((decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)|rotating_decode/(faster_hex|const_hex|hex_simd|fashex|better_hex))/32|(encode/faster_hex|decode/faster_hex_mixed)/(1|8|16|32|65|256|4096))$",
+    "format": r"^format/borrowed/(1|10|32)$",
+    "consumers": r"^ckb_fixed_parse/(faster_hex|const_hex|hex_simd)/(10|32)$",
+    "check": r"^check_compare/(faster_hex|const_hex|hex_simd|better_hex)/(8|32|256|4096)$",
 }
-# Build everything first. Baseline/after/after/baseline controls ordering drift.
-order = [("baseline", "baseline-1"), ("avx512", "avx512-1"),
-         ("short_x86", "short-1"), ("avx2_predicate", "predicate-1"),
-         ("avx2_predicate", "predicate-2"), ("short_x86", "short-2"),
-         ("avx512", "avx512-2"), ("baseline", "baseline-2")]
+order = [(variant, variant + "-1") for variant in variants]
+order += [(variant, variant + "-2") for variant in reversed(variants)]
 launcher = []
 if hasattr(os, "sched_getaffinity"):
     cpu = min(os.sched_getaffinity(0))
@@ -127,7 +124,7 @@ for variant, tag in order:
     for bench, pattern in filters.items():
         run(tag + "-" + bench, [*launcher, artifacts[variant, bench], "--bench", pattern,
             "--warm-up-time", "0.1", "--measurement-time", "0.5", "--sample-size", "40",
-            "--noplot", "--save-baseline", tag])
+            "--noplot", "--nresamples", "10000", "--save-baseline", tag])
 
 results = {}
 for path in (out / "criterion").rglob("estimates.json"):

@@ -113,13 +113,10 @@ pub(crate) fn encode<'a>(
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
-            crate::Vectorization::AVX512 => {
-                // SAFETY: Dispatch checks AVX-512BW and OS state; dst is exactly twice src.
-                unsafe { hex_encode_avx512(src, dst, upper_case) }
-            }
-            crate::Vectorization::AVX2 => {
-                // SAFETY: Dispatch checks AVX2; dst has twice src.len() bytes.
-                unsafe { hex_encode_avx2(src, dst, upper_case) }
+            kind @ (crate::Vectorization::AVX512 | crate::Vectorization::AVX2) => {
+                // SAFETY: Both variants require AVX2 and its OS state. The
+                // AVX-512 variant additionally checks AVX-512BW and ZMM state.
+                unsafe { hex_encode_avx(src, dst, upper_case, kind) }
             }
             crate::Vectorization::SSE41 => {
                 // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
@@ -341,6 +338,7 @@ unsafe fn encode_avx512_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], tabl
 
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
 pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
     if src.len() < 32 {
         return hex_encode_sse41(src, dst, upper_case);
@@ -355,6 +353,24 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         if let (Some(input), Some(output)) = (src.last_chunk::<32>(), dst.last_chunk_mut::<64>()) {
             encode_avx2_32(input, output, table);
         }
+    }
+}
+
+// Keep the AVX family behind one dispatch branch. A fourth outer branch makes
+// LLVM emit an indirect jump table, which regresses short AVX2 calls on hosts
+// without AVX-512. AVX2 is inlined here, preserving a single backend call.
+#[target_feature(enable = "avx2")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn hex_encode_avx(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+    upper_case: bool,
+    kind: crate::Vectorization,
+) {
+    if kind == crate::Vectorization::AVX512 {
+        hex_encode_avx512(src, dst, upper_case);
+    } else {
+        hex_encode_avx2(src, dst, upper_case);
     }
 }
 
