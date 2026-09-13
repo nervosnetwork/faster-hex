@@ -1,6 +1,26 @@
 """Source transformations for isolated native experiments, not public features."""
 
 
+def cache_match(work):
+    path = work / "src/lib.rs"
+    text = path.read_text()
+    start = text.index("        // We're OK with relaxed")
+    end = text.index("        return val;", start) + len("        return val;")
+    avx512 = "                3 => Vectorization::AVX512,\n" if "AVX512 = 3" in text else ""
+    text = text[:start] + '''        // Relaxed is enough: racing initializers detect the same CPU features.
+        return match FLAGS.load(Ordering::Relaxed) {
+                0 => Vectorization::None,
+                1 => Vectorization::SSE41,
+                2 => Vectorization::AVX2,
+''' + avx512 + '''                _ => {
+                    let backend = vectorization_support_no_cache_x86();
+                    FLAGS.store(backend as u8, Ordering::Relaxed);
+                    backend
+                }
+        };''' + text[end:]
+    path.write_text(text)
+
+
 def short_decode(work):
     path = work / "src/decode.rs"
     text = path.read_text()

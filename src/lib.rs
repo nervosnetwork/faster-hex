@@ -207,25 +207,14 @@ pub use crate::serde::{
 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
+#[allow(dead_code, reason = "Static ISA baselines bypass runtime detection")]
 pub(crate) enum Vectorization {
     None = 0,
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[cfg_attr(
-        target_feature = "avx2",
-        expect(dead_code, reason = "AVX2 baseline builds bypass runtime detection")
-    )]
     SSE41 = 1,
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[cfg_attr(
-        target_feature = "avx512bw",
-        expect(dead_code, reason = "AVX-512 baseline builds bypass runtime detection")
-    )]
     AVX2 = 2,
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[cfg_attr(
-        all(target_feature = "avx2", not(target_feature = "avx512bw")),
-        expect(dead_code, reason = "AVX2 baseline builds bypass runtime detection")
-    )]
     AVX512 = 3,
     #[cfg(target_arch = "aarch64")]
     Neon = 3,

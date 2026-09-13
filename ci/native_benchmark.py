@@ -55,12 +55,10 @@ metadata = dict(commit=read(["git", "rev-parse", "HEAD"]), timestamp=datetime.no
 print("ENVIRONMENT " + json.dumps(metadata), flush=True)
 
 variants = {"baseline": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "inline_avx2": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "paired_check": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "outlined_check": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
+            "avx2_selected": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
             "avx512_inline": "52af20902f0e709d6c065a812fa3bf745d44ecb4",
-            "avx512_bulk": "HEAD",
-            "avx512_grouped": "HEAD"}
+            "avx512_bulk": "888f5e5c40860ca65a821bcaebbaae62f0332715",
+            "avx512_selected": "HEAD"}
 artifacts = {}
 for variant, revision in variants.items():
     work = out / "build" / variant
@@ -71,14 +69,13 @@ for variant, revision in variants.items():
     shutil.copytree(root / "benches", work / "benches")
     shutil.copyfile(root / "Cargo.toml", work / "Cargo.toml")
     shutil.copyfile(root / "ci/native-bench.lock", work / "Cargo.lock")
-    from native_variants import inline_case, paired_check, outline_long_decode, group_avx_decode
+    from native_variants import inline_case, paired_check, group_avx_decode, cache_match
     if variant != "baseline":
         inline_case(work, avx512=variant.startswith("avx512_"))
-    if variant in ["paired_check", "outlined_check"]:
+    if variant in ["avx2_selected", "avx512_selected"]:
         paired_check(work)
-    if variant == "outlined_check":
-        outline_long_decode(work)
-    if variant == "avx512_grouped":
+        cache_match(work)
+    if variant == "avx512_selected":
         group_avx_decode(work)
     metadata["variants"][variant] = dict(source=revision, transformation=variant)
     for path in [*work.glob("src/**/*.rs"), *work.glob("benches/**/*.rs"), work / "Cargo.toml", work / "Cargo.lock"]:
