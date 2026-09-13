@@ -56,9 +56,8 @@ print("ENVIRONMENT " + json.dumps(metadata), flush=True)
 
 variants = {"baseline": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
             "avx2_selected": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "avx512_inline": "52af20902f0e709d6c065a812fa3bf745d44ecb4",
-            "avx512_bulk": "888f5e5c40860ca65a821bcaebbaae62f0332715",
-            "avx512_selected": "HEAD"}
+            "avx512_selected": "HEAD",
+            "avx512_sparse": "HEAD"}
 artifacts = {}
 for variant, revision in variants.items():
     work = out / "build" / variant
@@ -69,14 +68,17 @@ for variant, revision in variants.items():
     shutil.copytree(root / "benches", work / "benches")
     shutil.copyfile(root / "Cargo.toml", work / "Cargo.toml")
     shutil.copyfile(root / "ci/native-bench.lock", work / "Cargo.lock")
-    from native_variants import inline_case, paired_check, group_avx_decode, cache_match
+    from native_variants import inline_case, paired_check, group_avx_decode, cache_match, sparse_dispatch, inline_check
     if variant != "baseline":
         inline_case(work, avx512=variant.startswith("avx512_"))
-    if variant in ["avx2_selected", "avx512_selected"]:
+    if variant != "baseline":
         paired_check(work)
         cache_match(work)
+        inline_check(work)
     if variant == "avx512_selected":
         group_avx_decode(work)
+    if variant == "avx512_sparse":
+        sparse_dispatch(work)
     metadata["variants"][variant] = dict(source=revision, transformation=variant)
     for path in [*work.glob("src/**/*.rs"), *work.glob("benches/**/*.rs"), work / "Cargo.toml", work / "Cargo.lock"]:
         metadata["files"][f"{variant}/{path.relative_to(work)}"] = hashlib.sha256(path.read_bytes()).hexdigest()

@@ -31,6 +31,8 @@ jobs:
             sample: 2
           - os: ubuntu-24.04
             sample: 3
+          - os: ubuntu-24.04
+            sample: 4
           - os: ubuntu-22.04
             sample: 1
           - os: ubuntu-22.04

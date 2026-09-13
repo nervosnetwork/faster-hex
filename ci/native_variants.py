@@ -21,6 +21,37 @@ def cache_match(work):
     path.write_text(text)
 
 
+def sparse_dispatch(work):
+    path = work / "src/lib.rs"
+    text = path.read_text().replace("AVX512 = 3", "AVX512 = 128")
+    text = text.replace("3 => Vectorization::AVX512", "128 => Vectorization::AVX512")
+    path.write_text(text)
+    path = work / "src/encode.rs"
+    text = path.read_text()
+    start = text.index("            kind @ (crate::Vectorization::AVX512")
+    end = text.index("            crate::Vectorization::SSE41", start)
+    text = text[:start] + '''            crate::Vectorization::AVX512 => {
+                // SAFETY: Dispatch checked AVX-512BW and the OS register state.
+                unsafe { hex_encode_avx512(src, dst, upper_case) }
+            }
+            crate::Vectorization::AVX2 => {
+                // SAFETY: Dispatch checked AVX2 and the OS register state.
+                unsafe { hex_encode_avx2(src, dst, upper_case) }
+            }
+''' + text[end:]
+    start = text.index("// Keep the AVX family behind one dispatch branch.")
+    end = text.index("\n#[inline]", text.index("unsafe fn hex_encode_avx(", start))
+    text = text[:start] + text[end:]
+    path.write_text(text)
+
+
+def inline_check(work):
+    path = work / "src/decode.rs"
+    text = path.read_text()
+    assert text.count("pub fn hex_check(src:") == 1
+    path.write_text(text.replace("pub fn hex_check(src:", "#[inline]\npub fn hex_check(src:"))
+
+
 def short_decode(work):
     path = work / "src/decode.rs"
     text = path.read_text()
