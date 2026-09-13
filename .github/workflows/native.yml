@@ -1,64 +1,53 @@
-name: Native x86 validation
+name: Native x86 benchmarks
 
 on:
   push:
-  pull_request:
+    branches: [zhangsoledad/native-bench-3b9fdf2]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: native-benchmark-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  CARGO_TERM_COLOR: always
   RUSTUP_TOOLCHAIN: 1.95.0
-  NIGHTLY_TOOLCHAIN: nightly-2026-08-21
+  CARGO_TERM_COLOR: never
 
 jobs:
-  native:
-    name: Native x86 / ${{ matrix.os }}
+  benchmark:
+    name: Native benchmark / ${{ matrix.os }} / ${{ matrix.sample }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
-            # Standard Linux runners do not guarantee a particular CPU vendor.
-            vendor: auto
+            sample: 1
+          - os: ubuntu-24.04
+            sample: 2
           - os: macos-15-intel
-            vendor: intel
+            sample: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
-          components: rust-src, llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: native-${{ matrix.os }}-${{ env.NIGHTLY_TOOLCHAIN }}
-          workspaces: |
-            . -> target/native-cargo
-            fuzz -> ../target/native-fuzz
-      - run: cargo +"$NIGHTLY_TOOLCHAIN" install cargo-fuzz --version 0.13.2 --locked
-      - run: python3 ci/native_validation.py --vendor ${{ matrix.vendor }}
+      - run: python3 ci/native_benchmark.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: native-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
+          name: native-benchmark-${{ matrix.os }}-${{ matrix.sample }}-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 30
           path: |
-            target/native-validation/**/*.json
-            target/native-validation/**/*.log
-            target/native-validation/**/*Cargo.lock
-            target/native-validation/fuzz
-            target/native-validation/corpus
+            target/native-benchmark/*.json
+            target/native-benchmark/*.log
+            target/native-benchmark/criterion
+            ci/native-bench.lock
           if-no-files-found: error

@@ -87,3 +87,8 @@ undocumented_unsafe_blocks = "warn"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+[[bench]]
+name = "native_prototype"
+harness = false
+required-features = ["std"]
