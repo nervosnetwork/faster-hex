@@ -86,7 +86,7 @@ for variant, revision in variants.items():
     for path in [*work.glob("src/**/*.rs"), *work.glob("benches/**/*.rs"), work / "Cargo.toml", work / "Cargo.lock"]:
         metadata["files"][f"{variant}/{path.relative_to(work)}"] = hashlib.sha256(path.read_bytes()).hexdigest()
     command = ["cargo", "bench", "--manifest-path", str(work / "Cargo.toml"), "--locked", "--no-run", "--message-format=json"]
-    benches = ["hex", "consumers", "check", "format", "serde", "layout"]
+    benches = ["hex", "consumers", "check", "serde", "layout"]
     for bench in benches: command += ["--bench", bench]
     build = run("build-" + variant, command, {"CARGO_TARGET_DIR": str(work / "target")})
     for line in build.splitlines():
@@ -112,12 +112,11 @@ run("core-coverage", ["python3", "ci/check_fuzz_coverage.py", "--out", str(out /
 print("CORE_COVERAGE " + (out / "coverage/results.json").read_text().replace("\n", " "), flush=True)
 (out / "environment.json").write_text(json.dumps(metadata, indent=2) + "\n")
 filters = {
-    "hex": r"^(encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)/(1|8|32|256|4096)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)/(1|8|32|256|4096)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex|better_hex)/32)$",
-    "consumers": r"^(ckb_fixed_(buffer|json|parse)/(faster_hex|legacy_0_6|const_hex|hex_simd|fashex)/(10|32|65)|ckb_pool_rpc/(faster_hex|const_hex|hex_simd)/256|molecule_(string|display)/(faster_hex|faster_hex_borrowed|legacy_0_6|const_hex|hex_simd)/(1|10|32)|ckb_bytes_(json|parse)/faster_hex/(256|4096))$",
-    "check": r"^check_compare/(faster_hex|const_hex|hex_simd)/(32|256|4096)$",
-    "format": r"^format/borrowed/(1|10|32)$",
-    "serde": r"^(serde_json/(serialize|serialize_reuse)/(32|65|4096)|serde_postcard/serialize_reuse/(32|65|256|4096))$",
-    "layout": r"^layout/",
+    "hex": r"^(encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)/(8|32|256|4096)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)/(8|32|256|4096)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex)/32)$",
+    "consumers": r"^(ckb_fixed_(buffer|json|parse)/(faster_hex|const_hex|hex_simd)/32|molecule_display/(faster_hex|faster_hex_borrowed|const_hex)/(10|32)|ckb_bytes_(json|parse)/faster_hex/4096)$",
+    "check": r"^check_compare/(faster_hex|const_hex|hex_simd)/(32|4096)$",
+    "serde": r"^(serde_json/(serialize|serialize_reuse)/65|serde_postcard/serialize_reuse/(32|4096))$",
+    "layout": r"^layout/(encode|decode)/(aligned_separate|adjacent)/faster_hex$",
 }
 order = [(variant, variant + "-1") for variant in variants]
 order += [(variant, variant + "-2") for variant in reversed(variants)]

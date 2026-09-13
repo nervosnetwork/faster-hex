@@ -113,11 +113,12 @@ pub(crate) fn encode<'a>(
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
-            crate::Vectorization::AVX512 => {
+            crate::Vectorization::AVX512 if src.len() >= 64 => {
                 // SAFETY: Dispatch checked AVX-512BW and the OS register state.
                 unsafe { hex_encode_avx512(src, dst, upper_case) }
             }
-            crate::Vectorization::AVX2 => {
+            // The AVX2 short encoder is more consistent across native call layouts.
+            crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
                 // SAFETY: Dispatch checked AVX2 and the OS register state.
                 unsafe { hex_encode_avx2(src, dst, upper_case) }
             }
@@ -309,32 +310,18 @@ fn hex_append_custom<'a>(src: &[u8], dst: &'a mut String, upper: bool) -> &'a mu
 #[target_feature(enable = "avx512f,avx512bw")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub(crate) unsafe fn hex_encode_avx512(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
-    if src.len() < 32 {
-        return hex_encode_sse41(src, dst, upper_case);
+    if src.len() < 64 {
+        return hex_encode_avx2(src, dst, upper_case);
     }
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
     let table = _mm512_broadcast_i32x4(_mm_loadu_si128(table.as_ptr().cast()));
-    if src.len() >= 64 {
-        let (blocks, tail) = src.as_chunks::<64>();
-        for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<128>().0) {
-            encode_avx512_64(input, output, table);
-        }
-        if !tail.is_empty() {
-            if let (Some(input), Some(output)) =
-                (src.last_chunk::<64>(), dst.last_chunk_mut::<128>())
-            {
-                encode_avx512_64(input, output, table);
-            }
-        }
-        return;
-    }
-    let (blocks, tail) = src.as_chunks::<32>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
-        encode_avx512_32(input, output, table);
+    let (blocks, tail) = src.as_chunks::<64>();
+    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<128>().0) {
+        encode_avx512_64(input, output, table);
     }
     if !tail.is_empty() {
-        if let (Some(input), Some(output)) = (src.last_chunk::<32>(), dst.last_chunk_mut::<64>()) {
-            encode_avx512_32(input, output, table);
+        if let (Some(input), Some(output)) = (src.last_chunk::<64>(), dst.last_chunk_mut::<128>()) {
+            encode_avx512_64(input, output, table);
         }
     }
 }
@@ -358,20 +345,6 @@ unsafe fn encode_avx512_64(src: &[u8; 64], dst: &mut [MaybeUninit<u8>; 128], tab
         dst.as_mut_ptr().add(64).cast(),
         _mm512_shuffle_epi8(table, second),
     );
-}
-
-#[inline]
-#[target_feature(enable = "avx512f,avx512bw")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn encode_avx512_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], table: __m512i) {
-    let bytes = _mm512_cvtepu8_epi16(_mm256_loadu_si256(src.as_ptr().cast()));
-    // Widening leaves a zero byte beside each input byte. Move its low nibble
-    // into that byte and its high nibble into the first byte, preserving order.
-    let nibbles = _mm512_and_si512(
-        _mm512_or_si512(_mm512_srli_epi16::<4>(bytes), _mm512_slli_epi16::<8>(bytes)),
-        _mm512_set1_epi8(15),
-    );
-    _mm512_storeu_si512(dst.as_mut_ptr().cast(), _mm512_shuffle_epi8(table, nibbles));
 }
 
 #[target_feature(enable = "avx2")]

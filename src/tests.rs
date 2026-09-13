@@ -172,8 +172,8 @@ mod x86 {
             for len in [
                 0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
             ] {
-                for source_offset in 0..32 {
-                    let binary: Vec<u8> = (0..len + 32).map(|i| (i * 73 + i / 7) as u8).collect();
+                for source_offset in 0..64 {
+                    let binary: Vec<u8> = (0..len + 64).map(|i| (i * 73 + i / 7) as u8).collect();
                     let input = &binary[source_offset..][..len];
                     for upper in [false, true] {
                         let expected = if upper {
@@ -183,7 +183,7 @@ mod x86 {
                         };
                         let mut hex_source = vec![0; source_offset + len * 2];
                         hex_source[source_offset..].copy_from_slice(expected.as_bytes());
-                        for target_offset in 0..32 {
+                        for target_offset in 0..64 {
                             let mut encoded = vec![0xa5; len * 2 + 64];
                             // SAFETY: backends() checked CPU support; output has the exact size.
                             unsafe {
