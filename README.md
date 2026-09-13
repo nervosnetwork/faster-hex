@@ -43,6 +43,78 @@ See the [API documentation](https://docs.rs/faster-hex), or run `cargo doc --ope
 for this checkout. Upgrading from 0.10: [migration guide](MIGRATION.md).
 Release history: [changelog](CHANGELOG.md).
 
+## Benchmarks
+
+For development, run `cargo bench-dev` from this checkout. It measures eight
+cases: encoding and decoding 8, 32, 256 and 4096 bytes through the public API.
+Buffers are allocated before timing; validation and CPU dispatch are included.
+Each case uses 0.2 seconds of warm-up and 1 second of sampling, so expect roughly
+10–20 seconds after compilation.
+
+Save a baseline before editing, then compare the same cases after your change:
+
+```sh
+cargo bench-dev --save-baseline before
+# Edit the implementation.
+cargo bench-dev --baseline before
+```
+
+Criterion's `change: time` reports the change in latency: negative is faster,
+positive is slower. It also reports whether the change is statistically
+significant. `--baseline before` keeps the saved baseline unchanged, so you can
+compare multiple edits against it. Results live in `target/criterion`; keep that
+directory when switching between commits. Use the same machine, Rust toolchain,
+features and `Cargo.lock`, and run one benchmark process at a time.
+Use the same benchmark code on both sides; recreate saved baselines after
+changing the harness.
+
+To compare with `hex`, `const-hex`, `hex-simd`, `fashex`, `better-hex` and
+`data-encoding`, run:
+
+```sh
+cargo bench-compare
+```
+
+This runs 56 cases at the same four sizes, taking roughly 70 seconds after
+compilation. All libraries receive the same input and reuse their output buffer.
+Encoding is lowercase; decoding accepts mixed case. Sizes and throughput count
+binary payload bytes: `decode/faster_hex_mixed/32` reads 64 hex characters and
+produces 32 bytes. Append `--list` to a command to inspect the selected cases.
+
+For a small performance difference, confirm the affected cases using Criterion's
+longer default sampling, saving and comparing a new baseline as above:
+
+```sh
+cargo bench --bench hex -- '^encode/faster_hex/32$' --save-baseline confirm
+# Edit the implementation, then rerun with --baseline confirm.
+```
+
+For Hash256 work, `cargo bench-hash` selects 24 cases at 32 binary bytes / 64
+hex characters, taking roughly 30 seconds after compilation. It compares hot
+encoding/decoding, rotation through 4096 different hashes, and validation-only
+checks (fashex has no public checker). Rotation and buffer reuse happen inside
+the timer; input generation and reference-output assertions happen before it.
+Use `--save-baseline before` / `--baseline before` here too. Always rerun
+`bench-dev` to check other lengths after a Hash256 optimization.
+
+`cargo bench --bench format` compares borrowed `Hex`, an allocated hex string,
+per-byte formatting and padded uppercase output. `cargo bench --bench serde`
+measures JSON serialization/deserialization and Postcard serialization, including
+reused output buffers. These test library operations directly; application and
+network overhead are outside their scope.
+
+When comparing separate checkouts, give them separate `CARGO_TARGET_DIR` values
+and a shared `CRITERION_HOME` for reports. Reusing a build directory across copies
+of the same package can select stale artifacts. Keep compiler flags, features
+and the dependency lockfile identical on both sides.
+
+The four benchmark targets cover conversion/owned strings (`hex`), validation
+and invalid-byte positions (`check`), JSON/Postcard adapters (`serde`), and borrowed
+formatting (`format`). Run a focused alias during development; the full matrix
+uses Criterion's longer default sampling. CI runs `cargo bench --all-features
+--benches -- --test` to execute cases without collecting timings. SIMD alignment
+and boundary correctness belong to the forced-backend and guard-page tests.
+
 ## License
 
 [MIT](LICENSE). Third-party notices are in [LICENSE-THIRD-PARTY](LICENSE-THIRD-PARTY).
