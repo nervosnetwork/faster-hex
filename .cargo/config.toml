@@ -1,0 +1,24 @@
+[alias]
+# Eight cases for comparing an implementation change with a saved baseline.
+bench-dev = [
+    "bench", "--bench", "hex", "--",
+    "^(encode/faster_hex|decode/faster_hex_mixed)/(8|32|256|4096)$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]
+
+# Fifty-six cases: identical lowercase encoding and mixed-case decoding inputs.
+bench-compare = [
+    "bench", "--bench", "hex", "--",
+    "^(encode/(faster_hex|hex|const_hex|hex_simd|fashex|better_hex|data_encoding)|decode/(faster_hex_mixed|hex|const_hex|hex_simd|fashex|better_hex|data_encoding))/(8|32|256|4096)$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]
+
+# Hash256: 32 binary bytes / 64 hex characters; hot and rotating public APIs.
+bench-hash = [
+    "bench", "--bench", "hex", "--bench", "check", "--",
+    "^(encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex|better_hex)|check_compare/(faster_hex|const_hex|hex_simd|better_hex))/32$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]
