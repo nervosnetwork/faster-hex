@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-benchmark-${{ github.ref }}
+  group: native-benchmark-${{ github.sha }}
   cancel-in-progress: false
 
 env:
@@ -31,8 +31,6 @@ jobs:
             sample: 2
           - os: ubuntu-24.04
             sample: 3
-          - os: macos-15-intel
-            sample: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

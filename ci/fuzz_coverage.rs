@@ -13,6 +13,12 @@ fn main() {
         if std::arch::is_x86_feature_detected!("avx2") {
             expected.push("avx2");
         }
+        if std::arch::is_x86_feature_detected!("avx2")
+            && std::arch::is_x86_feature_detected!("avx512f")
+            && std::arch::is_x86_feature_detected!("avx512bw")
+        {
+            expected.push("avx512");
+        }
     }
     #[cfg(target_arch = "aarch64")]
     if std::arch::is_aarch64_feature_detected!("neon") {
