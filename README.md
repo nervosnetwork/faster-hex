@@ -1,7 +1,7 @@
 # faster-hex
 
 [![Crates.io](https://img.shields.io/crates/v/faster-hex.svg)](https://crates.io/crates/faster-hex)
-[![Documentation](https://docs.rs/faster-hex/badge.svg)](https://docs.rs/faster-hex)
+[![docs.rs](https://img.shields.io/docsrs/faster-hex?label=docs.rs)](https://docs.rs/faster-hex)
 
 Fast hexadecimal encoding and decoding with SIMD acceleration and a portable
 fallback. Uses SSE4.1 or AVX2 on x86 and NEON on AArch64 when available, with
@@ -18,12 +18,15 @@ faster-hex = "1.0.0-rc.2"
 ```rust
 use faster_hex::{hex_decode, hex_encode};
 
-let mut encoded = [0; 10];
-let text = hex_encode(b"hello", &mut encoded).unwrap();
-assert_eq!(text, "68656c6c6f");
+fn main() -> Result<(), faster_hex::Error> {
+    let mut encoded = [0; 10];
+    let text = hex_encode(b"hello", &mut encoded)?;
+    assert_eq!(text, "68656c6c6f");
 
-let mut decoded = [0; 5];
-assert_eq!(hex_decode(text.as_bytes(), &mut decoded).unwrap(), b"hello");
+    let mut decoded = [0; 5];
+    assert_eq!(hex_decode(text.as_bytes(), &mut decoded)?, b"hello");
+    Ok(())
+}
 ```
 
 Both conversions process the complete input and leave the destination unchanged
@@ -39,8 +42,9 @@ directly, including a prefix with `{:#x}`, without a temporary hex string. Use
 The default features are `std` and `serde`. Set `default-features = false` for a
 dependency-free core. Optional features include `alloc`, `heapless-08` and `defmt-03`.
 
-See the [API documentation](https://docs.rs/faster-hex), or run `cargo doc --open`
-for this checkout. Upgrading from 0.10: [migration guide](MIGRATION.md).
+Run `cargo doc --all-features --no-deps --open` for this candidate's API documentation.
+[Published API documentation](https://docs.rs/faster-hex) follows the released crate.
+Upgrading from 0.10: [migration guide](MIGRATION.md).
 Release history: [changelog](CHANGELOG.md).
 
 ## Testing changes
@@ -58,6 +62,15 @@ adapters are shared with unit tests and exposed only under `cfg(fuzzing)`; norma
 and `--all-features` builds have no backend API.
 After minimization, LLVM coverage replay must still reach the scalar and available
 SIMD kernels. JSON and HTML coverage reports are retained with the fuzz artifacts.
+
+For native AVX-512 acceptance, run the **Fuzz** workflow with `require-avx512`
+enabled. Both x86 engines must run on CPUs with AVX2, AVX-512F and AVX-512BW;
+their minimized corpora must execute all six AVX-512 checking and decoding kernels.
+The replay verifies Rust's CPU/OS detection and records each kernel's execution
+and region counts. Unsupported runners fail before the fuzz build. Standard
+hosted runner labels do not guarantee AVX-512; retry the affected job if necessary.
+Regular runs exercise AVX-512 whenever available, without requiring it on every
+x86 runner. Use this explicit acceptance mode before freezing AVX-512 changes.
 
 ## Benchmarks
 
@@ -97,6 +110,17 @@ Encoding is lowercase; decoding accepts mixed case. Sizes and throughput count
 binary payload bytes: `decode/faster_hex_mixed/32` reads 64 hex characters and
 produces 32 bytes. Append `--list` to a command to inspect the selected cases.
 
+The aliases do not set CPU affinity. For repeatable Linux comparisons, pin all
+runs to the same logical CPU; on hybrid processors, select a performance core
+and keep its SMT sibling idle. Replace `1` below with a CPU from your topology:
+
+```sh
+taskset -c 1 cargo bench-compare
+```
+
+Keep background load low and repeat the runs. Pinning prevents migration between
+cores, but does not eliminate frequency changes or interference.
+
 For a small performance difference, confirm the affected cases using Criterion's
 longer default sampling, saving and comparing a new baseline as above:
 
@@ -105,13 +129,33 @@ cargo bench --bench hex -- '^encode/faster_hex/32$' --save-baseline confirm
 # Edit the implementation, then rerun with --baseline confirm.
 ```
 
-For Hash256 work, `cargo bench-hash` selects 24 cases at 32 binary bytes / 64
-hex characters, taking roughly 30 seconds after compilation. It compares hot
-encoding/decoding, rotation through 4096 different hashes, and validation-only
-checks (fashex has no public checker). Rotation and buffer reuse happen inside
-the timer; input generation and reference-output assertions happen before it.
+For Hash256 work, `cargo bench-hash` selects 28 cases at 32 binary bytes / 64
+hex characters, taking roughly 35 seconds after compilation. It compares hot
+encoding/decoding, rotation through 4096 different hashes, owned-array decoding,
+and validation-only checks (fashex has no public checker). Rotation and buffer
+reuse happen inside the timer; input generation and correctness checks stay
+outside it.
 Use `--save-baseline before` / `--baseline before` here too. Always rerun
 `bench-dev` to check other lengths after a Hash256 optimization.
+
+The `decode_array` cases return a new `[u8; 32]` without heap allocation. The
+`faster_hex_slice` and `fashex_slice` controls decode into a local array and
+return it, so every case includes the same output ownership. Compare them with
+the existing `decode` cases to see how output ownership and call-site optimization
+affect performance.
+
+To compare the default bench profile with cross-crate ThinLTO, keep separate
+build directories and share only the Criterion reports:
+
+```sh
+CRITERION_HOME="$PWD/target/criterion-builds" CARGO_TARGET_DIR=target/bench-default \
+  CARGO_PROFILE_BENCH_LTO=false cargo bench-hash --save-baseline default
+CRITERION_HOME="$PWD/target/criterion-builds" CARGO_TARGET_DIR=target/bench-thin \
+  CARGO_PROFILE_BENCH_LTO=thin cargo bench-hash --baseline default
+```
+
+Use the same CPU affinity and other build settings for both commands. A change
+in these results measures the build configuration, not a library optimization.
 
 `cargo bench --bench format` compares borrowed `Hex`, an allocated hex string,
 per-byte formatting and padded uppercase output. `cargo bench --bench serde`
@@ -124,12 +168,14 @@ and a shared `CRITERION_HOME` for reports. Reusing a build directory across copi
 of the same package can select stale artifacts. Keep compiler flags, features
 and the dependency lockfile identical on both sides.
 
-The four benchmark targets cover conversion/owned strings (`hex`), validation
+The four benchmark targets cover conversion, arrays and strings (`hex`), validation
 and invalid-byte positions (`check`), JSON/Postcard adapters (`serde`), and borrowed
 formatting (`format`). Run a focused alias during development; the full matrix
 uses Criterion's longer default sampling. CI runs `cargo bench --all-features
 --benches -- --test` to execute cases without collecting timings. SIMD alignment
 and boundary correctness belong to the forced-backend and guard-page tests.
+
+Deferred work: [further optimization](OPTIMIZATION.md).
 
 ## License
 

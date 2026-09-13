@@ -25,7 +25,7 @@
 //! | Encode into a byte buffer | [`hex_encode`], [`hex_encode_upper`] |
 //! | Decode into a byte buffer | [`hex_decode`], [`hex_decode_with_case`] |
 //! | Decode an exact-length array | [`hex_decode_array`], [`hex_decode_array_with_case`] |
-//! | Format borrowed bytes into text | [`Hex`] with `Display`, `LowerHex` or `UpperHex` |
+//! | Format borrowed bytes into text | [`Hex`] with [`Display`](core::fmt::Display), [`LowerHex`](core::fmt::LowerHex) or [`UpperHex`](core::fmt::UpperHex) |
 //! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
 //!
 //! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
@@ -77,11 +77,12 @@
 //!
 //! # Platforms
 //!
-//! On x86, runtime detection protects the SSE4.1 and AVX2 paths, including the
-//! operating system's AVX state support. AArch64 targets that guarantee NEON use it
-//! directly. Other configurations use the portable fallback. Backend selection,
-//! SIMD thresholds and instruction sequences are implementation details; no public
-//! backend selection or architecture-specific call is required.
+//! On x86 and x86-64, implementations use SSE4.1, AVX2 and, for checking and
+//! decoding, AVX-512BW. Runtime detection checks CPU and operating-system support
+//! for features not enabled at compile time. AArch64 targets that guarantee NEON
+//! use it directly. Other configurations use the portable fallback. Backend
+//! selection, SIMD thresholds and instruction sequences are implementation details;
+//! no public backend selection or architecture-specific call is required.
 //!
 //! The minimum supported Rust version is 1.95.0 throughout the 1.0.x line.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
@@ -94,8 +95,8 @@
 
 [`hex_decode_vec`] returns owned decoded bytes; [`hex_string`] returns owned
 text. [`hex_append`] preserves existing text and returns only its new suffix.
-The allocating functions use normal `Vec`/`String` allocation behavior rather
-than returning allocation failures as codec errors.
+These functions follow the allocator's normal error handling. Allocation failures
+are not codec errors.
 
 ```
 use faster_hex::{hex_append, hex_decode_vec};
@@ -128,14 +129,14 @@ exactly `0x`, never `0X`. Named modules select the wire policy:
 | [`nopfx_uppercase`] | None | Uppercase | Uppercase |
 
 Each policy also has an `option_` counterpart, an `array` submodule, and a
-`deserialize_bounded` function. All adapters use strings, including in binary
-formats. Option adapters preserve the format's `Some`/`None` tags; an empty
+`deserialize_bounded` function. Present byte values use strings, including in
+binary formats. Option adapters preserve the format's `Some`/`None` tags; an empty
 present value stays distinct from `None`. For missing struct fields, add
 `#[serde(default)]` alongside the `with` attribute.
 
 Use [`array`](mod@crate::array) for exact-length arrays. Generic adapters instead
-collect into `FromIterator<u8>` containers; bounded collectors can panic when
-full. [`deserialize_bounded`] limits decoded bytes before output allocation,
+collect into [`FromIterator<u8>`](core::iter::FromIterator) containers; bounded
+collectors can panic when full. [`deserialize_bounded`] limits decoded bytes before output allocation,
 but does not bound the format's input storage or a custom collector's allocations.
 
 ```
@@ -143,14 +144,15 @@ but does not bound the format's input storage or a custom collector's allocation
 struct Record {
     #[serde(with = "faster_hex::array")]
     id: [u8; 2],
-    #[serde(default, with = "faster_hex::option_nopfx_lowercase")]
-    extra: Option<Vec<u8>>,
+    #[serde(default, with = "faster_hex::option_nopfx_lowercase::array")]
+    extra: Option<[u8; 2]>,
 }
 
-let record = Record { id: [0xab, 1], extra: None };
+let record = Record { id: [0xab, 1], extra: Some([0xcd, 2]) };
 let json = serde_json::to_string(&record)?;
-assert_eq!(json, r#"{"id":"0xab01","extra":null}"#);
+assert_eq!(json, r#"{"id":"0xab01","extra":"cd02"}"#);
 assert_eq!(serde_json::from_str::<Record>(&json)?, record);
+assert_eq!(serde_json::from_str::<Record>(r#"{"id":"0xab01"}"#)?.extra, None);
 # Ok::<(), serde_json::Error>(())
 ```
 "##
