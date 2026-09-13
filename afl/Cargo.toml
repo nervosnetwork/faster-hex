@@ -1,0 +1,12 @@
+[package]
+name = "faster-hex-afl"
+version = "0.1.0"
+authors = ["zhangsoledad <787953403@qq.com>"]
+edition = "2021"
+publish = false
+
+[dependencies]
+afl = "0.18"
+faster-hex = { path = "..", default-features = false }
+
+[workspace]

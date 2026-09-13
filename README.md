@@ -43,6 +43,22 @@ See the [API documentation](https://docs.rs/faster-hex), or run `cargo doc --ope
 for this checkout. Upgrading from 0.10: [migration guide](MIGRATION.md).
 Release history: [changelog](CHANGELOG.md).
 
+## Testing changes
+
+CI checks the API against the pinned 1.0 candidate baseline across all supported
+feature combinations, including external trait and function-signature contracts.
+It also runs libFuzzer on x86 and ARM and AFL on x86. Weekly and manual fuzz runs
+use longer time limits, restore cached corpora, and save minimized inputs and
+crash diagnostics as workflow artifacts.
+
+Both fuzz engines share public-contract and core tests. Every input constructs
+valid hex independently, exercises every available backend, and injects faults
+after valid prefixes. Short inputs also drive multi-block payloads. Backend
+adapters are shared with unit tests and exposed only under `cfg(fuzzing)`; normal
+and `--all-features` builds have no backend API.
+After minimization, LLVM coverage replay must still reach the scalar and available
+SIMD kernels. JSON and HTML coverage reports are retained with the fuzz artifacts.
+
 ## Benchmarks
 
 For development, run `cargo bench-dev` from this checkout. It measures eight
