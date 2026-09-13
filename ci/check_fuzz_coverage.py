@@ -9,7 +9,8 @@ import subprocess
 
 KERNELS = {
     "scalar": ["hex_encode_custom_case_fallback", "hex_encode_pairs",
-               "hex_check_fallback_with_case", "hex_decode_fallback"],
+               "hex_check_fallback_with_case", "hex_decode_fallback",
+               "hex_decode_short_scalar"],
     "sse41": ["hex_encode_sse41", "encode_sse41_16", "hex_check_sse_with_case",
               "hex_decode_sse41_checked", "hex_decode_sse41", "decode_sse41_block",
               "decode_sse41_nibbles", "pack_sse41"],
