@@ -1,0 +1,162 @@
+name: Fuzz
+
+on:
+  workflow_call:
+    inputs:
+      seconds:
+        description: Seconds per fuzz configuration (1 to 900)
+        type: number
+        default: 30
+      require-avx512:
+        description: Require native AVX-512F/BW execution in both x86 fuzz engines
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per fuzz configuration (1 to 900)
+        type: number
+        default: 900
+      require-avx512:
+        description: Require native AVX-512F/BW execution in both x86 fuzz engines
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  libfuzzer:
+    name: libFuzzer / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 85
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-08-21
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/fuzz
+      FUZZ_REQUIRED_BACKENDS: ${{ matrix.os == 'ubuntu-24.04' && (inputs.require-avx512 && 'scalar,sse41,avx2,avx512' || 'scalar,sse41,avx2') || 'scalar,neon' }}
+      FUZZ_SECONDS: ${{ github.event_name == 'schedule' && 900 || inputs.seconds }}
+    steps:
+      - name: Require AVX-512 hardware
+        if: inputs.require-avx512 && matrix.os == 'ubuntu-24.04'
+        run: |
+          lscpu
+          for flag in avx2 avx512f avx512bw; do
+            if ! grep -qw "$flag" /proc/cpuinfo; then
+              echo "::error::Runner lacks $flag; use an AVX-512-capable runner or retry this job."
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: nightly-2026-08-21
+          components: rust-src, llvm-tools-preview
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: fuzz-${{ matrix.os }}
+          workspaces: fuzz -> ../target/fuzz
+      - name: Restore accumulated corpora
+        id: corpus
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/fuzz-corpus/libfuzzer
+          key: fuzz-corpus-v1-libfuzzer-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-v1-libfuzzer-${{ runner.arch }}-
+      - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - run: rustc -Vv
+      - run: python3 ci/check_fuzz.py --seconds "$FUZZ_SECONDS"
+      - name: Save minimized corpora
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/fuzz-corpus/libfuzzer
+          key: ${{ steps.corpus.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: libfuzzer-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          path: |
+            target/fuzz-results
+            target/fuzz-corpus/libfuzzer
+            fuzz/Cargo.lock
+          if-no-files-found: error
+
+  afl:
+    name: AFL runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      RUSTUP_TOOLCHAIN: 1.95.0
+      FUZZ_REQUIRED_BACKENDS: ${{ inputs.require-avx512 && 'scalar,sse41,avx2,avx512' || 'scalar,sse41,avx2' }}
+      FUZZ_SECONDS: ${{ github.event_name == 'schedule' && 900 || inputs.seconds }}
+    steps:
+      - name: Require AVX-512 hardware
+        if: inputs.require-avx512
+        run: |
+          lscpu
+          for flag in avx2 avx512f avx512bw; do
+            if ! grep -qw "$flag" /proc/cpuinfo; then
+              echo "::error::Runner lacks $flag; use an AVX-512-capable runner or retry this job."
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: afl
+          workspaces: afl -> ../target/afl-runtime
+      - name: Restore accumulated corpus
+        id: corpus
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/fuzz-corpus/afl
+          key: fuzz-corpus-v1-afl-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-v1-afl-${{ runner.arch }}-
+      # The binary cache omits afl.rs runtime data. Reinstall so its build
+      # script rebuilds the runtime for the active Rust toolchain.
+      - run: cargo install cargo-afl --version 0.18.2 --locked --force
+      - name: Configure crash reporting on the disposable runner
+        run: sudo sysctl -w kernel.core_pattern=core
+      - run: python3 ci/check_afl.py --seconds "$FUZZ_SECONDS"
+      - name: Save minimized corpus
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/fuzz-corpus/afl
+          key: ${{ steps.corpus.outputs.cache-primary-key }}
+      # AFL queue and crash filenames contain colons, which artifacts reject.
+      - name: Archive AFL results
+        if: always()
+        run: |
+          if [ -d target/afl-results ]; then
+            tar -czf target/afl-results.tar.gz -C target afl-results
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: afl-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          path: |
+            target/afl-results.tar.gz
+            target/fuzz-corpus/afl
+            afl/Cargo.lock
+          if-no-files-found: error

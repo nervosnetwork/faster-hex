@@ -1,0 +1,51 @@
+
+[package]
+name = "faster-hex-fuzz"
+version = "0.0.1"
+authors = ["Automatically generated"]
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies.faster-hex]
+path = ".."
+default-features = false
+[dependencies.libfuzzer-sys]
+version = "0.4"
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+optional = true
+
+[dependencies.serde_json]
+version = "1"
+optional = true
+
+[features]
+default = ["std", "serde"]
+alloc = ["faster-hex/alloc"]
+std = ["alloc", "faster-hex/std"]
+serde = ["alloc", "faster-hex/serde", "dep:serde", "dep:serde_json"]
+heapless-08 = ["faster-hex/heapless-08"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "faster-hex"
+path = "fuzz_targets/faster-hex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "serde"
+path = "fuzz_targets/serde.rs"
+required-features = ["serde"]
+test = false
+doc = false
+bench = false
