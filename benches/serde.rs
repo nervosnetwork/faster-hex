@@ -8,13 +8,19 @@ struct Payload {
     bytes: Vec<u8>,
 }
 
+#[derive(Serialize)]
+struct TextPayload<'a> {
+    bytes: &'a str,
+}
+
 fn serde(c: &mut Criterion) {
     let mut group = c.benchmark_group("serde_json");
     for len in [0, 10, 32, 64, 65, 256, 4096] {
         let input = Payload {
             bytes: (0..len).map(|i| (i * 37 + 11) as u8).collect(),
         };
-        let json = format!(r#"{{"bytes":"0x{}"}}"#, hex::encode(&input.bytes));
+        let encoded = format!("0x{}", hex::encode(&input.bytes));
+        let json = format!(r#"{{"bytes":"{encoded}"}}"#);
         assert_eq!(serde_json::to_string(&input).unwrap(), json);
         assert_eq!(serde_json::from_str::<Payload>(&json).unwrap(), input);
         let escaped = json.replace('a', "\\u0061");
@@ -30,6 +36,17 @@ fn serde(c: &mut Criterion) {
                 black_box(output.as_slice());
             });
             assert_eq!(output, json.as_bytes());
+        });
+        // Isolate JSON writing from hex conversion with the same payload text.
+        let text = TextPayload { bytes: &encoded };
+        let mut text_output = Vec::with_capacity(json.len());
+        group.bench_function(BenchmarkId::new("serialize_text_reuse", len), |b| {
+            b.iter(|| {
+                text_output.clear();
+                serde_json::to_writer(&mut text_output, black_box(&text)).unwrap();
+                black_box(text_output.as_slice());
+            });
+            assert_eq!(text_output, json.as_bytes());
         });
         for (name, source) in [("deserialize", &json), ("deserialize_escaped", &escaped)] {
             group.bench_with_input(BenchmarkId::new(name, len), source, |b, source| {

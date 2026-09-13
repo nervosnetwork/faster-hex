@@ -160,8 +160,9 @@ in these results measures the build configuration, not a library optimization.
 `cargo bench --bench format` compares borrowed `Hex`, an allocated hex string,
 per-byte formatting and padded uppercase output. `cargo bench --bench serde`
 measures JSON serialization/deserialization and Postcard serialization, including
-reused output buffers. These test library operations directly; application and
-network overhead are outside their scope.
+reused output buffers. `serialize_text_reuse` writes the same already encoded
+payload to isolate JSON work from hex conversion. These test library operations
+directly; application and network overhead are outside their scope.
 
 When comparing separate checkouts, give them separate `CARGO_TARGET_DIR` values
 and a shared `CRITERION_HOME` for reports. Reusing a build directory across copies

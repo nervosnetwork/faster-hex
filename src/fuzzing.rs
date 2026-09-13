@@ -124,6 +124,9 @@ impl Backend {
         // and must reject it before writing; do not pre-check characters here.
         unsafe {
             match self.0 {
+                Kind::Scalar if dst.len() < 8 => {
+                    decode::hex_decode_short_scalar(src, dst, case).is_ok()
+                }
                 Kind::Scalar => {
                     if !decode::hex_check_fallback_with_case(src, case) {
                         return false;
