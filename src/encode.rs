@@ -181,7 +181,7 @@ pub(crate) fn encode<'a>(
 /// let mut destination = [0xff; 8];
 /// let text = hex_encode(&[0, 0xab, 0xcd], &mut destination)?;
 /// assert_eq!(text, "00abcd");
-/// // The returned view is mutable, but cannot expose uninitialized spare bytes.
+/// // Only the returned prefix is modified.
 /// text.make_ascii_uppercase();
 /// assert_eq!(&destination[..6], b"00ABCD");
 /// assert_eq!(&destination[6..], &[0xff; 2]);

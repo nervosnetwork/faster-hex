@@ -256,10 +256,11 @@ mod internal {
 /// Serializes a byte view as lowercase hex with a `0x` prefix.
 ///
 /// Available with `serde`. This is the default serializer used by
-/// `#[serde(with = "faster_hex")]`. It accepts any `AsRef<[u8]>`, reads that view
+/// `#[serde(with = "faster_hex")]`. It accepts any [`AsRef<[u8]>`], reads that view
 /// once, and writes a Serde string in every format, including binary formats.
 /// Empty bytes serialize as `"0x"`. Use a named policy module to change the
-/// prefix or letter case.
+/// prefix or letter case. Temporary storage may allocate; allocation failure
+/// follows the allocator's error handling.
 ///
 /// # Errors
 ///
@@ -268,9 +269,7 @@ mod internal {
 ///
 /// # Panics
 ///
-/// Panics if temporary output storage would exceed `isize::MAX` bytes. Allocation
-/// failure follows the allocator's error handling. No particular allocation count
-/// is guaranteed.
+/// Panics if temporary output storage would exceed [`isize::MAX`] bytes.
 ///
 /// # Examples
 ///
@@ -301,10 +300,13 @@ where
 /// letters may use either case, including mixed case. Whitespace and separators
 /// are rejected. `"0x"` produces an empty collection.
 ///
-/// Decoded bytes are collected into `T: FromIterator<u8>`, such as `Vec<u8>` or
-/// `VecDeque<u8>`. Input text is borrowed when the format can lend it; transient,
+/// Decoded bytes are collected into `T`, which implements [`FromIterator<u8>`],
+/// for example [`Vec<u8>`](alloc::vec::Vec) or
+/// [`VecDeque<u8>`](alloc::collections::VecDeque).
+/// Input text is borrowed when the format can lend it; transient,
 /// escaped or owned text may require storage. Use [`array`](mod@crate::array)
 /// for `[u8; N]` fields, or [`deserialize_bounded`] to limit decoded output.
+/// Allocation failure follows the allocator's error handling.
 ///
 /// # Errors
 ///
@@ -317,8 +319,7 @@ where
 /// # Panics
 ///
 /// A custom collector may panic, for example when its fixed capacity is exceeded.
-/// This adapter does not provide fallible collection. Allocation failure follows
-/// the allocator's error handling.
+/// This adapter does not provide fallible collection.
 ///
 /// # Examples
 ///
@@ -352,6 +353,7 @@ where
 /// It does not limit input text storage used by the format, error-message storage,
 /// or allocations performed by a custom collector. It also does not constrain
 /// serialization; pair this function with the ordinary [`serialize`] function.
+/// Allocation failure follows the allocator's error handling.
 ///
 /// # Errors
 ///
@@ -362,8 +364,7 @@ where
 /// # Panics
 ///
 /// A custom collector can still panic when full; the acceptance limit does not
-/// change its capacity or collection implementation. Allocation failure follows
-/// the allocator's error handling.
+/// change its capacity or collection implementation.
 ///
 /// # Examples
 ///
@@ -398,12 +399,14 @@ macro_rules! serde_adapters {
         #[doc = concat!(
                                     r###"
 Use `#[serde(with = "...")]` for byte collections. Serialization reads one
-`AsRef<[u8]>` view; deserialization collects into `FromIterator<u8>` after
+[`AsRef<[u8]>`] view; deserialization collects into [`FromIterator<u8>`] after
 validating the complete input. All formats use strings, including binary formats.
 
 A required prefix is exactly `0x`. Payloads contain only ASCII hex digits;
 empty payloads are accepted. For arrays use this module's [`array`] adapter;
 for a decoded-byte limit use [`deserialize_bounded`].
+
+# Examples
 
 ```
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -427,8 +430,20 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
 
             /// Serializes a byte view using this module's prefix and case policy.
             ///
-            /// Reads `AsRef<[u8]>` once and sends a string to every serializer.
-            /// Errors, panics and allocation behavior match [`crate::serialize`].
+            /// Reads [`AsRef::as_ref`] once and sends a string to every serializer.
+            /// Allocation behavior matches [`crate::serialize`].
+            ///
+            /// # Errors
+            ///
+            /// Returns an error if serialization fails or the encoded length overflows.
+            ///
+            /// # Panics
+            ///
+            /// Panics if temporary output storage would exceed [`isize::MAX`] bytes.
+            ///
+            /// # Examples
+            ///
+            /// See the [module example](self#examples).
             pub fn serialize<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
@@ -439,11 +454,21 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
 
             /// Deserializes a hex string using this module's prefix and case policy.
             ///
-            /// Preserves the string hint and borrows input text where possible.
-            /// Checks prefix, even payload length, then character/case validity
-            /// before collecting into `T`. Invalid-byte positions exclude the prefix.
-            /// Format errors propagate; collectors can panic on capacity exhaustion.
+            /// Borrows input text when the format can lend it.
             /// Allocation behavior matches [`crate::deserialize`].
+            ///
+            /// # Errors
+            ///
+            /// Propagates deserializer errors. Checks any required prefix, even payload
+            /// length, then characters/case before collection. Positions exclude the prefix.
+            ///
+            /// # Panics
+            ///
+            /// A custom collector may panic, for example when its fixed capacity is exceeded.
+            ///
+            /// # Examples
+            ///
+            /// See the [module example](self#examples).
             pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
             where
                 D: serde::Deserializer<'de>,
@@ -454,11 +479,22 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
 
             /// Deserializes at most `MAX` decoded bytes using this module's policy.
             ///
-            /// Checks prefix, even payload length, decoded-byte limit, then
-            /// character/case validity. The limit precedes decoded-output allocation
-            /// and collection; it does not bound input, error or collector storage.
-            /// `MAX == 0` accepts an empty payload. Format errors propagate and a
-            /// fixed-capacity collector can still panic; see [`crate::deserialize_bounded`].
+            /// The limit precedes decoded-output allocation and collection; it does not
+            /// bound input, error or collector storage. `MAX == 0` accepts an empty payload.
+            /// Allocation behavior matches [`crate::deserialize_bounded`].
+            ///
+            /// # Errors
+            ///
+            /// Propagates deserializer errors. Checks any required prefix, even length,
+            /// decoded-byte limit, then characters/case. Byte positions exclude the prefix.
+            ///
+            /// # Panics
+            ///
+            /// A custom collector may still panic; the limit does not change its capacity.
+            ///
+            /// # Examples
+            ///
+            /// See [`crate::deserialize_bounded`] for the Serde field attributes.
             pub fn deserialize_bounded<'de, const MAX: usize, D, T>(
                 deserializer: D,
             ) -> Result<T, D::Error>
@@ -471,11 +507,14 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
 
             /// Exact-length arrays using the parent module's prefix and case policy.
             ///
-            /// Writes directly into `[u8; N]` without an intermediate decoded vector.
+            /// Deserialization writes into `[u8; N]` without an intermediate byte vector.
             /// Input text is borrowed where possible; formats may need storage for
-            /// escaped or transient text. Serialization adds no length metadata.
+            /// escaped or transient text. Serialization uses the parent adapter's
+            /// string representation, including any framing added by the format.
             #[doc = concat!(
                                         r###"
+# Examples
+
 ```
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Record {
@@ -496,10 +535,17 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
 
                 /// Deserializes exactly `N` bytes into an owned array.
                 ///
-                /// Checks prefix, even payload length, exact decoded length, then
-                /// characters/case. Length errors count decoded bytes; invalid-byte
-                /// positions exclude the prefix. Format errors propagate.
                 /// Empty payloads succeed only for `N == 0`.
+                ///
+                /// # Errors
+                ///
+                /// Checks any required prefix, even payload length, exact decoded length,
+                /// then characters/case. Length errors count decoded bytes; invalid-byte
+                /// positions exclude the prefix. Format errors propagate.
+                ///
+                /// # Examples
+                ///
+                /// See the [module example](self#examples).
                 pub fn deserialize<'de, D, const N: usize>(
                     deserializer: D,
                 ) -> Result<[u8; N], D::Error>
@@ -516,11 +562,13 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                                     r###"
 Present values follow [`"###, stringify!($mod_name), r###"`](crate::"###,
                                     stringify!($mod_name), r###"). Absent values use Serde's `None`
-representation (`null` in JSON). Binary formats retain their normal Option
+representation (`null` in JSON). Binary formats retain their normal [`Option`]
 tags, so `Some(empty)` remains distinct from `None`.
 
 Use `#[serde(default)]` to accept a missing struct field. For fixed arrays use
 [`array`]; for a limit on present values use [`deserialize_bounded`].
+
+# Examples
 
 ```
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -542,11 +590,24 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
             use crate::serde::internal;
             use core::iter::FromIterator;
 
-            /// Serializes an optional byte view, preserving Serde's Option tags.
+            /// Serializes an optional byte view, preserving Serde's [`Option`] tags.
             ///
             /// Present values use this module's hex string policy and read
-            /// `AsRef<[u8]>` once. Errors, panics and allocation behavior match
-            /// [`crate::serialize`]. `None` uses the format's absent-value representation.
+            /// [`AsRef::as_ref`] once. `None` uses the format's absent-value representation.
+            /// Allocation behavior matches [`crate::serialize`].
+            ///
+            /// # Errors
+            ///
+            /// Propagates serializer errors, including errors writing an Option tag.
+            /// Present values also fail if their encoded length overflows.
+            ///
+            /// # Panics
+            ///
+            /// Panics if temporary output storage would exceed [`isize::MAX`] bytes.
+            ///
+            /// # Examples
+            ///
+            /// See the [module example](self#examples).
             pub fn serialize<S, T>(data: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
@@ -557,11 +618,22 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
             /// Deserializes an optional hex string into a byte collection.
             ///
-            /// Present strings use this module's policy and validate prefix, even
-            /// payload length, then characters/case before collection. Invalid input
-            /// is an error; an empty payload is `Some(empty)`. Positions exclude the
-            /// prefix. Format errors propagate; allocation and collector panics
-            /// match [`crate::deserialize`].
+            /// Present strings use this module's policy; an empty payload is `Some(empty)`.
+            /// Allocation behavior matches [`crate::deserialize`].
+            ///
+            /// # Errors
+            ///
+            /// Propagates deserializer errors. Checks present text for any required prefix,
+            /// even payload length, then characters/case before collection. Invalid input
+            /// is an error, not `None`. Byte positions exclude the prefix.
+            ///
+            /// # Panics
+            ///
+            /// A custom collector may panic, for example when its fixed capacity is exceeded.
+            ///
+            /// # Examples
+            ///
+            /// See the [module example](self#examples).
             pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
             where
                 D: serde::Deserializer<'de>,
@@ -572,11 +644,22 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
             /// Deserializes an optional collection of at most `MAX` decoded bytes.
             ///
-            /// Accepts `None` and empty payloads even when `MAX == 0`. Present text
-            /// is checked for prefix, even payload length, decoded-byte limit, then
-            /// characters/case. Invalid or over-limit values are errors, not `None`.
-            /// Storage limits, format errors and collector panics match
-            /// [`crate::deserialize_bounded`].
+            /// Accepts `None` and empty payloads even when `MAX == 0`. Storage limits
+            /// and allocation behavior match [`crate::deserialize_bounded`].
+            ///
+            /// # Errors
+            ///
+            /// Propagates deserializer errors. Checks present text for any required prefix,
+            /// even payload length, decoded-byte limit, then characters/case. Invalid or
+            /// over-limit values are errors, not `None`. Byte positions exclude the prefix.
+            ///
+            /// # Panics
+            ///
+            /// A custom collector may still panic; the limit does not change its capacity.
+            ///
+            /// # Examples
+            ///
+            /// See [`crate::deserialize_bounded`] for the Serde field attributes.
             pub fn deserialize_bounded<'de, const MAX: usize, D, T>(
                 deserializer: D,
             ) -> Result<Option<T>, D::Error>
@@ -592,6 +675,10 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
             /// Present strings decode directly into `[u8; N]` without an intermediate
             /// byte vector; input text may still need storage. `None` and `Some([])`
             /// remain distinct in every format. Add `#[serde(default)]` for missing fields.
+            ///
+            /// # Examples
+            ///
+            /// See the [crate example](crate#serde-adapters) for optional array fields.
             pub mod array {
                 use super::{internal, CheckCase};
 
@@ -599,10 +686,18 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
                 /// Deserializes an optional array of exactly `N` bytes.
                 ///
-                /// Checks present text for prefix, even payload length, exact decoded
-                /// length, then characters/case. Format errors propagate; invalid input
-                /// is an error, not `None`. Empty present payloads require `N == 0`.
+                /// An empty present payload requires `N == 0`.
+                ///
+                /// # Errors
+                ///
+                /// Checks present text for any required prefix, even payload length, exact
+                /// decoded length, then characters/case. Format errors propagate; invalid input
+                /// is an error, not `None`.
                 /// Lengths count decoded bytes; invalid-byte positions exclude the prefix.
+                ///
+                /// # Examples
+                ///
+                /// See the [crate example](crate#serde-adapters) for optional array fields.
                 pub fn deserialize<'de, D, const N: usize>(
                     deserializer: D,
                 ) -> Result<Option<[u8; N]>, D::Error>

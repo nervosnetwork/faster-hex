@@ -1,7 +1,7 @@
 # faster-hex
 
 [![Crates.io](https://img.shields.io/crates/v/faster-hex.svg)](https://crates.io/crates/faster-hex)
-[![Documentation](https://docs.rs/faster-hex/badge.svg)](https://docs.rs/faster-hex)
+[![docs.rs](https://img.shields.io/docsrs/faster-hex?label=docs.rs)](https://docs.rs/faster-hex)
 
 Fast hexadecimal encoding and decoding with SIMD acceleration and a portable
 fallback. Uses SSE4.1 or AVX2 on x86 and NEON on AArch64 when available, with
@@ -18,12 +18,15 @@ faster-hex = "1.0.0-rc.2"
 ```rust
 use faster_hex::{hex_decode, hex_encode};
 
-let mut encoded = [0; 10];
-let text = hex_encode(b"hello", &mut encoded).unwrap();
-assert_eq!(text, "68656c6c6f");
+fn main() -> Result<(), faster_hex::Error> {
+    let mut encoded = [0; 10];
+    let text = hex_encode(b"hello", &mut encoded)?;
+    assert_eq!(text, "68656c6c6f");
 
-let mut decoded = [0; 5];
-assert_eq!(hex_decode(text.as_bytes(), &mut decoded).unwrap(), b"hello");
+    let mut decoded = [0; 5];
+    assert_eq!(hex_decode(text.as_bytes(), &mut decoded)?, b"hello");
+    Ok(())
+}
 ```
 
 Both conversions process the complete input and leave the destination unchanged
@@ -39,8 +42,9 @@ directly, including a prefix with `{:#x}`, without a temporary hex string. Use
 The default features are `std` and `serde`. Set `default-features = false` for a
 dependency-free core. Optional features include `alloc`, `heapless-08` and `defmt-03`.
 
-See the [API documentation](https://docs.rs/faster-hex), or run `cargo doc --open`
-for this checkout. Upgrading from 0.10: [migration guide](MIGRATION.md).
+Run `cargo doc --all-features --no-deps --open` for this candidate's API documentation.
+[Published API documentation](https://docs.rs/faster-hex) follows the released crate.
+Upgrading from 0.10: [migration guide](MIGRATION.md).
 Release history: [changelog](CHANGELOG.md).
 
 ## Testing changes
@@ -58,6 +62,15 @@ adapters are shared with unit tests and exposed only under `cfg(fuzzing)`; norma
 and `--all-features` builds have no backend API.
 After minimization, LLVM coverage replay must still reach the scalar and available
 SIMD kernels. JSON and HTML coverage reports are retained with the fuzz artifacts.
+
+For native AVX-512 acceptance, run the **Fuzz** workflow with `require-avx512`
+enabled. Both x86 engines must run on CPUs with AVX2, AVX-512F and AVX-512BW;
+their minimized corpora must execute all six AVX-512 checking and decoding kernels.
+The replay verifies Rust's CPU/OS detection and records each kernel's execution
+and region counts. Unsupported runners fail before the fuzz build. Standard
+hosted runner labels do not guarantee AVX-512; retry the affected job if necessary.
+Regular runs exercise AVX-512 whenever available, without requiring it on every
+x86 runner. Use this explicit acceptance mode before freezing AVX-512 changes.
 
 ## Benchmarks
 
@@ -97,6 +110,17 @@ Encoding is lowercase; decoding accepts mixed case. Sizes and throughput count
 binary payload bytes: `decode/faster_hex_mixed/32` reads 64 hex characters and
 produces 32 bytes. Append `--list` to a command to inspect the selected cases.
 
+The aliases do not set CPU affinity. For repeatable Linux comparisons, pin all
+runs to the same logical CPU; on hybrid processors, select a performance core
+and keep its SMT sibling idle. Replace `1` below with a CPU from your topology:
+
+```sh
+taskset -c 1 cargo bench-compare
+```
+
+Keep background load low and repeat the runs. Pinning prevents migration between
+cores, but does not eliminate frequency changes or interference.
+
 For a small performance difference, confirm the affected cases using Criterion's
 longer default sampling, saving and comparing a new baseline as above:
 
@@ -130,6 +154,8 @@ formatting (`format`). Run a focused alias during development; the full matrix
 uses Criterion's longer default sampling. CI runs `cargo bench --all-features
 --benches -- --test` to execute cases without collecting timings. SIMD alignment
 and boundary correctness belong to the forced-backend and guard-page tests.
+
+Deferred work: [further optimization](OPTIMIZATION.md).
 
 ## License
 

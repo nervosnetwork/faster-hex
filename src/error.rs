@@ -9,9 +9,9 @@
 /// using `..` and keep a wildcard arm for future variants. Downstream crates
 /// cannot construct the non-exhaustive data-bearing variants directly.
 ///
-/// `Display` and `Debug` provide diagnostics, not a stable format to parse or
-/// persist. Use variants and fields for programmatic handling. Memory layout,
-/// Rust ABI and computed hash values are not part of the compatibility contract.
+/// [`Display`](core::fmt::Display) and [`Debug`](core::fmt::Debug) provide
+/// diagnostics; their output is not a stable serialization format. Match variants
+/// and fields when handling errors programmatically.
 /// [`core::error::Error`] is implemented with every feature set.
 ///
 /// # Examples

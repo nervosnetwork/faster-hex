@@ -5,10 +5,10 @@ authors = ["zhangsoledad <787953403@qq.com>"]
 edition = "2018"
 rust-version = "1.95.0"
 keywords = ["simd", "hex", "no-std"]
+categories = ["encoding", "no-std"]
 license = "MIT"
 description = "Fast, checked hex encoding and decoding with SIMD and no_std support."
 repository = "https://github.com/nervosnetwork/faster-hex"
-homepage = "https://github.com/nervosnetwork/faster-hex"
 readme = "README.md"
 exclude = ["afl/*", "benches/*", "fuzz/*", "ci/*", ".github/*", ".cargo/*", ".gitignore", "rust-toolchain.toml", "proptest-regressions/*"]
 
@@ -65,6 +65,8 @@ harness = false
 required-features = ["std"]
 
 [lints.clippy]
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
 undocumented_unsafe_blocks = "warn"
 
 [lints.rust]

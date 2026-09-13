@@ -48,6 +48,8 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 - Avoid clearing unused `Hex` scratch storage, stream long values in larger chunks,
   and reduce short-value formatting and padding overhead.
 - Add differential tests, guard pages, feature consumers, Miri checks and fuzz targets.
+- Add explicit native AVX-512 fuzz acceptance for libFuzzer and AFL, requiring
+  execution inside every AVX-512 kernel after corpus minimization.
 - Check structured valid and damaged inputs, allocation-free contracts, concurrent
   dispatch, fixed-capacity boundaries and partial writer failures.
 - Expand CI across operating systems, architectures and feature combinations, with
