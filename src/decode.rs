@@ -82,6 +82,7 @@ static UNHEX4: [u8; 256] = init_unhex4_array(CheckCase::None);
 /// assert!(!hex_check(b"0x01"));
 /// assert!(!hex_check(b"00 01"));
 /// ```
+#[inline]
 pub fn hex_check(src: &[u8]) -> bool {
     hex_check_with_case(src, CheckCase::None)
 }
@@ -240,11 +241,20 @@ unsafe fn valid_avx2(bytes: __m256i, case: CheckCase) -> __m256i {
 
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
 pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 32 {
         return hex_check_sse_with_case(src, case);
     }
-    let (blocks, tail) = src.as_chunks::<32>();
+    let (batches, rest) = src.as_chunks::<64>();
+    for batch in batches {
+        let a = valid_avx2(_mm256_loadu_si256(batch.as_ptr().cast()), case);
+        let b = valid_avx2(_mm256_loadu_si256(batch.as_ptr().add(32).cast()), case);
+        if _mm256_movemask_epi8(_mm256_and_si256(a, b)) != -1 {
+            return false;
+        }
+    }
+    let (blocks, tail) = rest.as_chunks::<32>();
     for block in blocks {
         if _mm256_movemask_epi8(valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case)) != -1 {
             return false;
@@ -281,6 +291,7 @@ unsafe fn valid_avx512(bytes: __m512i, case: CheckCase) -> u64 {
 
 #[target_feature(enable = "avx512f,avx512bw")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
 pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 64 {
         return hex_check_avx2_with_case(src, case);
@@ -771,13 +782,10 @@ pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
-            crate::Vectorization::AVX512 => {
-                // SAFETY: AVX-512BW is available and the slices have the exact 2:1 ratio.
-                unsafe { hex_decode_avx512_checked(src, dst, check_case) }
-            }
-            crate::Vectorization::AVX2 => {
-                // SAFETY: AVX2 is available and dst has exactly src.len() / 2 bytes.
-                unsafe { hex_decode_avx2_checked(src, dst, check_case) }
+            kind @ (crate::Vectorization::AVX512 | crate::Vectorization::AVX2) => {
+                // SAFETY: Dispatch checked AVX2 and, when selected, AVX-512BW
+                // with its OS state. dst has exactly src.len() / 2 bytes.
+                unsafe { hex_decode_avx(src, dst, check_case, kind) }
             }
             crate::Vectorization::SSE41 => {
                 // SAFETY: SSE4.1 is available and the slice lengths have the exact ratio.
@@ -938,6 +946,7 @@ pub(crate) unsafe fn hex_decode_sse41_checked(
 
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
 pub(crate) unsafe fn hex_decode_avx2_checked(
     src: &[u8],
     dst: &mut [u8],
@@ -963,8 +972,27 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
     Ok(())
 }
 
+// Share the AVX dispatch boundary so constant case policies stay visible to
+// both kernels without duplicating their setup at the public call site.
+#[inline]
+#[target_feature(enable = "avx2")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn hex_decode_avx(
+    src: &[u8],
+    dst: &mut [u8],
+    case: CheckCase,
+    kind: crate::Vectorization,
+) -> Result<(), ()> {
+    if kind == crate::Vectorization::AVX512 {
+        hex_decode_avx512_checked(src, dst, case)
+    } else {
+        hex_decode_avx2_checked(src, dst, case)
+    }
+}
+
 #[target_feature(enable = "avx512f,avx512bw")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
 pub(crate) unsafe fn hex_decode_avx512_checked(
     src: &[u8],
     dst: &mut [u8],

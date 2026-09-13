@@ -5,10 +5,10 @@ use core::iter::FromIterator;
 mod internal {
     use crate::{
         decode::{hex_decode_with_case, CheckCase},
-        encode::hex_encode_custom,
+        encode::encode,
     };
     use alloc::{borrow::Cow, string::String, vec, vec::Vec};
-    use core::{fmt, iter::FromIterator};
+    use core::{fmt, iter::FromIterator, mem::MaybeUninit};
     use serde::{
         de::{Error, Unexpected, Visitor},
         Deserialize, Deserializer, Serialize, Serializer,
@@ -89,22 +89,28 @@ mod internal {
             .checked_mul(2)
             .and_then(|len| len.checked_add(prefix.len()))
             .ok_or_else(|| serde::ser::Error::custom(crate::Error::Overflow))?;
-        // Hashes and short identifiers fit on the stack, including the prefix.
+        // Fixed values through 65 bytes (including H520) fit with the prefix.
         // Initialize only the storage selected for this call.
         let mut stack;
         let mut heap;
-        let dst = if len <= 130 {
-            stack = [0; 130];
+        let dst = if len <= 132 {
+            stack = [MaybeUninit::uninit(); 132];
             &mut stack[..len]
         } else {
-            heap = vec![0; len];
-            &mut heap
+            heap = Vec::<u8>::with_capacity(len);
+            &mut heap.spare_capacity_mut()[..len]
         };
-        dst[..prefix.len()].copy_from_slice(prefix);
-        hex_encode_custom(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
+        for (slot, &byte) in dst.iter_mut().zip(prefix) {
+            slot.write(byte);
+        }
+        encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
             .map_err(serde::ser::Error::custom)?;
-        // SAFETY: The prefix and encoder initialized the complete output as ASCII.
-        serializer.serialize_str(unsafe { core::str::from_utf8_unchecked(dst) })
+        // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
+        // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
+        // backing stack buffer or allocation stays live throughout serialization.
+        serializer.serialize_str(unsafe {
+            core::str::from_utf8_unchecked(core::slice::from_raw_parts(dst.as_ptr().cast(), len))
+        })
     }
 
     fn payload<E: Error>(text: &str, with_prefix: bool) -> Result<&str, E> {

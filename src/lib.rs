@@ -215,7 +215,8 @@ pub(crate) enum Vectorization {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     AVX2 = 2,
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    AVX512 = 3,
+    // Keep dispatch sparse so adding this backend does not create a jump table.
+    AVX512 = 128,
     #[cfg(target_arch = "aarch64")]
     Neon = 3,
 }
@@ -252,23 +253,18 @@ pub(crate) fn vectorization_support() -> Vectorization {
         use core::sync::atomic::{AtomicU8, Ordering};
         static FLAGS: AtomicU8 = AtomicU8::new(u8::MAX);
 
-        // We're OK with relaxed, worst case scenario multiple threads checked the CPUID.
-        let current_flags = FLAGS.load(Ordering::Relaxed);
-        // u8::MAX means uninitialized.
-        if current_flags != u8::MAX {
-            return match current_flags {
-                0 => Vectorization::None,
-                1 => Vectorization::SSE41,
-                2 => Vectorization::AVX2,
-                3 => Vectorization::AVX512,
-                _ => unreachable!(),
-            };
-        }
-
-        let val = vectorization_support_no_cache_x86();
-
-        FLAGS.store(val as u8, Ordering::Relaxed);
-        return val;
+        // Relaxed is enough: racing initializers detect the same CPU features.
+        return match FLAGS.load(Ordering::Relaxed) {
+            0 => Vectorization::None,
+            1 => Vectorization::SSE41,
+            2 => Vectorization::AVX2,
+            128 => Vectorization::AVX512,
+            _ => {
+                let backend = vectorization_support_no_cache_x86();
+                FLAGS.store(backend as u8, Ordering::Relaxed);
+                backend
+            }
+        };
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]

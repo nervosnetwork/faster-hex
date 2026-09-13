@@ -152,5 +152,23 @@ fn policies(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, serde, policies);
+fn postcard(c: &mut Criterion) {
+    let mut group = c.benchmark_group("serde_postcard");
+    for len in [0, 32, 64, 65, 256, 4096] {
+        let input = Payload {
+            bytes: (0..len).map(|i| (i * 37 + 11) as u8).collect(),
+        };
+        let mut output = vec![0; len * 2 + 32];
+        let encoded = postcard::to_slice(&input, &mut output).unwrap();
+        assert_eq!(postcard::from_bytes::<Payload>(encoded).unwrap(), input);
+        group.bench_function(BenchmarkId::new("serialize_reuse", len), |b| {
+            b.iter(|| {
+                black_box(postcard::to_slice(black_box(&input), black_box(&mut output)).unwrap());
+            });
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, serde, policies, postcard);
 criterion_main!(benches);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify native Intel/AMD backends; require both ISAs and reject translated execution."""
+"""Verify native x86 backends, including AVX-512 when available; reject translation."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -108,21 +108,27 @@ save("environment.json", metadata)
 required_tests = ["forced_backends_preserve_order_at_independent_alignments",
                   "forced_backends_check_every_byte_in_every_lane_before_writing",
                   "conversions_and_checks_stop_at_guard_pages"]
-for name, flags, extra in [("test-debug", [], {}), ("test-release", ["--release"], {}),
-                           ("test-static-avx2", ["--release"], {"RUSTFLAGS": "-Ctarget-feature=+avx2"})]:
+avx512 = probe.get("avx512f") == probe.get("avx512bw") == "true"
+tests = [("test-debug", [], {}), ("test-release", ["--release"], {}),
+         ("test-static-avx2", ["--release"], {"RUSTFLAGS": "-Ctarget-feature=+avx2"})]
+if avx512:
+    tests.append(("test-static-avx512", ["--release"], {"RUSTFLAGS": "-Ctarget-feature=+avx512f,+avx512bw"}))
+for name, flags, extra in tests:
     # The main workflow covers public integration tests and packaging. This job
     # proves the forced kernels and guard-page tests ran on the recorded CPU.
     log = run(name, ["cargo", "test", "--lib", "--all-features", *flags,
                      "--", "--nocapture", "--test-threads=1"], extra)
     coverage = {test: test_completed(log, test) for test in required_tests}
     coverage["sse41_and_avx2_executed"] = "forced x86 backends: SSE4.1=true, AVX2=true" in log
+    if avx512:
+        coverage["avx512_executed"] = "AVX512=true" in log
     save(f"{name}-coverage.json", coverage)
     if not all(coverage.values()):
         raise SystemExit(f"{name} did not execute the required backend and guard-page tests")
 run("fuzz", [sys.executable, "ci/check_fuzz.py", "--out", str(out / "fuzz"),
              "--corpus", str(out / "corpus")],
     {"RUSTUP_TOOLCHAIN": args.nightly, "CARGO_TARGET_DIR": str(root / "target/native-fuzz"),
-     "FUZZ_REQUIRED_BACKENDS": "scalar,sse41,avx2"})
+     "FUZZ_REQUIRED_BACKENDS": "scalar,sse41,avx2,avx512" if avx512 else "scalar,sse41,avx2"})
 
 save("complete.json", dict(commit=metadata["commit"], vendor=probe["vendor"], status="passed",
                             timestamp_utc=datetime.now(timezone.utc).isoformat()))

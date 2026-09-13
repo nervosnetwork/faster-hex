@@ -54,10 +54,7 @@ metadata = dict(commit=read(["git", "rev-parse", "HEAD"]), timestamp=datetime.no
                 variants={}, binary_sha256={}, files={})
 print("ENVIRONMENT " + json.dumps(metadata), flush=True)
 
-variants = {"baseline": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "avx2_selected": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "avx512_selected": "HEAD",
-            "avx512_sparse": "HEAD"}
+variants = {"baseline": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed", "direct": "HEAD", "candidate": "HEAD"}
 artifacts = {}
 for variant, revision in variants.items():
     work = out / "build" / variant
@@ -68,22 +65,28 @@ for variant, revision in variants.items():
     shutil.copytree(root / "benches", work / "benches")
     shutil.copyfile(root / "Cargo.toml", work / "Cargo.toml")
     shutil.copyfile(root / "ci/native-bench.lock", work / "Cargo.lock")
-    from native_variants import inline_case, paired_check, group_avx_decode, cache_match, sparse_dispatch, inline_check
-    if variant != "baseline":
-        inline_case(work, avx512=variant.startswith("avx512_"))
-    if variant != "baseline":
-        paired_check(work)
-        cache_match(work)
-        inline_check(work)
-    if variant == "avx512_selected":
-        group_avx_decode(work)
-    if variant == "avx512_sparse":
-        sparse_dispatch(work)
+    if variant == "direct":
+        path = work / "src/decode.rs"
+        text = path.read_text()
+        start = text.index("            kind @ (crate::Vectorization::AVX512", text.index("pub(crate) fn decode_checked("))
+        end = text.index("            crate::Vectorization::SSE41", start)
+        text = text[:start] + """            crate::Vectorization::AVX512 => {
+                // SAFETY: Dispatch checked the CPU, OS state and exact slices.
+                unsafe { hex_decode_avx512_checked(src, dst, check_case) }
+            }
+            crate::Vectorization::AVX2 => {
+                // SAFETY: Dispatch checked the CPU, OS state and exact slices.
+                unsafe { hex_decode_avx2_checked(src, dst, check_case) }
+            }
+""" + text[end:]
+        start = text.index("// Share the AVX dispatch boundary")
+        end = text.index('#[target_feature(enable = "avx512f,avx512bw")]', start)
+        path.write_text(text[:start] + text[end:])
     metadata["variants"][variant] = dict(source=revision, transformation=variant)
     for path in [*work.glob("src/**/*.rs"), *work.glob("benches/**/*.rs"), work / "Cargo.toml", work / "Cargo.lock"]:
         metadata["files"][f"{variant}/{path.relative_to(work)}"] = hashlib.sha256(path.read_bytes()).hexdigest()
     command = ["cargo", "bench", "--manifest-path", str(work / "Cargo.toml"), "--locked", "--no-run", "--message-format=json"]
-    benches = ["hex", "consumers", "check", "layout"]
+    benches = ["hex", "consumers", "check", "format", "serde", "layout"]
     for bench in benches: command += ["--bench", bench]
     build = run("build-" + variant, command, {"CARGO_TARGET_DIR": str(work / "target")})
     for line in build.splitlines():
@@ -109,9 +112,11 @@ run("core-coverage", ["python3", "ci/check_fuzz_coverage.py", "--out", str(out /
 print("CORE_COVERAGE " + (out / "coverage/results.json").read_text().replace("\n", " "), flush=True)
 (out / "environment.json").write_text(json.dumps(metadata, indent=2) + "\n")
 filters = {
-    "hex": r"^(rotating_decode/(faster_hex|fashex)/32|decode/faster_hex_mixed/(256|4096)|encode/faster_hex/(256|4096))$",
-    "consumers": r"^ckb_fixed_parse/faster_hex/(10|32)$",
-    "check": r"^check_compare/faster_hex/(32|256|4096)$",
+    "hex": r"^(encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)/(1|8|32|256|4096)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)/(1|8|32|256|4096)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex|better_hex)/32)$",
+    "consumers": r"^(ckb_fixed_(buffer|json|parse)/(faster_hex|legacy_0_6|const_hex|hex_simd|fashex)/(10|32|65)|ckb_pool_rpc/(faster_hex|const_hex|hex_simd)/256|molecule_(string|display)/(faster_hex|faster_hex_borrowed|legacy_0_6|const_hex|hex_simd)/(1|10|32)|ckb_bytes_(json|parse)/faster_hex/(256|4096))$",
+    "check": r"^check_compare/(faster_hex|const_hex|hex_simd)/(32|256|4096)$",
+    "format": r"^format/borrowed/(1|10|32)$",
+    "serde": r"^(serde_json/(serialize|serialize_reuse)/(32|65|4096)|serde_postcard/serialize_reuse/(32|65|256|4096))$",
     "layout": r"^layout/",
 }
 order = [(variant, variant + "-1") for variant in variants]
