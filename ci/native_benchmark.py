@@ -54,10 +54,9 @@ metadata = dict(commit=read(["git", "rev-parse", "HEAD"]), timestamp=datetime.no
                 variants={}, binary_sha256={}, files={})
 print("ENVIRONMENT " + json.dumps(metadata), flush=True)
 
-variants = {"before_simd": "a16739c0cd45e842c2d68a2509d54d70225e7387",
-            "before_format": "ae9535a73c8126555222287534533783173b60f5",
-            "current": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
-            "forced_sse41": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed"}
+variants = {"baseline": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
+            "avx512": "HEAD", "short_x86": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed",
+            "avx2_predicate": "3b9fdf29b5d6d2c28d1bfda43555bf044a9888ed"}
 artifacts = {}
 for variant, revision in variants.items():
     work = out / "build" / variant
@@ -68,17 +67,21 @@ for variant, revision in variants.items():
     shutil.copytree(root / "benches", work / "benches")
     shutil.copyfile(root / "Cargo.toml", work / "Cargo.toml")
     shutil.copyfile(root / "ci/native-bench.lock", work / "Cargo.lock")
-    if variant == "forced_sse41":
-        lib = work / "src/lib.rs"
-        text = lib.read_text()
-        assert text.count("return Vectorization::AVX2;") == 2
-        lib.write_text(text.replace("return Vectorization::AVX2;", "return Vectorization::SSE41;"))
-    metadata["variants"][variant] = dict(source=revision, forced_sse41=variant == "forced_sse41")
+    if variant == "short_x86":
+        from native_variants import short_x86
+        short_x86(work)
+    if variant == "avx2_predicate":
+        path = work / "src/decode.rs"
+        text = path.read_text()
+        before = "_mm256_testz_si256(_mm256_or_si256(a, b), _mm256_set1_epi8(-16)) == 0"
+        after = "_mm256_movemask_epi8(_mm256_adds_epu8(_mm256_or_si256(a, b), _mm256_set1_epi8(112))) != 0"
+        assert text.count(before) == 1
+        path.write_text(text.replace(before, after))
+    metadata["variants"][variant] = dict(source=revision, transformation=variant)
     for path in [*work.glob("src/**/*.rs"), *work.glob("benches/**/*.rs"), work / "Cargo.toml", work / "Cargo.lock"]:
         metadata["files"][f"{variant}/{path.relative_to(work)}"] = hashlib.sha256(path.read_bytes()).hexdigest()
     command = ["cargo", "bench", "--manifest-path", str(work / "Cargo.toml"), "--locked", "--no-run", "--message-format=json"]
     benches = ["hex", "format", "consumers", "check"]
-    if variant == "current": benches.append("native_prototype")
     for bench in benches: command += ["--bench", bench]
     build = run("build-" + variant, command, {"CARGO_TARGET_DIR": str(work / "target")})
     for line in build.splitlines():
@@ -89,20 +92,31 @@ for variant, revision in variants.items():
             name = item["target"]["name"]
             artifacts[variant, name] = str(path)
             metadata["binary_sha256"][variant + "/" + name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    run("tests-" + variant, ["cargo", "test", "--manifest-path", str(work / "Cargo.toml"),
+        "--release", "--lib", "--all-features", "--", "--nocapture", "--test-threads=1"],
+        {"CARGO_TARGET_DIR": str(work / "target")})
     for bench in benches:
         run("correctness-" + variant + "-" + bench, [artifacts[variant, bench], "--test"])
 
+required = "scalar,sse41,avx2"
+if probe["avx512f"] == probe["avx512bw"] == "true":
+    required += ",avx512"
+run("seed-corpus", ["python3", "fuzz/seed.py", "--out", str(out / "seeds")])
+run("core-coverage", ["python3", "ci/check_fuzz_coverage.py", "--out", str(out / "coverage"),
+    "--corpus", str(out / "seeds/faster-hex"), "--require-backends", required])
+print("CORE_COVERAGE " + (out / "coverage/results.json").read_text().replace("\n", " "), flush=True)
 (out / "environment.json").write_text(json.dumps(metadata, indent=2) + "\n")
 filters = {
-    "hex": r"^((encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex|better_hex))/32|(encode/faster_hex|decode/faster_hex_mixed)/(1|8|16|256|4096))$",
+    "hex": r"^((encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex|better_hex))/32|(encode/faster_hex|decode/faster_hex_mixed)/(1|8|16|64|65|256|4096))$",
     "format": r"^format/(borrowed|padded_upper|per_byte)/(1|10|32|65|4096)$",
     "consumers": r"^((ckb_fixed_(buffer|json|parse))/(faster_hex|const_hex|hex_simd)/(10|32)|molecule_(string|display)/(faster_hex|const_hex|hex_simd)/(1|10|32)|molecule_display/faster_hex_borrowed/(1|10|32)|ckb_pool_rpc/(faster_hex|const_hex|hex_simd)/256)$",
-    "check": r"^check_compare/(faster_hex|const_hex|hex_simd|better_hex)/32$",
+    "check": r"^check_compare/(faster_hex|const_hex|hex_simd|better_hex)/(1|8|32|256|4096)$",
 }
 # Build everything first. Baseline/after/after/baseline controls ordering drift.
-order = [("before_simd", "before-simd"), ("before_format", "before-1"),
-         ("current", "current-1"), ("current", "current-2"),
-         ("before_format", "before-2"), ("forced_sse41", "forced-sse41")]
+order = [("baseline", "baseline-1"), ("avx512", "avx512-1"),
+         ("short_x86", "short-1"), ("avx2_predicate", "predicate-1"),
+         ("avx2_predicate", "predicate-2"), ("short_x86", "short-2"),
+         ("avx512", "avx512-2"), ("baseline", "baseline-2")]
 launcher = []
 if hasattr(os, "sched_getaffinity"):
     cpu = min(os.sched_getaffinity(0))
@@ -112,12 +126,8 @@ metadata["benchmark_launcher"] = launcher
 for variant, tag in order:
     for bench, pattern in filters.items():
         run(tag + "-" + bench, [*launcher, artifacts[variant, bench], "--bench", pattern,
-            "--warm-up-time", "0.1", "--measurement-time", "0.7", "--sample-size", "40",
+            "--warm-up-time", "0.1", "--measurement-time", "0.5", "--sample-size", "40",
             "--noplot", "--save-baseline", tag])
-for index in [1, 2]:
-    run("prototype-" + str(index), [*launcher, artifacts["current", "native_prototype"], "--bench",
-        "--warm-up-time", "0.2", "--measurement-time", "2", "--sample-size", "60", "--noplot",
-        "--save-baseline", "prototype-" + str(index)])
 
 results = {}
 for path in (out / "criterion").rglob("estimates.json"):

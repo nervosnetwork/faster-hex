@@ -216,7 +216,17 @@ pub(crate) enum Vectorization {
     )]
     SSE41 = 1,
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg_attr(
+        target_feature = "avx512bw",
+        expect(dead_code, reason = "AVX-512 baseline builds bypass runtime detection")
+    )]
     AVX2 = 2,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg_attr(
+        all(target_feature = "avx2", not(target_feature = "avx512bw")),
+        expect(dead_code, reason = "AVX2 baseline builds bypass runtime detection")
+    )]
+    AVX512 = 3,
     #[cfg(target_arch = "aarch64")]
     Neon = 3,
 }
@@ -226,7 +236,17 @@ pub(crate) enum Vectorization {
 pub(crate) fn vectorization_support() -> Vectorization {
     #[cfg(all(
         any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx512bw",
+        not(miri)
+    ))]
+    {
+        return Vectorization::AVX512;
+    }
+
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
         target_feature = "avx2",
+        not(target_feature = "avx512bw"),
         not(miri)
     ))]
     {
@@ -251,6 +271,7 @@ pub(crate) fn vectorization_support() -> Vectorization {
                 0 => Vectorization::None,
                 1 => Vectorization::SSE41,
                 2 => Vectorization::AVX2,
+                3 => Vectorization::AVX512,
                 _ => unreachable!(),
             };
         }
@@ -307,9 +328,7 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
     let have_avx = (proc_info_ecx >> 28) & 1 == 1;
     if max_leaf >= 7 && have_xsave && have_osxsave && have_avx {
         // SAFETY: XSAVE is available and enabled by the OS; leaf 7 exists.
-        if unsafe { avx2_support_no_cache_x86() } {
-            return Vectorization::AVX2;
-        }
+        return unsafe { avx_support_no_cache_x86() };
     }
     Vectorization::SSE41
 }
@@ -324,7 +343,7 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
     not(miri)
 ))]
 #[cold]
-unsafe fn avx2_support_no_cache_x86() -> bool {
+unsafe fn avx_support_no_cache_x86() -> Vectorization {
     #[cfg(target_arch = "x86")]
     use core::arch::x86::{__cpuid_count, _xgetbv};
     #[cfg(target_arch = "x86_64")]
@@ -336,10 +355,16 @@ unsafe fn avx2_support_no_cache_x86() -> bool {
         let extended_features_ebx = __cpuid_count(7, 0).ebx;
         let have_avx2 = (extended_features_ebx >> 5) & 1 == 1;
         if have_avx2 {
-            return true;
+            // AVX-512 needs opmask and both ZMM state components in addition
+            // to SSE/AVX state. CPUID alone is insufficient for safe dispatch.
+            let avx512 = (1 << 16) | (1 << 30); // AVX-512F and AVX-512BW.
+            if xcr0 & 0xe6 == 0xe6 && extended_features_ebx & avx512 == avx512 {
+                return Vectorization::AVX512;
+            }
+            return Vectorization::AVX2;
         }
     }
-    false
+    Vectorization::SSE41
 }
 
 #[cfg(test)]

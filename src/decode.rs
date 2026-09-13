@@ -107,6 +107,10 @@ pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
+            crate::Vectorization::AVX512 => {
+                // SAFETY: Dispatch checks AVX-512BW and its OS state.
+                unsafe { hex_check_avx512_with_case(src, check_case) }
+            }
             crate::Vectorization::AVX2 => {
                 // SAFETY: Dispatch guarantees AVX2; the checker bounds every load.
                 unsafe { hex_check_avx2_with_case(src, check_case) }
@@ -257,6 +261,44 @@ pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bo
     true
 }
 
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn valid_avx512(bytes: __m512i, case: CheckCase) -> u64 {
+    let digit = _mm512_cmple_epu8_mask(
+        _mm512_sub_epi8(bytes, _mm512_set1_epi8(b'0' as i8)),
+        _mm512_set1_epi8(9),
+    );
+    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+    let letters = _mm512_or_si512(bytes, _mm512_set1_epi8(fold));
+    let letter = _mm512_cmple_epu8_mask(
+        _mm512_sub_epi8(letters, _mm512_set1_epi8(first as i8)),
+        _mm512_set1_epi8(5),
+    );
+    digit | letter
+}
+
+#[target_feature(enable = "avx512f,avx512bw")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> bool {
+    if src.len() < 64 {
+        return hex_check_avx2_with_case(src, case);
+    }
+    let (blocks, tail) = src.as_chunks::<64>();
+    for block in blocks {
+        if valid_avx512(_mm512_loadu_si512(block.as_ptr().cast()), case) != u64::MAX {
+            return false;
+        }
+    }
+    if !tail.is_empty() {
+        if let Some(last) = src.last_chunk::<64>() {
+            return valid_avx512(_mm512_loadu_si512(last.as_ptr().cast()), case) == u64::MAX;
+        }
+    }
+    true
+}
+
 // Wrapping subtraction turns each ASCII range into one unsigned comparison.
 // Only the either-case policy folds the ASCII case bit.
 #[inline]
@@ -313,6 +355,26 @@ unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> __m256i {
         _mm256_set1_epi8(first as i8),
     );
     _mm256_min_epu8(digit, _mm256_adds_epu8(letter, _mm256_set1_epi8(10)))
+}
+
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn decode_avx512_nibbles(bytes: __m512i, case: CheckCase) -> __m512i {
+    let digit = _mm512_sub_epi8(
+        _mm512_subs_epu8(
+            _mm512_add_epi8(bytes, _mm512_set1_epi8(-58)),
+            _mm512_set1_epi8(6),
+        ),
+        _mm512_set1_epi8(-16),
+    );
+    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+    let letter = _mm512_sub_epi8(
+        _mm512_or_si512(bytes, _mm512_set1_epi8(fold)),
+        _mm512_set1_epi8(first as i8),
+    );
+    _mm512_min_epu8(digit, _mm512_adds_epu8(letter, _mm512_set1_epi8(10)))
 }
 
 #[inline]
@@ -709,6 +771,10 @@ pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
+            crate::Vectorization::AVX512 => {
+                // SAFETY: AVX-512BW is available and the slices have the exact 2:1 ratio.
+                unsafe { hex_decode_avx512_checked(src, dst, check_case) }
+            }
             crate::Vectorization::AVX2 => {
                 // SAFETY: AVX2 is available and dst has exactly src.len() / 2 bytes.
                 unsafe { hex_decode_avx2_checked(src, dst, check_case) }
@@ -790,6 +856,10 @@ pub(crate) fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
+            crate::Vectorization::AVX512 => {
+                // SAFETY: Dispatch checks AVX-512BW; the slices have a 2:1 length ratio.
+                unsafe { hex_decode_avx512(src, dst) }
+            }
             crate::Vectorization::AVX2 => {
                 // SAFETY: Dispatch guarantees AVX2 and the slices have a 2:1 length ratio.
                 unsafe { hex_decode_avx2(src, dst) }
@@ -891,6 +961,63 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
         hex_decode_avx2(src, dst);
     }
     Ok(())
+}
+
+#[target_feature(enable = "avx512f,avx512bw")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn hex_decode_avx512_checked(
+    src: &[u8],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), ()> {
+    if src.len() < 64 {
+        return hex_decode_avx2_checked(src, dst, case);
+    }
+    if src.len() == 64 {
+        let nibbles = decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
+        if _mm512_test_epi8_mask(nibbles, _mm512_set1_epi8(-16)) != 0 {
+            return Err(());
+        }
+        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(nibbles));
+    } else {
+        // Validate the complete input before writing, including the final tail.
+        if !hex_check_avx512_with_case(src, case) {
+            return Err(());
+        }
+        hex_decode_avx512(src, dst);
+    }
+    Ok(())
+}
+
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn pack_avx512(nibbles: __m512i) -> __m256i {
+    _mm512_cvtepi16_epi8(_mm512_maddubs_epi16(nibbles, _mm512_set1_epi16(0x0110)))
+}
+
+#[target_feature(enable = "avx512f,avx512bw")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn hex_decode_avx512(src: &[u8], dst: &mut [u8]) {
+    if src.len() < 64 {
+        return hex_decode_avx2(src, dst);
+    }
+    let convert = |input: &[u8; 64], output: &mut [u8; 32]| {
+        let bytes = _mm512_loadu_si512(input.as_ptr().cast());
+        let low = _mm512_and_si512(bytes, _mm512_set1_epi8(15));
+        let letters = _mm512_cmpgt_epu8_mask(bytes, _mm512_set1_epi8(b'9' as i8));
+        let nibbles = _mm512_mask_add_epi8(low, letters, low, _mm512_set1_epi8(9));
+        _mm256_storeu_si256(output.as_mut_ptr().cast(), pack_avx512(nibbles));
+    };
+    let (blocks, tail) = src.as_chunks::<64>();
+    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
+        convert(input, output);
+    }
+    if !tail.is_empty() {
+        if let (Some(input), Some(output)) = (src.last_chunk::<64>(), dst.last_chunk_mut::<32>()) {
+            convert(input, output);
+        }
+    }
 }
 
 #[inline]

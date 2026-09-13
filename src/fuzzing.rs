@@ -12,6 +12,8 @@ enum Kind {
     Sse41,
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     Avx2,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    Avx512,
     #[cfg(target_arch = "aarch64")]
     Neon,
 }
@@ -26,12 +28,18 @@ pub fn backends() -> impl Iterator<Item = Backend> {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         matches!(
             crate::vectorization_support(),
-            crate::Vectorization::SSE41 | crate::Vectorization::AVX2
+            crate::Vectorization::SSE41 | crate::Vectorization::AVX2 | crate::Vectorization::AVX512
         )
         .then_some(Backend(Kind::Sse41)),
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        (crate::vectorization_support() == crate::Vectorization::AVX2)
-            .then_some(Backend(Kind::Avx2)),
+        matches!(
+            crate::vectorization_support(),
+            crate::Vectorization::AVX2 | crate::Vectorization::AVX512
+        )
+        .then_some(Backend(Kind::Avx2)),
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        (crate::vectorization_support() == crate::Vectorization::AVX512)
+            .then_some(Backend(Kind::Avx512)),
         #[cfg(target_arch = "aarch64")]
         (crate::vectorization_support() == crate::Vectorization::Neon)
             .then_some(Backend(Kind::Neon)),
@@ -47,6 +55,8 @@ impl Backend {
             Kind::Sse41 => "sse41",
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             Kind::Avx2 => "avx2",
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            Kind::Avx512 => "avx512",
             #[cfg(target_arch = "aarch64")]
             Kind::Neon => "neon",
         }
@@ -65,6 +75,8 @@ impl Backend {
                 Kind::Sse41 => encode::hex_encode_sse41(src, dst, upper),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                 Kind::Avx2 => encode::hex_encode_avx2(src, dst, upper),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx512 => encode::hex_encode_avx512(src, dst, upper),
                 #[cfg(target_arch = "aarch64")]
                 Kind::Neon => encode::hex_encode_neon(src, dst, upper),
             }
@@ -82,6 +94,8 @@ impl Backend {
                 Kind::Sse41 => decode::hex_check_sse_with_case(src, case),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                 Kind::Avx2 => decode::hex_check_avx2_with_case(src, case),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx512 => decode::hex_check_avx512_with_case(src, case),
                 #[cfg(target_arch = "aarch64")]
                 Kind::Neon => decode::hex_check_neon_with_case(src, case),
             }
@@ -107,6 +121,8 @@ impl Backend {
                 Kind::Sse41 => decode::hex_decode_sse41_checked(src, dst, case).is_ok(),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                 Kind::Avx2 => decode::hex_decode_avx2_checked(src, dst, case).is_ok(),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx512 => decode::hex_decode_avx512_checked(src, dst, case).is_ok(),
                 // Use the actual short/bounded/general NEON selection so the
                 // harness cannot drift from the production length thresholds.
                 #[cfg(target_arch = "aarch64")]

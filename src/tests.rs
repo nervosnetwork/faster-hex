@@ -85,6 +85,11 @@ fn feature_detection_matches_host() {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         Vectorization::AVX2 => assert!(std::arch::is_x86_feature_detected!("avx2")),
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        Vectorization::AVX512 => {
+            assert!(std::arch::is_x86_feature_detected!("avx512f"));
+            assert!(std::arch::is_x86_feature_detected!("avx512bw"));
+        }
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         Vectorization::SSE41 => assert!(std::arch::is_x86_feature_detected!("sse4.1")),
         #[cfg(target_arch = "aarch64")]
         Vectorization::Neon => assert!(std::arch::is_aarch64_feature_detected!("neon")),
@@ -105,7 +110,9 @@ mod x86 {
         let mut result: Vec<(&str, Encode, Check, Decode)> = Vec::new();
         let sse = std::arch::is_x86_feature_detected!("sse4.1");
         let avx2 = std::arch::is_x86_feature_detected!("avx2");
-        eprintln!("forced x86 backends: SSE4.1={sse}, AVX2={avx2}");
+        let avx512 = std::arch::is_x86_feature_detected!("avx512f")
+            && std::arch::is_x86_feature_detected!("avx512bw");
+        eprintln!("forced x86 backends: SSE4.1={sse}, AVX2={avx2}, AVX512={avx512}");
         if sse {
             result.push((
                 "SSE4.1",
@@ -136,6 +143,22 @@ mod x86 {
                 },
                 decode::hex_check_avx2_with_case,
                 decode::hex_decode_avx2_checked,
+            ));
+        }
+        if avx512 {
+            result.push((
+                "AVX512",
+                |src, dst, upper| {
+                    // SAFETY: The caller checked the CPU and exact lengths. The backend
+                    // initializes every destination element before this borrow ends.
+                    unsafe {
+                        let dst =
+                            core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len());
+                        encode::hex_encode_avx512(src, dst, upper);
+                    }
+                },
+                decode::hex_check_avx512_with_case,
+                decode::hex_decode_avx512_checked,
             ));
         }
         result

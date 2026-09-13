@@ -39,6 +39,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
+          components: llvm-tools-preview
       - run: python3 ci/native_benchmark.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -49,5 +50,7 @@ jobs:
             target/native-benchmark/*.json
             target/native-benchmark/*.log
             target/native-benchmark/criterion
+            target/native-benchmark/coverage/*.json
+            target/native-benchmark/coverage/*.log
             ci/native-bench.lock
           if-no-files-found: error
