@@ -24,7 +24,9 @@ impl fmt::UpperHex for Digits<'_> {
 
 #[test]
 fn bytes_keep_their_order_and_leading_zeroes() {
-    for len in [0, 1, 7, 8, 16, 32, 63, 64, 255, 256, 257, 1024, 4097] {
+    for len in [
+        0, 1, 7, 8, 16, 32, 63, 64, 127, 128, 129, 255, 256, 257, 511, 512, 513, 1024, 4097,
+    ] {
         let bytes: Vec<_> = (0..len).map(|i| i as u8).collect();
         let view = Hex::new(&bytes);
         assert_eq!(format!("{view}"), hex::encode(&bytes));
@@ -178,19 +180,32 @@ fn writes_into_fixed_storage_without_alloc() {
 #[test]
 fn writer_errors_stop_immediately_and_preserve_accepted_text() {
     let bytes = [0xab; 513];
-    let view = Hex::new(&bytes);
-    let expected = format!("{view:💠^+#1040X}");
-    for limit in [0, 1, 4, 7, 8, 9, 10, 100, 511, 512, 513, 1024, 1040, 1100] {
-        let mut writer = FixedWriter::new(limit);
-        let result = write!(writer, "{view:💠^+#1040X}");
-        if limit >= expected.len() {
-            assert!(result.is_ok());
-            assert_eq!(writer.as_str(), expected);
-        } else {
-            assert!(result.is_err());
-            assert!(writer.failed);
-            assert!(expected.starts_with(writer.as_str()));
+    for len in [0, 1, 10, 32, 128, 129, 513] {
+        let view = Hex::new(&bytes[..len]);
+        let width = len * 2 + 14;
+        for padded in [false, true] {
+            let expected = if padded {
+                format!("{view:💠^+#width$X}")
+            } else {
+                format!("{view:+#X}")
+            };
+            for limit in [0, 1, 4, 7, 8, 9, 10, 100, 511, 512, 513, 1024, 1040, 1100] {
+                let mut writer = FixedWriter::new(limit);
+                let result = if padded {
+                    write!(writer, "{view:💠^+#width$X}")
+                } else {
+                    write!(writer, "{view:+#X}")
+                };
+                if limit >= expected.len() {
+                    assert!(result.is_ok());
+                    assert_eq!(writer.as_str(), expected);
+                } else {
+                    assert!(result.is_err());
+                    assert!(writer.failed);
+                    assert!(expected.starts_with(writer.as_str()));
+                }
+                assert!(!writer.called_after_error);
+            }
         }
-        assert!(!writer.called_after_error);
     }
 }

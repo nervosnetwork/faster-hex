@@ -22,3 +22,11 @@ bench-hash = [
     "--warm-up-time", "0.2", "--measurement-time", "1",
     "--sample-size", "30", "--noplot",
 ]
+
+# CKB/Molecule call shapes, including allocations and JSON serialization.
+bench-consumers = [
+    "bench", "--bench", "consumers", "--",
+    "^((ckb_fixed_(json|parse)|ckb_bytes_(json|parse)|molecule_(string|display))/(faster_hex|legacy_0_6|const_hex|hex_simd)/32|ckb_pool_(value|rpc)/(faster_hex|legacy_0_6|const_hex|hex_simd)/256|molecule_display/faster_hex_borrowed/(1|10|32))$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]

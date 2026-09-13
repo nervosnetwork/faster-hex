@@ -44,14 +44,17 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 - Refine short-input SIMD decoding, SSE4.1 conversion, AVX2 validation and scalar paths.
 - Encode strings directly into spare capacity; borrow Serde input where possible and
   use stack storage for short serialized values.
+- Avoid clearing unused `Hex` scratch storage, stream long values in larger chunks,
+  and reduce short-value formatting and padding overhead.
 - Add differential tests, guard pages, feature consumers, Miri checks and fuzz targets.
 - Check structured valid and damaged inputs, allocation-free contracts, concurrent
   dispatch, fixed-capacity boundaries and partial writer failures.
 - Expand CI across operating systems, architectures and feature combinations, with
   runtime checks on 32-bit Wasm and native x86 backend checks.
 - Expand Criterion benchmarks for slice conversion, allocation, capacity reuse,
-  owned decoding, formatting, Serde, alignment and mixed-length inputs. CI executes
-  benchmark cases with their correctness checks.
+  owned decoding, formatting, Serde, alignment and mixed-length inputs. Add audited
+  CKB/Molecule call shapes and an upgrade baseline against faster-hex 0.6.1.
+  CI executes benchmark cases with their correctness checks.
 
 ## 0.10.0
 

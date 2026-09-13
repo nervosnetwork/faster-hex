@@ -243,6 +243,16 @@ class NativeValidationTests(unittest.TestCase):
             with self.subTest(field=field, value=value), self.assertRaisesRegex(SystemExit, "SSE4.1/AVX2"):
                 self.validate("auto", probe)
 
+    def test_optional_avx512_diagnostics_do_not_change_required_backends(self):
+        for available in ["false", "true"]:
+            probe = dict(arch="x86_64", vendor="GenuineIntel", sse41="true", avx2="true",
+                         avx512f=available, avx512bw=available, avx512vl=available, avx512vbmi=available)
+            with self.subTest(avx512=available), self.assertRaises(self.BackendChecksReached):
+                self.validate("auto", probe)
+            probe["avx2"] = "false"
+            with self.subTest(avx512=available), self.assertRaisesRegex(SystemExit, "SSE4.1/AVX2"):
+                self.validate("auto", probe)
+
     def test_auto_rejects_non_x86_hosts_and_translated_execution(self):
         probe = dict(arch="x86_64", vendor="GenuineIntel", sse41="true", avx2="true")
         with self.assertRaisesRegex(SystemExit, "non-x86 host"):

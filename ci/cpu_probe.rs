@@ -10,6 +10,19 @@ fn main() {
     println!("vendor={}", String::from_utf8(bytes).unwrap());
     println!("sse41={}", std::arch::is_x86_feature_detected!("sse4.1"));
     println!("avx2={}", std::arch::is_x86_feature_detected!("avx2"));
+    println!("avx512f={}", std::arch::is_x86_feature_detected!("avx512f"));
+    println!(
+        "avx512bw={}",
+        std::arch::is_x86_feature_detected!("avx512bw")
+    );
+    println!(
+        "avx512vl={}",
+        std::arch::is_x86_feature_detected!("avx512vl")
+    );
+    println!(
+        "avx512vbmi={}",
+        std::arch::is_x86_feature_detected!("avx512vbmi")
+    );
 }
 
 #[cfg(not(target_arch = "x86_64"))]

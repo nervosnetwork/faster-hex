@@ -120,6 +120,14 @@ fn documented_allocation_free_operations_remain_allocation_free() {
     );
     assert_eq!(count, 0);
 
+    for len in [0, 1, 10, 32] {
+        writer.len = 0;
+        let (result, count) = measure(|| write!(writer, "{}", Hex::new(&bytes[..len])));
+        result.unwrap();
+        assert_eq!(&writer.bytes[..writer.len], &expected.as_bytes()[..len * 2]);
+        assert_eq!(count, 0);
+    }
+
     let (error, count) = measure(|| hex_decode(b"g0", &mut decoded));
     assert!(error.is_err());
     assert_eq!(count, 0);

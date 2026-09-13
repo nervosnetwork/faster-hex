@@ -98,6 +98,24 @@ the timer; input generation and reference-output assertions happen before it.
 Use `--save-baseline before` / `--baseline before` here too. Always rerun
 `bench-dev` to check other lengths after a Hash256 optimization.
 
+`cargo bench-consumers` measures 35 CKB/Molecule caller-shaped cases, taking
+roughly 45 seconds after compilation. It includes fixed 32-byte arrays with an
+`0x` prefix, JSON parsing and serialization, a 256-hash transaction-pool response,
+and Molecule's temporary string allocation and formatting. The RPC cases measure
+both conversion to JSON Value and writing that Value; they exclude pool lookup
+and networking. Inputs vary between hashes. Compare the current library with
+CKB/Molecule's faster-hex 0.6.1 dependency, const-hex and hex-simd using the same
+baseline flags. The full consumers benchmark also covers fashex, better-hex,
+10/20/64/65-byte fixed values and variable payloads through 4096 bytes.
+
+`molecule_display/faster_hex_borrowed` measures a possible caller change using
+`Hex`, including 1/10/32-byte inputs; today's generated Molecule code still
+allocates an intermediate String.
+CKB's H256 parser and Molecule's no-std formatter do not use faster-hex and are
+not represented as faster-hex decoding or formatting gains. These benchmarks
+reproduce audited call shapes, not a running CKB node; source revisions and scope
+are recorded at the top of `benches/consumers.rs`.
+
 When comparing separate checkouts, give them separate `CARGO_TARGET_DIR` values
 and a shared `CRITERION_HOME` for reports. Reusing a build directory across copies
 of the same package can select stale artifacts. Keep compiler flags, features

@@ -93,10 +93,13 @@ run("build-cpu-probe", ["rustc", "--edition=2021", "ci/cpu_probe.rs", "-o", str(
 probe = dict(line.split("=", 1) for line in run("cpu-probe", [str(out / "cpu-probe")]).splitlines())
 metadata["cpu_probe"] = probe
 save("environment.json", metadata)
+print("CPU capabilities: " + json.dumps(probe, sort_keys=True), flush=True)
 vendors = {"intel": "GenuineIntel", "amd": "AuthenticAMD"}
 expected = probe.get("vendor") if args.vendor == "auto" else vendors[args.vendor]
+# Optional ISA diagnostics must not change the SSE4.1/AVX2 acceptance criteria.
+required = dict(arch="x86_64", vendor=expected, sse41="true", avx2="true")
 if (expected not in vendors.values()
-        or probe != dict(arch="x86_64", vendor=expected, sse41="true", avx2="true")):
+        or any(probe.get(key) != value for key, value in required.items())):
     raise SystemExit(f"This runner does not satisfy vendor={args.vendor} and SSE4.1/AVX2 requirements: {probe}")
 metadata["nightly_rustc"] = run("nightly-rustc", ["rustc", f"+{args.nightly}", "-Vv"]).strip()
 metadata["cargo_fuzz"] = run("cargo-fuzz-version", ["cargo", f"+{args.nightly}", "fuzz", "--version"]).strip()

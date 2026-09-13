@@ -20,6 +20,7 @@ const TABLE_LOWER: &[u8; 16] = b"0123456789abcdef";
 const TABLE_UPPER: &[u8; 16] = b"0123456789ABCDEF";
 
 #[cfg(feature = "alloc")]
+#[inline]
 fn hex_string_custom_case(src: &[u8], upper_case: bool) -> String {
     let len = src.len().checked_mul(2).expect("encoded length overflow");
     let mut buffer = Vec::with_capacity(len);
@@ -57,6 +58,7 @@ fn hex_string_custom_case(src: &[u8], upper_case: bool) -> String {
 /// ```
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[inline]
 pub fn hex_string(src: &[u8]) -> String {
     hex_string_custom_case(src, false)
 }
@@ -78,6 +80,7 @@ pub fn hex_string(src: &[u8]) -> String {
 /// ```
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[inline]
 pub fn hex_string_upper(src: &[u8]) -> String {
     hex_string_custom_case(src, true)
 }
@@ -91,19 +94,17 @@ pub(crate) fn hex_encode_custom<'a>(
     // SAFETY: MaybeUninit has the same layout as u8. encode only writes initialized
     // ASCII bytes; it never makes an existing byte uninitialized, including on error.
     let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
-    let encoded = encode(src, output, upper_case)?;
-    // SAFETY: encode returns only the initialized ASCII prefix.
-    Ok(unsafe { core::str::from_utf8_unchecked_mut(encoded) })
+    encode(src, output, upper_case)
 }
 
-// One boundary for both caller-owned bytes and allocation spare capacity:
-// validate the size, initialize the exact prefix, then return initialized bytes.
+// One boundary for caller-owned bytes, allocation spare capacity and formatting:
+// validate the size, initialize the exact ASCII prefix, then return its string view.
 #[inline]
-fn encode<'a>(
+pub(crate) fn encode<'a>(
     src: &[u8],
     dst: &'a mut [MaybeUninit<u8>],
     upper_case: bool,
-) -> Result<&'a mut [u8], Error> {
+) -> Result<&'a mut str, Error> {
     let len = src.len().checked_mul(2).ok_or(Error::Overflow)?;
     if dst.len() < len {
         return Err(Error::OutputTooSmall { required: len });
@@ -142,8 +143,14 @@ fn encode<'a>(
         hex_encode_custom_case_fallback(src, dst, upper_case);
     }
     // SAFETY: Every backend initialized all len elements with ASCII, using the
-    // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout.
-    Ok(unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), len) })
+    // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
+    // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
+    Ok(unsafe {
+        core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(
+            dst.as_mut_ptr().cast(),
+            len,
+        ))
+    })
 }
 
 /// Encodes all of `src` as lowercase hex into `dst` without allocation.

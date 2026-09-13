@@ -1,5 +1,6 @@
-use crate::encode::hex_encode_custom;
+use crate::encode::encode;
 use core::fmt::{self, Alignment, Write};
+use core::mem::MaybeUninit;
 
 /// A borrowed hexadecimal view of a byte slice, available without allocation.
 ///
@@ -80,6 +81,23 @@ impl<'a> Hex<'a> {
     }
 
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+        // The usual hash/logging format has no field width. It needs neither
+        // encoded-length arithmetic nor alignment/padding calculations.
+        if let Some(width) = f.width() {
+            return self.format_padded(f, upper, width);
+        }
+        if f.sign_plus() {
+            f.write_str("+")?;
+        }
+        if f.alternate() {
+            f.write_str("0x")?;
+        }
+        self.write_hex(f, upper)
+    }
+
+    // Padding needs more live state; keep it out of the usual hash/logging path.
+    #[inline(never)]
+    fn format_padded(&self, f: &mut fmt::Formatter<'_>, upper: bool, width: usize) -> fmt::Result {
         let prefix = if f.alternate() { "0x" } else { "" };
         let sign = if f.sign_plus() { "+" } else { "" };
         // Saturation is sufficient for width comparison: if the complete output
@@ -90,7 +108,7 @@ impl<'a> Hex<'a> {
             .saturating_mul(2)
             .saturating_add(prefix.len())
             .saturating_add(sign.len());
-        let padding = f.width().unwrap_or(0).saturating_sub(len);
+        let padding = width.saturating_sub(len);
         let zero_pad = f.sign_aware_zero_pad();
         let (left, right) = if zero_pad {
             (0, 0)
@@ -103,28 +121,69 @@ impl<'a> Hex<'a> {
         };
         let fill = f.fill();
         write_fill(f, fill, left)?;
-        f.write_str(sign)?;
-        f.write_str(prefix)?;
+        if !sign.is_empty() {
+            f.write_str(sign)?;
+        }
+        if !prefix.is_empty() {
+            f.write_str(prefix)?;
+        }
         if zero_pad {
             write_fill(f, '0', padding)?;
         }
 
-        let mut buffer = [0; 512];
+        self.write_hex(f, upper)?;
+        write_fill(f, fill, right)
+    }
+
+    #[inline]
+    fn write_hex(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+        if self.bytes.is_empty() {
+            return Ok(());
+        }
+        if self.bytes.len() <= 128 {
+            // Hashes and short identifiers need one encode and one writer call.
+            let mut buffer = [MaybeUninit::uninit(); 256];
+            let text = encode(self.bytes, &mut buffer, upper)
+                .expect("short input fits the fixed encoding buffer");
+            return f.write_str(text);
+        }
+        self.write_long(f, upper)
+    }
+
+    // Keep the larger scratch space and streaming loop out of short hash calls.
+    #[inline(never)]
+    fn write_long(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+        let mut buffer = [MaybeUninit::uninit(); 1024];
         for chunk in self.bytes.chunks(buffer.len() / 2) {
             // Each chunk is at most half this fixed, nonempty buffer. Its
             // encoded length cannot overflow or exceed capacity. Keep the
             // checked encoder's initialization boundary intact.
-            let text = hex_encode_custom(chunk, &mut buffer, upper)
+            let text = encode(chunk, &mut buffer, upper)
                 .expect("each chunk fits the fixed encoding buffer");
             f.write_str(text)?;
         }
-        write_fill(f, fill, right)
+        Ok(())
     }
 }
 
-fn write_fill(f: &mut fmt::Formatter<'_>, fill: char, count: usize) -> fmt::Result {
-    for _ in 0..count {
-        f.write_char(fill)?;
+fn write_fill(f: &mut fmt::Formatter<'_>, fill: char, mut count: usize) -> fmt::Result {
+    // Common integer padding needs one write per block, not per character.
+    let block = match fill {
+        ' ' => "                                ",
+        '0' => "00000000000000000000000000000000",
+        _ => {
+            for _ in 0..count {
+                f.write_char(fill)?;
+            }
+            return Ok(());
+        }
+    };
+    while count >= block.len() {
+        f.write_str(block)?;
+        count -= block.len();
+    }
+    if count != 0 {
+        f.write_str(&block[..count])?;
     }
     Ok(())
 }
