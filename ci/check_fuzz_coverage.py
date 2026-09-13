@@ -16,7 +16,7 @@ KERNELS = {
     "avx2": ["hex_encode_avx2", "encode_avx2_32", "hex_check_avx2_with_case",
              "hex_decode_avx2_checked", "hex_decode_avx2", "decode_avx2_block",
              "decode_avx2_nibbles", "pack_avx2"],
-    "avx512": ["hex_encode_avx512", "encode_avx512_32", "hex_check_avx512_with_case",
+    "avx512": ["hex_encode_avx512", "encode_avx512_32", "encode_avx512_64", "hex_check_avx512_with_case",
                "valid_avx512", "hex_decode_avx512_checked", "hex_decode_avx512",
                "decode_avx512_nibbles", "pack_avx512"],
     "neon": ["hex_encode_neon", "encode_neon_8", "encode_neon_16",

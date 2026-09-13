@@ -26,6 +26,38 @@ def inline_case(work, sse=False, avx512=False):
     path.write_text(text)
 
 
+def group_avx_decode(work):
+    path = work / "src/decode.rs"
+    text = path.read_text()
+    for start_name, call in [('pub fn hex_check_with_case(', 'hex_check_avx_family(src, check_case, kind)'),
+                             ('pub(crate) fn decode_checked(', 'hex_decode_avx_family(src, dst, check_case, kind)')]:
+        start = text.index('            crate::Vectorization::AVX512 => {', text.index(start_name))
+        end = text.index('            crate::Vectorization::SSE41', start)
+        text = text[:start] + '''            kind @ (crate::Vectorization::AVX512 | crate::Vectorization::AVX2) => {
+                // SAFETY: The selected AVX family and its OS state were checked.
+                unsafe { ''' + call + ''' }
+            }
+''' + text[end:]
+    text += '''
+#[inline]
+#[target_feature(enable = "avx2")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn hex_check_avx_family(src: &[u8], case: CheckCase, kind: crate::Vectorization) -> bool {
+    if kind == crate::Vectorization::AVX512 { hex_check_avx512_with_case(src, case) }
+    else { hex_check_avx2_with_case(src, case) }
+}
+
+#[inline]
+#[target_feature(enable = "avx2")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn hex_decode_avx_family(src: &[u8], dst: &mut [u8], case: CheckCase, kind: crate::Vectorization) -> Result<(), ()> {
+    if kind == crate::Vectorization::AVX512 { hex_decode_avx512_checked(src, dst, case) }
+    else { hex_decode_avx2_checked(src, dst, case) }
+}
+'''
+    path.write_text(text)
+
+
 def paired_check(work):
     path = work / "src/decode.rs"
     text = path.read_text()
@@ -44,6 +76,34 @@ def paired_check(work):
     }
     let (blocks, tail) = rest.as_chunks::<32>();''')
     path.write_text(text[:begin] + block + text[end:])
+
+
+def outline_long_decode(work):
+    path = work / "src/decode.rs"
+    text = path.read_text()
+    start = text.index('pub(crate) unsafe fn hex_decode_avx2_checked(')
+    end = text.index('\n#[inline]', start)
+    block = text[start:end]
+    previous = '''        if !hex_check_avx2_with_case(src, case) {
+            return Err(());
+        }
+        hex_decode_avx2(src, dst);'''
+    assert block.count(previous) == 1
+    block = block.replace(previous, '        return hex_decode_avx2_long_checked(src, dst, case);')
+    helper = '''
+// Keep complete-buffer validation out of the register-only Hash256 fast path.
+#[inline(never)]
+#[target_feature(enable = "avx2")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn hex_decode_avx2_long_checked(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
+    if !hex_check_avx2_with_case(src, case) {
+        return Err(());
+    }
+    hex_decode_avx2(src, dst);
+    Ok(())
+}
+'''
+    path.write_text(text[:start] + block + helper + text[end:])
 
 
 def short_x86(work):

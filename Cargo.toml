@@ -92,3 +92,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 name = "native_prototype"
 harness = false
 required-features = ["std"]
+
+[[bench]]
+name = "layout"
+harness = false
+required-features = ["std"]

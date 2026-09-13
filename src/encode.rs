@@ -311,6 +311,20 @@ pub(crate) unsafe fn hex_encode_avx512(src: &[u8], dst: &mut [MaybeUninit<u8>], 
     }
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
     let table = _mm512_broadcast_i32x4(_mm_loadu_si128(table.as_ptr().cast()));
+    if src.len() >= 64 {
+        let (blocks, tail) = src.as_chunks::<64>();
+        for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<128>().0) {
+            encode_avx512_64(input, output, table);
+        }
+        if !tail.is_empty() {
+            if let (Some(input), Some(output)) =
+                (src.last_chunk::<64>(), dst.last_chunk_mut::<128>())
+            {
+                encode_avx512_64(input, output, table);
+            }
+        }
+        return;
+    }
     let (blocks, tail) = src.as_chunks::<32>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
         encode_avx512_32(input, output, table);
@@ -320,6 +334,27 @@ pub(crate) unsafe fn hex_encode_avx512(src: &[u8], dst: &mut [MaybeUninit<u8>], 
             encode_avx512_32(input, output, table);
         }
     }
+}
+
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn encode_avx512_64(src: &[u8; 64], dst: &mut [MaybeUninit<u8>; 128], table: __m512i) {
+    let bytes = _mm512_loadu_si512(src.as_ptr().cast());
+    let mask = _mm512_set1_epi8(15);
+    let high = _mm512_and_si512(_mm512_srli_epi16::<4>(bytes), mask);
+    let low = _mm512_and_si512(bytes, mask);
+    let a = _mm512_unpacklo_epi8(high, low);
+    let b = _mm512_unpackhi_epi8(high, low);
+    // Interleaving is local to 128-bit lanes. Gather the first and second
+    // halves in source order before translating their nibbles to ASCII.
+    let first = _mm512_permutex2var_epi64(a, _mm512_setr_epi64(0, 1, 8, 9, 2, 3, 10, 11), b);
+    let second = _mm512_permutex2var_epi64(a, _mm512_setr_epi64(4, 5, 12, 13, 6, 7, 14, 15), b);
+    _mm512_storeu_si512(dst.as_mut_ptr().cast(), _mm512_shuffle_epi8(table, first));
+    _mm512_storeu_si512(
+        dst.as_mut_ptr().add(64).cast(),
+        _mm512_shuffle_epi8(table, second),
+    );
 }
 
 #[inline]
