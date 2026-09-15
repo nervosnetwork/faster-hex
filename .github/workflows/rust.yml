@@ -1,58 +1,299 @@
+name: Rust
 
-name: nervosnetwork/faster-hex CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
-on: [push, pull_request]
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: 1.95.0
 
 jobs:
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: 1.73.0
-          components: rustfmt
-      - name: Run rustfmt
-        uses: actions-rs/cargo@v1
+          persist-credentials: false
+      - name: Lint workflows and embedded scripts
+        uses: docker://rhysd/actionlint:1.7.12
         with:
-          command: fmt
-          args: --all -- --check
-
-  audit:
-    name: Security audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/audit-check@v1
+          args: -color
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: quality
+          workspaces: |
+            . -> target
+            afl -> target
+      - run: rustc -Vv
+      - run: python3 -m unittest discover -s ci -p 'test_*.py' -v
+      - run: cargo fmt --all -- --check
+      - run: cargo fmt --manifest-path fuzz/Cargo.toml --all -- --check
+      - run: cargo fmt --manifest-path afl/Cargo.toml --all -- --check
+      - run: rustfmt --edition 2021 --check ci/consumer.rs ci/fuzz_coverage.rs
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --lib --no-default-features -- -D warnings
+        env:
+          RUSTFLAGS: --cfg fuzzing
+      - run: cargo test --doc --all-features
+      - run: cargo test --doc --no-default-features
+      - run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --no-default-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo check --manifest-path afl/Cargo.toml
+        env:
+          RUSTFLAGS: --cfg fuzzing
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: quality-locks-${{ github.run_attempt }}
+          path: |
+            Cargo.lock
+            afl/Cargo.lock
+          if-no-files-found: ignore
 
   test:
-    name: ${{ matrix.build }}
+    name: ${{ matrix.os }} / Rust ${{ matrix.rust }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      # The repository toolchain file otherwise overrides rustup's default.
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+      FASTER_HEX_REQUIRE_AVX2: ${{ (matrix.os == 'ubuntu-24.04' || matrix.os == 'macos-15-intel') && '1' || '' }}
     strategy:
+      fail-fast: false
       matrix:
-        build: [Linux, macOS, windows-2019]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+        rust: [1.95.0]
         include:
-          - build: Linux
-            os: ubuntu-22.04
-          - build: macOS
-            os: macos-12
-          - build: windows-2019
-            os: windows-2019
+          - os: ubuntu-24.04
+            rust: stable
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
-      - uses: dtolnay/rust-toolchain@stable
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
-          toolchain: 1.74.0
-          components: rustfmt
-      - name: Run tests
-        if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: actions-rs/cargo@v1
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          command: test
+          key: test-${{ matrix.os }}-${{ matrix.rust }}
+      - run: rustc -Vv
+      - name: Record native x86 capabilities
+        if: matrix.os == 'ubuntu-24.04' || matrix.os == 'macos-15-intel'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then lscpu; else sysctl machdep.cpu.brand_string; fi
+          cargo test --all-features --lib feature_detection_matches_host -- --nocapture
+      - run: cargo test --all-features --lib --tests
+      - run: cargo test --no-default-features --lib --tests
+      - run: cargo test --release --all-features --lib --tests
+      - name: Test a static AVX2 baseline
+        if: matrix.os == 'ubuntu-24.04' || matrix.os == 'macos-15-intel'
+        run: cargo test --release --all-features --lib --tests
+        env:
+          RUSTFLAGS: -C target-feature=+avx2
+      - run: cargo test --lib --tests
+        if: matrix.rust == 'stable'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: test-diagnostics-${{ matrix.os }}-${{ matrix.rust }}-${{ github.run_attempt }}
+          path: |
+            Cargo.lock
+            proptest-regressions
+          if-no-files-found: ignore
+
+  features:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+          targets: wasm32-unknown-unknown, thumbv7em-none-eabi, i586-unknown-linux-gnu, i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: feature-consumers
+          workspaces: . -> target/feature-consumers
+      - run: rustc -Vv
+      # External consumers keep dev-dependency feature unification from
+      # concealing a broken no_std / serde / heapless combination.
+      - run: python3 ci/check_features.py
+      - run: python3 ci/check_features.py --target wasm32-unknown-unknown
+      - run: python3 ci/check_features.py --target thumbv7em-none-eabi --no-std-only
+      - name: Check 32-bit x86 with and without an SSE baseline
+        run: |
+          for target in i586-unknown-linux-gnu i686-unknown-linux-gnu; do
+            cargo rustc --lib --no-default-features --target "$target" -- -D warnings
+            cargo rustc --lib --all-features --target "$target" -- -D warnings
+          done
+
+  api:
+    name: API compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The API baseline is an immutable commit, including before 1.0 is tagged.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: api-compatibility
+          workspaces: . -> target/api-cargo
+      - name: Install pinned API checker
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import subprocess
+          import tomllib
+          version = tomllib.loads(Path("ci/api-baseline.toml").read_text())["cargo-semver-checks"]
+          subprocess.run(["cargo", "install", "cargo-semver-checks", "--version", version, "--locked"], check=True)
+          PYTHON
+      - run: python3 ci/check_api.py
+
+  miri:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-08-21
+      CARGO_TARGET_DIR: target/miri
+      MIRIFLAGS: -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: nightly-2026-08-21
+          components: miri, rust-src
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: miri
+          workspaces: . -> target/miri
+      - run: rustc -Vv
+      - run: cargo miri setup
+      - name: Check docs.rs feature annotations
+        run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
+      - run: cargo miri test --all-features --test public_api --test serde_protocol --test format --test owned_decode --test allocations
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: miri-lock-${{ github.run_attempt }}
+          path: Cargo.lock
+          if-no-files-found: ignore
+
+  fuzz:
+    uses: ./.github/workflows/fuzz.yml
+    with:
+      seconds: 30
+
+  benchmarks:
+    name: Benchmark correctness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: benchmarks
+      # Criterion's test mode executes every case once, including output checks.
+      - run: cargo bench --all-features --benches -- --test
+
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: cargo-audit
+      - run: cargo install cargo-audit --version 0.22.2 --locked
+      - run: cargo generate-lockfile
+      - run: cargo audit
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: audit-lock-${{ github.run_attempt }}
+          path: Cargo.lock
+          if-no-files-found: ignore
+
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: package
+      - run: cargo package --all-features
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: package-${{ github.run_attempt }}
+          path: |
+            target/package/*.crate
+            Cargo.lock
+          if-no-files-found: ignore
+
+  ci:
+    name: CI
+    if: always()
+    needs: [quality, test, features, api, miri, fuzz, benchmarks, audit, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every job to pass
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = {name: job["result"] for name, job in json.loads(os.environ["NEEDS_JSON"]).items()}
+          print(json.dumps(results, indent=2))
+          sys.exit(0 if results and all(result == "success" for result in results.values()) else 1)
+          PY
