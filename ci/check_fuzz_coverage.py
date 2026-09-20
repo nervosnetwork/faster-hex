@@ -109,7 +109,8 @@ def main():
         coverage = json.loads(exported)
         report["kernels"] = kernel_counts(coverage, report["backends"])
         run("summary", [llvm / "llvm-cov", "report", binary, f"-instr-profile={profile}",
-                        str(root / "src/encode.rs"), str(root / "src/decode.rs")])
+                        str(root / "src/encode.rs"), str(root / "src/decode.rs"),
+                        *sorted((root / "src/decode").glob("*.rs"))])
         run("html", [llvm / "llvm-cov", "show", binary, f"-instr-profile={profile}",
                      "-format=html", f"-output-dir={out / 'html'}"])
         report["status"] = "passed"

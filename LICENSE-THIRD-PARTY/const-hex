@@ -1,7 +1,7 @@
 const-hex 1.19.1
 https://github.com/DaniPopes/const-hex
 
-The saturating nibble mapping in src/decode.rs is adapted from the
+The saturating nibble mapping in src/decode/ is adapted from the
 MIT-licensed implementation of Muła and Langdale's Algorithm #3.
 The following is the upstream MIT license, reproduced without modification.
 

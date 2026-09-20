@@ -4,7 +4,7 @@ use core::iter::FromIterator;
 
 mod internal {
     use crate::{
-        decode::{hex_decode_with_case, CheckCase},
+        decode::{hex_decode_array_with_case, hex_decode_with_case, CheckCase},
         encode::encode,
     };
     use alloc::{borrow::Cow, string::String, vec, vec::Vec};
@@ -150,15 +150,7 @@ mod internal {
         case: CheckCase,
     ) -> Result<[u8; N], E> {
         let text = payload::<E>(text, with_prefix)?;
-        let actual = text.len() / 2;
-        if actual != N {
-            return Err(E::custom(format_args!(
-                "expected {N} decoded bytes, got {actual}"
-            )));
-        }
-        let mut bytes = [0; N];
-        hex_decode_with_case(text.as_bytes(), &mut bytes, case).map_err(E::custom)?;
-        Ok(bytes)
+        hex_decode_array_with_case(text.as_bytes(), case).map_err(E::custom)
     }
 
     pub(crate) fn deserialize_array<'de, D, const N: usize>(

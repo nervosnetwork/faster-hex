@@ -105,13 +105,13 @@ impl Backend {
             match self.0 {
                 Kind::Scalar => decode::hex_check_fallback_with_case(src, case),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Sse41 => decode::hex_check_sse_with_case(src, case),
+                Kind::Sse41 => decode::x86::hex_check_sse_with_case(src, case),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Avx2 => decode::hex_check_avx2_with_case(src, case),
+                Kind::Avx2 => decode::x86::hex_check_avx2_with_case(src, case),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Avx512 => decode::hex_check_avx512_with_case(src, case),
+                Kind::Avx512 => decode::x86::hex_check_avx512_with_case(src, case),
                 #[cfg(target_arch = "aarch64")]
-                Kind::Neon => decode::hex_check_neon_with_case(src, case),
+                Kind::Neon => decode::aarch64::hex_check_neon_with_case(src, case),
             }
         }
     }
@@ -135,11 +135,11 @@ impl Backend {
                     true
                 }
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Sse41 => decode::hex_decode_sse41_checked(src, dst, case).is_ok(),
+                Kind::Sse41 => decode::x86::hex_decode_sse41_checked(src, dst, case).is_ok(),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Avx2 => decode::hex_decode_avx2_checked(src, dst, case).is_ok(),
+                Kind::Avx2 => decode::x86::hex_decode_avx2_checked(src, dst, case).is_ok(),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Avx512 => decode::hex_decode_avx512_checked(src, dst, case).is_ok(),
+                Kind::Avx512 => decode::x86::hex_decode_avx512_checked(src, dst, case).is_ok(),
                 // Use the actual short/bounded/general NEON selection so the
                 // harness cannot drift from the production length thresholds.
                 #[cfg(target_arch = "aarch64")]

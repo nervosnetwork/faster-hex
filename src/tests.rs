@@ -1,5 +1,5 @@
 use crate::decode::{hex_check_fallback_with_case, hex_decode_fallback, hex_decode_unchecked};
-use crate::encode::{hex_encode_fallback, hex_encode_upper_fallback};
+use crate::encode::hex_encode_fallback;
 use crate::{hex_check_with_case, hex_decode, hex_encode, hex_encode_upper, CheckCase};
 use proptest::prelude::*;
 
@@ -12,11 +12,10 @@ proptest! {
         for upper in [false, true] {
             let mut scalar = vec![0; data.len() * 2];
             let mut dispatched = scalar.clone();
+            hex_encode_fallback(&data, &mut scalar, upper);
             if upper {
-                hex_encode_upper_fallback(&data, &mut scalar);
                 hex_encode_upper(&data, &mut dispatched).unwrap();
             } else {
-                hex_encode_fallback(&data, &mut scalar);
                 hex_encode(&data, &mut dispatched).unwrap();
             }
             prop_assert_eq!(&scalar, &dispatched);
@@ -58,11 +57,7 @@ fn scalar_encoder_preserves_incomplete_destination_pairs() {
         for target_len in 0..36 {
             for upper in [false, true] {
                 let mut destination = vec![0xa5; target_len];
-                if upper {
-                    hex_encode_upper_fallback(&source, &mut destination);
-                } else {
-                    hex_encode_fallback(&source, &mut destination);
-                }
+                hex_encode_fallback(&source, &mut destination, upper);
                 let written = source_len.min(target_len / 2) * 2;
                 let expected = if upper { b"AF" } else { b"af" };
                 for pair in destination[..written].chunks_exact(2) {

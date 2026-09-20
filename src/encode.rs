@@ -486,19 +486,11 @@ fn hex_encode_pairs(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
 }
 
 #[cfg(test)]
-pub(crate) fn hex_encode_fallback(src: &[u8], dst: &mut [u8]) {
+pub(crate) fn hex_encode_fallback(src: &[u8], dst: &mut [u8], upper: bool) {
     // SAFETY: The scalar encoder only writes initialized ASCII to complete pairs;
     // untouched bytes retain their previous initialized values, even for short dst.
     let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
-    hex_encode_custom_case_fallback(src, output, false);
-}
-
-#[cfg(test)]
-pub(crate) fn hex_encode_upper_fallback(src: &[u8], dst: &mut [u8]) {
-    // SAFETY: The scalar encoder only writes initialized ASCII to complete pairs;
-    // untouched bytes retain their previous initialized values, even for short dst.
-    let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
-    hex_encode_custom_case_fallback(src, output, true);
+    hex_encode_custom_case_fallback(src, output, upper);
 }
 
 #[inline]
