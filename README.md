@@ -10,9 +10,12 @@ Requires Rust 1.95.0 or later.
 
 ## Usage
 
+These examples target the unreleased 1.0 candidate. Until it is published, point
+the dependency at a checkout of this branch:
+
 ```toml
 [dependencies]
-faster-hex = "1.0.0-rc.2"
+faster-hex = { path = "../faster-hex" }
 ```
 
 ```rust
@@ -74,11 +77,12 @@ x86 runner. Use this explicit acceptance mode before freezing AVX-512 changes.
 
 ## Benchmarks
 
-For development, run `cargo bench-dev` from this checkout. It measures eight
-cases: encoding and decoding 8, 32, 256 and 4096 bytes through the public API.
-Buffers are allocated before timing; validation and CPU dispatch are included.
+For development, run `cargo bench-dev` from this checkout. Its 17 cases cover
+encoding and decoding 4, 8, 32, 65, 256 and 4096 bytes, short and Hash256 arrays,
+an allocated vector, and errors at the start and end of a large input.
+Slice buffers are allocated before timing; validation and CPU dispatch are included.
 Each case uses 0.2 seconds of warm-up and 1 second of sampling, so expect roughly
-10–20 seconds after compilation.
+20–30 seconds after compilation.
 
 Save a baseline before editing, then compare the same cases after your change:
 
@@ -104,7 +108,7 @@ To compare with `hex`, `const-hex`, `hex-simd`, `fashex`, `better-hex` and
 cargo bench-compare
 ```
 
-This runs 56 cases at the same four sizes, taking roughly 70 seconds after
+This runs 56 cases at 8, 32, 256 and 4096 bytes, taking roughly 70 seconds after
 compilation. All libraries receive the same input and reuse their output buffer.
 Encoding is lowercase; decoding accepts mixed case. Sizes and throughput count
 binary payload bytes: `decode/faster_hex_mixed/32` reads 64 hex characters and
@@ -138,11 +142,17 @@ outside it.
 Use `--save-baseline before` / `--baseline before` here too. Always rerun
 `bench-dev` to check other lengths after a Hash256 optimization.
 
-The `decode_array` cases return a new `[u8; 32]` without heap allocation. The
+The `decode_array` cases return a new fixed array without heap allocation at
+4, 8, 32, 65, 256 and 4096 bytes. The
 `faster_hex_slice` and `fashex_slice` controls decode into a local array and
 return it, so every case includes the same output ownership. Compare them with
 the existing `decode` cases to see how output ownership and call-site optimization
 affect performance.
+
+The `decode_vec` cases include allocation, validation, decoding and destruction
+at 32, 65, 256, 4096 and 65536 bytes. `fashex_slice` uses an initialized vector
+through its slice interface. Run `cargo bench --bench hex -- '^decode_vec/'`
+to compare these owning operations separately from reusable-buffer decoding.
 
 To compare the default bench profile with cross-crate ThinLTO, keep separate
 build directories and share only the Criterion reports:

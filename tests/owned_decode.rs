@@ -29,6 +29,7 @@ fn array_roundtrip<const N: usize>() {
 fn arrays_cover_empty_hashes_and_vector_boundaries() {
     array_roundtrip::<0>();
     array_roundtrip::<1>();
+    array_roundtrip::<4>();
     array_roundtrip::<7>();
     array_roundtrip::<8>();
     array_roundtrip::<15>();
@@ -192,6 +193,15 @@ proptest::proptest! {
             prop_assert_eq!(hex_decode_array_with_case::<32>(input, case).unwrap(), bytes);
             #[cfg(feature = "alloc")]
             prop_assert_eq!(faster_hex::hex_decode_vec_with_case(input, case).unwrap(), bytes);
+            let short = hex_decode_array_with_case::<4>(&input[..8], case).unwrap();
+            prop_assert_eq!(short.as_slice(), &bytes[..4]);
+            let short_position = position % 8;
+            let original = input[short_position];
+            input[short_position] = invalid;
+            prop_assert!(matches!(hex_decode_array_with_case::<4>(&input[..8], case),
+                Err(Error::InvalidChar { index, byte, .. }) if (index, byte) == (short_position, invalid)),
+                "short array must identify its first invalid byte");
+            input[short_position] = original;
             input[position] = invalid;
             let error = hex_decode_array_with_case::<32>(input, case).unwrap_err();
             prop_assert!(matches!(error, Error::InvalidChar { index, byte, .. } if (index, byte) == (position, invalid)), "wrong diagnostic: {error:?}");

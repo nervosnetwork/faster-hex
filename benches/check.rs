@@ -66,12 +66,16 @@ fn check(c: &mut Criterion) {
 
     // Failed inputs report latency, not misleading whole-input throughput.
     let mut group = c.benchmark_group("invalid");
-    for len in [1, 32, 4096] {
+    for len in [1, 32, 65, 4096, 65536] {
         let valid = hex::encode(support::bytes(len)).into_bytes();
         let mut output = vec![0xa5; len];
         for (name, position) in [("first", 0), ("middle", len), ("last", len * 2 - 1)] {
             let mut src = valid.clone();
             src[position] = b'g';
+            assert!(!hex_check(&src));
+            assert!(matches!(hex_decode(&src, &mut output),
+                Err(faster_hex::Error::InvalidChar { index, byte: b'g', .. }) if index == position));
+            assert!(output.iter().all(|&byte| byte == 0xa5));
             group.bench_function(format!("check/{name}/{len}"), |b| {
                 b.iter(|| black_box(hex_check(black_box(&src))));
             });

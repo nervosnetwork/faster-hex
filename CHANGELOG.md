@@ -43,6 +43,7 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 ### Performance and validation
 
 - Refine short-input SIMD decoding, SSE4.1 conversion, AVX2 validation and scalar paths.
+- Reuse the existing NEON block for 4-byte array decoding.
 - Encode strings and Serde output directly into uninitialized storage; borrow Serde input and
   use stack storage for serialized fixed values through 65 bytes, including their prefix.
 - Avoid clearing unused `Hex` scratch storage, stream long values in larger chunks,
@@ -54,7 +55,7 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
   dispatch, fixed-capacity boundaries and partial writer failures.
 - Expand CI across operating systems, architectures and feature combinations, with
   Wasm/embedded/32-bit builds and native x86 backend checks.
-- Keep focused Criterion suites for slice conversion, validation, capacity reuse,
+- Keep focused Criterion suites for slice and owned conversion, validation, capacity reuse,
   borrowed formatting and Serde. Development aliases support saved baselines and
   competitor comparisons; CI executes the cases without collecting timings.
 

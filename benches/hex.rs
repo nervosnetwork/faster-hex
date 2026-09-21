@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use faster_hex::{
-    hex_append, hex_decode, hex_decode_array, hex_encode, hex_encode_upper, hex_string,
+    hex_append, hex_decode, hex_decode_array, hex_decode_vec, hex_encode, hex_encode_upper,
+    hex_string,
 };
 use hex_simd::{AsOut, AsciiCase};
 use std::hint::black_box;
@@ -143,39 +144,77 @@ fn conversion(c: &mut Criterion) {
     group.finish();
 }
 
-fn decode_array(c: &mut Criterion) {
-    let expected = support::bytes(32);
+fn array_size<const N: usize>(c: &mut Criterion) {
+    let expected = support::bytes(N);
     let mut input = hex::encode(&expected).into_bytes();
     for byte in input.iter_mut().step_by(2) {
         byte.make_ascii_uppercase();
     }
     let mut group = c.benchmark_group("decode_array");
-    group.throughput(Throughput::Bytes(32));
+    group.throughput(Throughput::Bytes(N as u64));
     // Every case returns an owned array, including the slice-API controls.
     // Criterion consumes the returned array; keep calls concrete inside the timer.
     macro_rules! case {
         ($name:literal, $decode:expr) => {
             assert_eq!(($decode)(&input).as_slice(), expected.as_slice());
-            group.bench_function(BenchmarkId::new($name, 32), |b| {
+            group.bench_function(BenchmarkId::new($name, N), |b| {
                 b.iter(|| ($decode)(black_box(input.as_slice())));
             });
         };
     }
-    case!("faster_hex", |src: &[u8]| hex_decode_array::<32>(src)
+    case!("faster_hex", |src: &[u8]| hex_decode_array::<N>(src)
         .unwrap());
     case!("faster_hex_slice", |src: &[u8]| {
-        let mut output = [0; 32];
+        let mut output = [0; N];
         hex_decode(src, &mut output).unwrap();
         output
     });
     case!("const_hex", |src: &[u8]| {
-        const_hex::decode_to_array::<_, 32>(src).unwrap()
+        const_hex::decode_to_array::<_, N>(src).unwrap()
     });
     case!("fashex_slice", |src: &[u8]| {
-        let mut output = [0; 32];
+        let mut output = [0; N];
         fashex::decode(src, &mut output).unwrap();
         output
     });
+    group.finish();
+}
+
+fn decode_array(c: &mut Criterion) {
+    array_size::<4>(c);
+    array_size::<8>(c);
+    array_size::<32>(c);
+    array_size::<65>(c);
+    array_size::<256>(c);
+    array_size::<4096>(c);
+}
+
+fn decode_vec(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_vec");
+    for len in [32, 65, 256, 4096, 65536] {
+        let expected = support::bytes(len);
+        let mut input = hex::encode(&expected).into_bytes();
+        for byte in input.iter_mut().step_by(2) {
+            byte.make_ascii_uppercase();
+        }
+        group.throughput(Throughput::Bytes(len as u64));
+        // Include allocation, validation, decoding and destruction on every side.
+        macro_rules! case {
+            ($name:literal, $decode:expr) => {
+                assert_eq!(($decode)(&input), expected);
+                group.bench_function(BenchmarkId::new($name, len), |b| {
+                    b.iter(|| ($decode)(black_box(input.as_slice())));
+                });
+            };
+        }
+        case!("faster_hex", |src: &[u8]| hex_decode_vec(src).unwrap());
+        case!("const_hex", |src: &[u8]| const_hex::decode(src).unwrap());
+        case!("fashex_slice", |src: &[u8]| {
+            let mut output = vec![0; src.len() / 2];
+            fashex::decode(src, output.as_mut_slice()).unwrap();
+            output
+        });
+    }
     group.finish();
 }
 
@@ -325,5 +364,12 @@ fn rotating(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, conversion, decode_array, allocation, rotating);
+criterion_group!(
+    benches,
+    conversion,
+    decode_array,
+    decode_vec,
+    allocation,
+    rotating
+);
 criterion_main!(benches);

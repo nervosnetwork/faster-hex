@@ -4,10 +4,12 @@
 //! No input is filtered out. Even empty inputs drive a multi-block conversion;
 //! a second length explores the short/bounded/overlapping-tail thresholds.
 
-use faster_hex::{fuzzing::backends, hex_decode_with_case, CheckCase, Error};
+use faster_hex::{
+    fuzzing::backends, hex_decode_array_with_case, hex_decode_with_case, CheckCase, Error,
+};
 
 const BOUNDARIES: &[usize] = &[
-    0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257,
+    0, 1, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257,
 ];
 const CANARY: u8 = 0xa5;
 
@@ -56,6 +58,9 @@ pub fn exercise(data: &[u8]) {
                 }
             }
             let text = &mut text[source_offset..source_offset + len * 2];
+            if len == 4 {
+                assert_eq!(hex_decode_array_with_case::<4>(text, case).unwrap(), raw);
+            }
             for backend in backends() {
                 let mut output = vec![CANARY; target_offset + len * 2 + 32];
                 if case != CheckCase::None {
@@ -113,6 +118,11 @@ pub fn exercise(data: &[u8]) {
                             if index == position && byte == text[position]
                     ));
                     intact(&output, 0, 0);
+                    if len == 4 {
+                        assert!(matches!(hex_decode_array_with_case::<4>(text, case),
+                            Err(Error::InvalidChar { index, byte, .. })
+                                if index == position && byte == text[position]));
+                    }
                     text[position] = original;
                 }
             }

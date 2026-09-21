@@ -11,7 +11,7 @@ core = root / "faster-hex"
 serde = root / "serde"
 core.mkdir(parents=True, exist_ok=True)
 serde.mkdir(parents=True, exist_ok=True)
-for length in [0, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 4096]:
+for length in [0, 1, 2, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 4096]:
     raw = bytes((i * 37 + length) % 256 for i in range(length))
     for kind, data in [("binary", raw), ("lower", raw.hex().encode()),
                        ("upper", raw.hex().upper().encode())]:

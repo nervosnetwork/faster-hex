@@ -1,25 +1,24 @@
 # Further optimization
 
-Ideas to evaluate after the 1.0 candidate freeze; gains are not yet established.
+Remaining directions after the native optimization study. The 1.0 API is still
+open to design changes until release; gains below are not established.
 
-- **Owned decoding:** extend array measurements beyond Hash256 and measure
-  `hex_decode_vec` directly. Explore validating and decoding large inputs in
-  one pass, starting with existing kernels. Private output can be discarded
-  on failure; borrowed destinations must still remain entirely unchanged.
-- **Late errors:** explore retaining the first failing block during validation
-  so diagnostics can avoid scanning the valid prefix again. Preserve the first
-  invalid byte, error precedence and the fast path for valid Hash256 input.
-- **Remaining gaps:** revisit 4-byte, 65-byte and large-buffer differences on
-  native Intel, AMD and ARM CPUs. Compare backend thresholds before adding
-  special cases; preserve both hot and rotating Hash256 performance.
-- **Calling contexts:** extend build-profile measurements to production settings,
-  multiple call sites and generated code size. Separate codec changes from
-  JSON-writing costs, code placement and hosted-runner variance.
-- **Development feedback:** add a few short/boundary/error cases to the existing
-  focused benchmarks. Keep baseline comparison quick; extend native validation
-  to 32-bit x86 when hardware permits.
+- **Owned decoding:** single-pass array/Vec loops improved some large inputs,
+  but short-input regressions and inconsistent x86 gains ruled them out. Revisit
+  a loop that leaves existing small kernels and their calling convention intact.
+- **Error positions:** carrying a failing-block offset avoids rescanning, but
+  changed return representations slowed valid short inputs. Coarse cold scans
+  also regressed shorter errors. Seek a representation that retains precise
+  diagnostics without adding work to successful Hash256 calls.
+- **SIMD thresholds:** revisit short x86 and 65-byte tails on dedicated Intel/AMD
+  hardware. AVX-512 batching helped large checks but hurt short paths; isolate
+  those costs before adding backend-specific thresholds.
+- **Native coverage:** reproduce marginal differences on dedicated Intel/AMD
+  CPUs, especially the i9-14900K. Keep default and ThinLTO builds, multiple call
+  sites and code size in the comparison. Add native 32-bit x86 execution when
+  hardware is available.
 
-Keep APIs and checked contracts fixed. Use identical benchmark harnesses,
+Make API tradeoffs explicit. Use identical benchmark harnesses,
 independent builds and repeated native x86/ARM comparisons. Retain a change only
 when its benefit is reproducible and its complexity earns long-term maintenance.
 A short-input gain can qualify without a Hash256 gain if hot/rotating Hash256 and
