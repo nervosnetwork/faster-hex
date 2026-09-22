@@ -67,7 +67,8 @@ SIMD kernels. JSON and HTML coverage reports are retained with the fuzz artifact
 
 For native AVX-512 acceptance, run the **Fuzz** workflow with `require-avx512`
 enabled. Both x86 engines must run on CPUs with AVX2, AVX-512F and AVX-512BW;
-their minimized corpora must execute all six AVX-512 checking and decoding kernels.
+their minimized corpora must execute every AVX-512 checking and decoding kernel,
+including the owned-output loop.
 The replay verifies Rust's CPU/OS detection and records each kernel's execution
 and region counts. Unsupported runners fail before the fuzz build. Standard
 hosted runner labels do not guarantee AVX-512; retry the affected job if necessary.

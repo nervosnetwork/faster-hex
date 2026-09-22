@@ -3,16 +3,10 @@
 Remaining directions after the native optimization study; gains below are not
 established. Preserve the 1.x contracts described in [MIGRATION.md](MIGRATION.md).
 
-- **Owned decoding:** single-pass array/Vec loops improved some large inputs,
-  but short-input regressions and inconsistent x86 gains ruled them out. Revisit
-  a loop that leaves existing small kernels and their calling convention intact.
 - **Error positions:** carrying a failing-block offset avoids rescanning, but
   changed return representations slowed valid short inputs. Coarse cold scans
   also regressed shorter errors. Seek a representation that retains precise
   diagnostics without adding work to successful Hash256 calls.
-- **SIMD thresholds:** revisit short x86 and 65-byte tails on dedicated Intel/AMD
-  hardware. AVX-512 batching helped large checks but hurt short paths; isolate
-  those costs before adding backend-specific thresholds.
 - **Native coverage:** reproduce marginal differences on dedicated Intel/AMD
   CPUs, especially the i9-14900K. Keep default and ThinLTO builds, multiple call
   sites and code size in the comparison.

@@ -357,7 +357,11 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    hex_decode_with_case(src, &mut bytes, check_case)?;
+    if N > OWNED_DECODE_THRESHOLD {
+        decode_owned_large(src, &mut bytes, check_case)?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
 }
 
@@ -423,8 +427,49 @@ pub fn hex_decode_vec_with_case(
         return Err(Error::OddLength);
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
-    hex_decode_with_case(src, &mut bytes, check_case)?;
+    if bytes.len() > OWNED_DECODE_THRESHOLD {
+        decode_owned_large(src, &mut bytes, check_case)?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
+}
+
+// Small outputs are sensitive to streaming setup and call-site inlining.
+const OWNED_DECODE_THRESHOLD: usize = 1024;
+
+// Owned callers discard this initialized, exact-size buffer on error. Large
+// inputs can commit one checked block at a time without re-reading valid input.
+// Inline dispatch to preserve array return/copy code generation. The SIMD block
+// loops remain in their target-feature functions.
+#[inline(always)]
+fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let decoded = match crate::vectorization_support() {
+        crate::Vectorization::AVX512 => {
+            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
+            // have the exact 2:1 ratio, and output is private until success.
+            unsafe { x86::hex_decode_avx512_owned(src, dst, case) }
+        }
+        crate::Vectorization::AVX2 => {
+            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
+            unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
+        }
+        _ => decode_checked(src, dst, case),
+    };
+    #[cfg(target_arch = "aarch64")]
+    let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
+        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
+        unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
+    } else {
+        decode_checked(src, dst, case)
+    };
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    let decoded = decode_checked(src, dst, case);
+    if decoded.is_err() {
+        decode_diagnosed(src, dst, case)?;
+    }
+    Ok(())
 }
 
 // Call after establishing even input and the exact 2:1 source/output ratio.

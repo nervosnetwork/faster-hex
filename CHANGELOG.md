@@ -46,6 +46,9 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 
 - Refine short-input SIMD decoding, SSE4.1 conversion, AVX2 validation and scalar paths.
 - Reuse the existing NEON block for 4-byte array decoding.
+- Keep 65–96-byte x86 slice decoding in registers until validation succeeds.
+- Decode large owned arrays and vectors in one checked pass using existing SIMD
+  blocks; discard private output on error and retain exact error positions.
 - Encode strings and Serde output directly into uninitialized storage; borrow Serde input and
   use stack storage for serialized fixed values through 65 bytes, including their prefix.
 - Avoid clearing unused `Hex` scratch storage, stream long values in larger chunks,

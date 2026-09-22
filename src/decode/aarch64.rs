@@ -181,3 +181,19 @@ pub(super) unsafe fn hex_decode_short_neon(
     vst1_u8(dst.as_mut_ptr().add(dst.len() - 8), vget_high_u8(decoded));
     Ok(())
 }
+
+// Earlier valid blocks may be committed: the owning caller discards output
+// if any later block fails. Lengths have the exact 2:1 input/output ratio.
+#[target_feature(enable = "neon")]
+pub(crate) unsafe fn hex_decode_neon_owned(
+    src: &[u8],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), ()> {
+    let (blocks, tail) = src.as_chunks::<64>();
+    let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
+    for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
+        hex_decode_bounded_neon(input, output, case)?;
+    }
+    super::decode_checked(tail, rest, case)
+}

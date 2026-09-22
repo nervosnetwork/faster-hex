@@ -148,6 +148,45 @@ fn vectors_keep_slice_decoder_error_precedence_and_grammar() {
     }
 }
 
+fn owned_block_errors<const N: usize>() {
+    let mut input = vec![b'1'; N * 2];
+    for (case, invalid) in [
+        (CheckCase::None, b'g'),
+        (CheckCase::Lower, b'A'),
+        (CheckCase::Upper, b'a'),
+    ] {
+        assert_eq!(
+            hex_decode_array_with_case::<N>(&input, case).unwrap(),
+            [0x11; N]
+        );
+        for position in [0, 1, 63, 64, 127, 128, 2047, 2048, N * 2 - 1] {
+            input[position] = invalid;
+            let error = hex_decode_array_with_case::<N>(&input, case).unwrap_err();
+            assert!(matches!(error, Error::InvalidChar { index, byte, .. }
+                if (index, byte) == (position, invalid)));
+            #[cfg(feature = "alloc")]
+            assert_eq!(
+                faster_hex::hex_decode_vec_with_case(&input, case),
+                Err(error)
+            );
+            // A later failure must never hide an earlier case violation.
+            input[0] = invalid;
+            assert!(matches!(
+                hex_decode_array_with_case::<N>(&input, case),
+                Err(Error::InvalidChar { index: 0, .. })
+            ));
+            input[0] = b'1';
+            input[position] = b'1';
+        }
+    }
+}
+
+#[test]
+fn owned_outputs_report_errors_across_complete_blocks_and_tails() {
+    owned_block_errors::<1025>();
+    owned_block_errors::<4096>();
+}
+
 proptest::proptest! {
     #![proptest_config(if cfg!(miri) {
         proptest::test_runner::Config { cases: 8, failure_persistence: None, ..Default::default() }

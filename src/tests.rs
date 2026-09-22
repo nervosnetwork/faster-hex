@@ -116,7 +116,7 @@ mod kernels {
         for backend in backends() {
             let name = backend.name();
             for len in [
-                0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
+                0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 95, 96, 97, 127, 128, 129,
             ] {
                 for source_offset in 0..64 {
                     let binary: Vec<u8> = (0..len + 64).map(|i| (i * 73 + i / 7) as u8).collect();
@@ -156,6 +156,17 @@ mod kernels {
                                 .iter()
                                 .chain(&decoded[target_offset + len..])
                                 .all(|&b| b == 0xa5));
+                            decoded.fill(0xa5);
+                            assert!(backend.decode_owned(
+                                &hex_source[source_offset..],
+                                &mut decoded[target_offset..][..len],
+                                CheckCase::None,
+                            ));
+                            assert_eq!(&decoded[target_offset..][..len], input, "{name}");
+                            assert!(decoded[..target_offset]
+                                .iter()
+                                .chain(&decoded[target_offset + len..])
+                                .all(|&b| b == 0xa5));
                         }
                     }
                 }
@@ -167,7 +178,9 @@ mod kernels {
     fn forced_backends_check_every_byte_in_every_lane_before_writing() {
         for backend in backends() {
             let name = backend.name();
-            for len in [2, 4, 6, 8, 10, 12, 14, 16, 32, 64, 66, 128] {
+            for len in [
+                2, 4, 6, 8, 10, 12, 14, 16, 32, 64, 66, 128, 130, 190, 192, 194,
+            ] {
                 for position in 0..len {
                     for byte in 0..=255 {
                         // Vary neighboring digits to catch bits leaking between
@@ -189,6 +202,11 @@ mod kernels {
                             } else {
                                 assert!(!decoded);
                                 assert!(output.iter().all(|&b| b == 0xa5), "{}", name);
+                            }
+                            let mut owned = vec![0xa5; len / 2];
+                            assert_eq!(backend.decode_owned(&input, &mut owned, case), valid);
+                            if valid {
+                                assert_eq!(owned, output, "{name}");
                             }
                         }
                     }

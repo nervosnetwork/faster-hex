@@ -9,7 +9,8 @@ use faster_hex::{
 };
 
 const BOUNDARIES: &[usize] = &[
-    0, 1, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257,
+    0, 1, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 95, 96, 97, 127, 128, 129, 255, 256, 257,
+    1023, 1024, 1025, 4096,
 ];
 const CANARY: u8 = 0xa5;
 
@@ -29,8 +30,8 @@ fn intact(buffer: &[u8], offset: usize, written: usize) {
 
 pub fn exercise(data: &[u8]) {
     let control = |i| data.get(i).copied().unwrap_or(0);
-    let source_offset = usize::from(control(0) % 32);
-    let target_offset = usize::from(control(1) % 32);
+    let source_offset = usize::from(control(0) % 64);
+    let target_offset = usize::from(control(1) % 64);
     let payload = data.get(4..).unwrap_or_default();
     for len in [
         BOUNDARIES[usize::from(control(2)) % BOUNDARIES.len()],
@@ -61,6 +62,9 @@ pub fn exercise(data: &[u8]) {
             if len == 4 {
                 assert_eq!(hex_decode_array_with_case::<4>(text, case).unwrap(), raw);
             }
+            if len == 1025 {
+                assert_eq!(hex_decode_array_with_case::<1025>(text, case).unwrap(), raw);
+            }
             for backend in backends() {
                 let mut output = vec![CANARY; target_offset + len * 2 + 32];
                 if case != CheckCase::None {
@@ -75,6 +79,14 @@ pub fn exercise(data: &[u8]) {
                 assert!(backend.check(text, case));
                 output.fill(CANARY);
                 assert!(backend.decode(
+                    text,
+                    &mut output[target_offset..target_offset + len],
+                    case
+                ));
+                assert_eq!(&output[target_offset..target_offset + len], raw);
+                intact(&output, target_offset, len);
+                output.fill(CANARY);
+                assert!(backend.decode_owned(
                     text,
                     &mut output[target_offset..target_offset + len],
                     case
@@ -123,6 +135,19 @@ pub fn exercise(data: &[u8]) {
                             Err(Error::InvalidChar { index, byte, .. })
                                 if index == position && byte == text[position]));
                     }
+                    if len == 1025 {
+                        assert!(matches!(hex_decode_array_with_case::<1025>(text, case),
+                            Err(Error::InvalidChar { index, byte, .. })
+                                if index == position && byte == text[position]));
+                    }
+                    assert!(!backend.decode_owned(
+                        text,
+                        &mut output[target_offset..target_offset + len],
+                        case
+                    ));
+                    // Owned output is discarded on error; only bytes outside
+                    // the destination are required to retain their canaries.
+                    intact(&output, target_offset, len);
                     text[position] = original;
                 }
             }

@@ -118,15 +118,17 @@ impl Backend {
 
     pub fn decode(self, src: &[u8], dst: &mut [u8], case: CheckCase) -> bool {
         assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+        // This is the real dispatch minimum for SIMD loads, not a character
+        // pre-check. Valid and damaged vector-sized inputs go straight through.
+        if src.len() < 16 {
+            return decode::hex_decode_short_scalar(src, dst, case).is_ok();
+        }
         #[allow(unused_unsafe)] // The NEON dispatcher and scalar path are safe.
         // SAFETY: backends() checked the ISA and the assertion guarantees even
         // input and the exact 2:1 ratio. The checked kernels accept invalid text
         // and must reject it before writing; do not pre-check characters here.
         unsafe {
             match self.0 {
-                Kind::Scalar if dst.len() < 8 => {
-                    decode::hex_decode_short_scalar(src, dst, case).is_ok()
-                }
                 Kind::Scalar => {
                     if !decode::hex_check_fallback_with_case(src, case) {
                         return false;
@@ -144,6 +146,25 @@ impl Backend {
                 // harness cannot drift from the production length thresholds.
                 #[cfg(target_arch = "aarch64")]
                 Kind::Neon => decode::decode_checked(src, dst, case).is_ok(),
+            }
+        }
+    }
+
+    // On failure, earlier valid blocks may already be written. This adapter
+    // checks the same memory/CPU preconditions without pre-validating text.
+    pub fn decode_owned(self, src: &[u8], dst: &mut [u8], case: CheckCase) -> bool {
+        assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+        #[allow(unused_unsafe)] // Non-SIMD targets use the checked scalar path.
+        // SAFETY: backends() checked the ISA; the slices have the exact 2:1 ratio.
+        unsafe {
+            match self.0 {
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx2 => decode::x86::hex_decode_avx2_owned(src, dst, case).is_ok(),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx512 => decode::x86::hex_decode_avx512_owned(src, dst, case).is_ok(),
+                #[cfg(target_arch = "aarch64")]
+                Kind::Neon => decode::aarch64::hex_decode_neon_owned(src, dst, case).is_ok(),
+                _ => self.decode(src, dst, case),
             }
         }
     }

@@ -177,6 +177,15 @@ fn conversions_and_checks_stop_at_guard_pages() {
                         case,
                     ));
                     assert_eq!(decoded.slice(len, end), &data, "{name}");
+                    if let Some(backend) = backend {
+                        decoded.slice_mut(len, end).fill(0xa5);
+                        assert!(backend.decode_owned(
+                            encoded.slice(len * 2, end),
+                            decoded.slice_mut(len, end),
+                            case,
+                        ));
+                        assert_eq!(decoded.slice(len, end), &data, "{name}");
+                    }
                     if len != 0 {
                         encoded.slice_mut(len * 2, end)[len * 2 - 1] = b'!';
                         decoded.slice_mut(len, end).fill(0xa5);
@@ -191,6 +200,13 @@ fn conversions_and_checks_stop_at_guard_pages() {
                             "{}",
                             name
                         );
+                        if let Some(backend) = backend {
+                            assert!(!backend.decode_owned(
+                                encoded.slice(len * 2, end),
+                                decoded.slice_mut(len, end),
+                                case,
+                            ));
+                        }
                     }
                 }
             }
