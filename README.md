@@ -10,12 +10,9 @@ Requires Rust 1.95.0 or later.
 
 ## Usage
 
-These examples target the unreleased 1.0 candidate. Until it is published, point
-the dependency at a checkout of this branch:
-
 ```toml
 [dependencies]
-faster-hex = { path = "../faster-hex" }
+faster-hex = "1"
 ```
 
 ```rust
@@ -45,18 +42,20 @@ directly, including a prefix with `{:#x}`, without a temporary hex string. Use
 The default features are `std` and `serde`. Set `default-features = false` for a
 dependency-free core. Optional features include `alloc`, `heapless-08` and `defmt-03`.
 
-Run `cargo doc --all-features --no-deps --open` for this candidate's API documentation.
-[Published API documentation](https://docs.rs/faster-hex) follows the released crate.
+[API documentation](https://docs.rs/faster-hex) follows the released crate. For a
+local checkout, run `cargo doc --all-features --no-deps --open`.
 Upgrading from 0.10: [migration guide](MIGRATION.md).
 Release history: [changelog](CHANGELOG.md).
 
 ## Testing changes
 
-CI checks the API against the pinned 1.0 candidate baseline across all supported
+CI checks the API against the pinned 1.0 baseline across all supported
 feature combinations, including external trait and function-signature contracts.
-It also runs libFuzzer on x86 and ARM and AFL on x86. Weekly and manual fuzz runs
-use longer time limits, restore cached corpora, and save minimized inputs and
-crash diagnostics as workflow artifacts.
+It runs native 64-bit x86/ARM and 32-bit x86 tests, including guard-page checks
+with independently sized input and output. Miri checks portable paths; native
+tests and fuzzing exercise SIMD. CI runs libFuzzer on x86 and ARM and AFL on x86.
+Weekly and manual fuzz runs use longer time limits, restore cached corpora, and
+save minimized inputs and crash diagnostics as workflow artifacts.
 
 Both fuzz engines share public-contract and core tests. Every input constructs
 valid hex independently, exercises every available backend, and injects faults

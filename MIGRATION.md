@@ -1,6 +1,6 @@
 # Migrating from 0.10 to 1.0
 
-The 1.0 candidate requires Rust 1.95.0. The default features remain `std, serde`.
+Version 1.0 requires Rust 1.95.0. The default features remain `std, serde`.
 Existing valid, exactly sized slice conversions keep the same bytes and letter-case
 behavior. The changes below make lengths, allocation and backend selection explicit.
 
@@ -50,6 +50,11 @@ precedence is odd input, insufficient output capacity, then invalid character/ca
 `CheckCase` and `hex_decode_with_case` are directly exported. Backend functions are
 implementation details; callers no longer need architecture-specific imports or
 unsafe CPU-feature assumptions.
+
+In 0.10.0, the safe `hex_decode_unchecked` entry could read beyond a short source
+on AVX2 when the destination held at least 32 bytes. Version 1.0 removes this
+entry and bounds SIMD reads by the source as well as the destination. Migrate
+to a checked decoder; the fix in 1.0 does not change installed 0.10.0 copies.
 
 `Error` is now non-exhaustive and adds `OddLength`. `InvalidLength(n)` becomes
 `OutputTooSmall { required, .. }`, with the required destination capacity in bytes.

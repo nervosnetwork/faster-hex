@@ -122,7 +122,7 @@ jobs:
 
   features:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -141,11 +141,18 @@ jobs:
       - run: python3 ci/check_features.py
       - run: python3 ci/check_features.py --target wasm32-unknown-unknown
       - run: python3 ci/check_features.py --target thumbv7em-none-eabi --no-std-only
-      - name: Check 32-bit x86 with and without an SSE baseline
+      - name: Install 32-bit runtime and linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gcc-multilib
+      - name: Run 32-bit x86 tests with and without an SSE baseline
+        env:
+          RUSTFLAGS: -D warnings
         run: |
           for target in i586-unknown-linux-gnu i686-unknown-linux-gnu; do
-            cargo rustc --lib --no-default-features --target "$target" -- -D warnings
-            cargo rustc --lib --all-features --target "$target" -- -D warnings
+            cargo test --release --all-features --target "$target" --lib feature_detection_matches_host -- --nocapture
+            cargo test --release --all-features --target "$target" --lib --tests
+            cargo test --release --no-default-features --target "$target" --lib --tests
           done
 
   api:
@@ -202,6 +209,7 @@ jobs:
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
       - run: cargo miri test --all-features --test public_api --test serde_protocol --test format --test owned_decode --test allocations
+      - run: cargo miri test --all-features --lib internal_conversion_never_reads_past_short_source
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

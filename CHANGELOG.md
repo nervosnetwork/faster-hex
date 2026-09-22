@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0-rc.2 (unreleased)
+## 1.0.0
 
 Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing code.
 
@@ -34,6 +34,8 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 
 - Preserve the entire destination on checked slice conversion errors.
 - Keep SIMD accesses within their slices at short lengths and independent alignments.
+- Fix the 0.10.0 AVX2 out-of-bounds read with short input and a large destination
+  in the formerly public `hex_decode_unchecked` entry.
 - Check supported CPUID leaves and OS AVX/ZMM state before selecting AVX2 or AVX-512.
 - Preserve Serde's `Some` tag in binary formats and read each serialized `AsRef<[u8]>`
   view once. Existing JSON prefix and case rules remain unchanged.
@@ -49,6 +51,7 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 - Avoid clearing unused `Hex` scratch storage, stream long values in larger chunks,
   and reduce short-value formatting and padding overhead.
 - Add differential tests, guard pages, feature consumers, Miri checks and fuzz targets.
+- Exercise independent decode lengths at guard pages and run 32-bit x86 tests.
 - Add explicit native AVX-512 fuzz acceptance for libFuzzer and AFL, requiring
   execution inside every AVX-512 kernel after corpus minimization.
 - Check structured valid and damaged inputs, allocation-free contracts, concurrent

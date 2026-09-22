@@ -1,4 +1,7 @@
-use crate::{hex_check_with_case, hex_decode_with_case, hex_encode, hex_encode_upper, CheckCase};
+use crate::{
+    decode::hex_decode_unchecked, hex_check_with_case, hex_decode_with_case, hex_encode,
+    hex_encode_upper, CheckCase, Error,
+};
 
 /// One writable page between inaccessible pages. Both ends are exercised so a
 /// SIMD load or store outside either slice faults instead of touching spare capacity.
@@ -61,6 +64,53 @@ impl Drop for Guarded {
     fn drop(&mut self) {
         // SAFETY: This object owns the complete live mapping; no borrowed slices remain.
         unsafe { libc::munmap(self.allocation, self.page * 3) };
+    }
+}
+
+#[test]
+fn independent_decode_lengths_stop_at_guard_pages() {
+    // The old unchecked entry could load 64 source bytes solely because dst
+    // held 32 bytes. Keep source and destination lengths independent here;
+    // exact-ratio kernel adapters intentionally cannot exercise that boundary.
+    let lengths = [
+        0, 1, 2, 4, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
+    ];
+    let mut source = Guarded::new();
+    let mut destination = Guarded::new();
+    for source_len in lengths {
+        for source_end in [false, true] {
+            source.slice_mut(source_len, source_end).fill(b'a');
+            let input = source.slice(source_len, source_end);
+            for destination_len in lengths {
+                for destination_end in [false, true] {
+                    let output = destination.slice_mut(destination_len, destination_end);
+                    output.fill(0xa5);
+                    hex_decode_unchecked(input, output);
+                    let written = (source_len / 2).min(destination_len);
+                    assert!(output[..written].iter().all(|&byte| byte == 0xaa));
+                    assert!(output[written..].iter().all(|&byte| byte == 0xa5));
+
+                    output.fill(0xa5);
+                    let expected = if !source_len.is_multiple_of(2) {
+                        Err(Error::OddLength)
+                    } else if destination_len < source_len / 2 {
+                        Err(Error::OutputTooSmall {
+                            required: source_len / 2,
+                        })
+                    } else {
+                        Ok(source_len / 2)
+                    };
+                    assert_eq!(
+                        hex_decode_with_case(input, output, CheckCase::None)
+                            .map(|bytes| bytes.len()),
+                        expected,
+                    );
+                    let written = expected.unwrap_or(0);
+                    assert!(output[..written].iter().all(|&byte| byte == 0xaa));
+                    assert!(output[written..].iter().all(|&byte| byte == 0xa5));
+                }
+            }
+        }
     }
 }
 

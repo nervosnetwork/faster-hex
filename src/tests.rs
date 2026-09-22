@@ -38,7 +38,7 @@ proptest! {
 #[test]
 fn internal_conversion_never_reads_past_short_source() {
     // Exercises the old AVX2 threshold with independently varying slice lengths.
-    for source_len in [0, 1, 2, 31, 32, 33, 63, 64, 65] {
+    for source_len in [0, 1, 2, 4, 31, 32, 33, 63, 64, 65] {
         let source = vec![b'0'; source_len];
         for target_len in [0, 1, 31, 32, 33, 64, 65] {
             let mut target = vec![0xa5; target_len];

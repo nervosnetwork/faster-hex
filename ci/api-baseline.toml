@@ -1,5 +1,4 @@
-# Protect the complete 1.0 candidate API now. At the first stable 1.0 release,
-# replace this revision with that release's full commit ID. Advance it to later
-# compatible releases to protect their added APIs; never move it to hide breakage.
-revision = "bc640b03a1f935e6da49d188978b88614dd0c765"
+# The accepted API used for 1.0.0. Advance this immutable baseline when a
+# compatible release adds APIs; never move it to conceal a breaking change.
+revision = "787ba5d27eb472b10c63a8ae74f660c70f3f07d0"
 cargo-semver-checks = "0.50.0"

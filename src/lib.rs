@@ -72,7 +72,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! faster-hex = { version = "1.0.0-rc.2", default-features = false, features = ["serde"] }
+//! faster-hex = { version = "1", default-features = false, features = ["serde"] }
 //! ```
 //!
 //! # Platforms

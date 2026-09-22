@@ -1,7 +1,7 @@
 # Further optimization
 
-Remaining directions after the native optimization study. The 1.0 API is still
-open to design changes until release; gains below are not established.
+Remaining directions after the native optimization study; gains below are not
+established. Preserve the 1.x contracts described in [MIGRATION.md](MIGRATION.md).
 
 - **Owned decoding:** single-pass array/Vec loops improved some large inputs,
   but short-input regressions and inconsistent x86 gains ruled them out. Revisit
@@ -15,8 +15,7 @@ open to design changes until release; gains below are not established.
   those costs before adding backend-specific thresholds.
 - **Native coverage:** reproduce marginal differences on dedicated Intel/AMD
   CPUs, especially the i9-14900K. Keep default and ThinLTO builds, multiple call
-  sites and code size in the comparison. Add native 32-bit x86 execution when
-  hardware is available.
+  sites and code size in the comparison.
 
 Make API tradeoffs explicit. Use identical benchmark harnesses,
 independent builds and repeated native x86/ARM comparisons. Retain a change only
