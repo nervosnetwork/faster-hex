@@ -2,7 +2,7 @@
 
 ## 1.0.0
 
-Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing code.
+Changes since 0.10.1. See [MIGRATION.md](MIGRATION.md) for upgrading existing code.
 
 ### Breaking changes
 
@@ -10,7 +10,6 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 - Decode the complete input and return the written prefix as `Result<&mut [u8], Error>`.
   A short destination returns an error; extra capacity remains untouched. Odd input
   is rejected, including when the destination is empty.
-- Return only the initialized hex prefix from `hex_encode` and `hex_encode_upper`.
 - Make `Error` non-exhaustive. Replace `InvalidLength(n)` with
   `OutputTooSmall { required, .. }`; add `OddLength` and byte positions to
   `InvalidChar { index, byte, .. }`. Error formatting changes.
@@ -34,8 +33,6 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 
 - Preserve the entire destination on checked slice conversion errors.
 - Keep SIMD accesses within their slices at short lengths and independent alignments.
-- Fix the 0.10.0 AVX2 out-of-bounds read with short input and a large destination
-  in the formerly public `hex_decode_unchecked` entry.
 - Check supported CPUID leaves and OS AVX/ZMM state before selecting AVX2 or AVX-512.
 - Preserve Serde's `Some` tag in binary formats and read each serialized `AsRef<[u8]>`
   view once. Existing JSON prefix and case rules remain unchanged.
@@ -64,6 +61,15 @@ Changes since 0.10.0. See [MIGRATION.md](MIGRATION.md) for upgrading existing co
 - Keep focused Criterion suites for slice and owned conversion, validation, capacity reuse,
   borrowed formatting and Serde. Development aliases support saved baselines and
   competitor comparisons; CI executes the cases without collecting timings.
+
+## 0.10.1
+
+### Bug fixes
+
+- Bound AVX2 reads in `hex_decode_unchecked` by the source length.
+- Return only the written prefix from `hex_encode` and `hex_encode_upper`.
+- Restore the `Error` trait implementation on Rust 1.61 while retaining
+  `core::error::Error` on newer toolchains.
 
 ## 0.10.0
 

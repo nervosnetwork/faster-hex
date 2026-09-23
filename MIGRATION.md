@@ -6,10 +6,10 @@ behavior. The changes below make lengths, allocation and backend selection expli
 
 ## Slice contracts
 
-`hex_encode` and `hex_encode_upper` return only the initialized hex prefix. Spare
-destination bytes remain unchanged and are never exposed through a UTF-8 string.
-Code that used the returned string's length as the destination capacity should use
-the destination slice's length instead.
+Since 0.10.1, `hex_encode` and `hex_encode_upper` return only the initialized hex
+prefix. Spare destination bytes remain unchanged and are never exposed through a
+UTF-8 string. Code that used the returned string's length as the destination
+capacity should use the destination slice's length instead.
 
 `hex_decode` and `hex_decode_with_case` now return `Result<&mut [u8], Error>`.
 The successful slice contains exactly the decoded bytes and borrows only `dst`.
@@ -52,9 +52,9 @@ implementation details; callers no longer need architecture-specific imports or
 unsafe CPU-feature assumptions.
 
 In 0.10.0, the safe `hex_decode_unchecked` entry could read beyond a short source
-on AVX2 when the destination held at least 32 bytes. Version 1.0 removes this
-entry and bounds SIMD reads by the source as well as the destination. Migrate
-to a checked decoder; the fix in 1.0 does not change installed 0.10.0 copies.
+on AVX2 when the destination held at least 32 bytes. Version 0.10.1 fixes the
+bounds check; 1.0 removes the entry. Migrate to a checked decoder. Installed
+0.10.0 copies remain affected until upgraded.
 
 `Error` is now non-exhaustive and adds `OddLength`. `InvalidLength(n)` becomes
 `OutputTooSmall { required, .. }`, with the required destination capacity in bytes.
