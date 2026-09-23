@@ -1,3 +1,13 @@
+## 0.10.1 (unreleased)
+
+### Bug Fixes
+
+* Prevent out-of-bounds reads in `hex_decode_unchecked` on AVX2 when the input is shorter than the output capacity.
+* Return only the written prefix from `hex_encode` and `hex_encode_upper`, leaving extra destination bytes untouched.
+* Fix the `Error` trait implementation for Rust 1.61 while retaining `core::error::Error` on newer toolchains.
+
+## 0.10.0
+
 ### Features
 
 * Add PartialEq derived macro to Error in order to be able to test error cases

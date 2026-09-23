@@ -22,7 +22,13 @@ impl ::core::fmt::Display for Error {
     }
 }
 
-impl core::error::Error for Error {
+#[cfg(all(not(feature = "std"), has_core_error))]
+use core::error::Error as ErrorTrait;
+#[cfg(feature = "std")]
+use std::error::Error as ErrorTrait;
+
+#[cfg(any(feature = "std", has_core_error))]
+impl ErrorTrait for Error {
     fn description(&self) -> &str {
         match *self {
             Error::InvalidChar => "invalid character",

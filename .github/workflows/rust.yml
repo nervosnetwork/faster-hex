@@ -34,14 +34,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        build: [Linux, macOS, windows-2019]
+        build: [Linux, macOS, Windows]
         include:
           - build: Linux
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - build: macOS
-            os: macos-12
-          - build: windows-2019
-            os: windows-2019
+            os: macos-15-intel
+          - build: Windows
+            os: windows-2025
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -49,10 +49,7 @@ jobs:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.74.0
+          toolchain: 1.95.0
           components: rustfmt
       - name: Run tests
-        if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
+        run: cargo test
