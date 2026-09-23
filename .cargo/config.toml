@@ -1,0 +1,24 @@
+[alias]
+# Seventeen cases: conversion, short arrays, allocation and error boundaries.
+bench-dev = [
+    "bench", "--bench", "hex", "--bench", "check", "--",
+    "^((encode/faster_hex|decode/faster_hex_mixed)/(4|8|32|65|256|4096)|decode_array/faster_hex/(4|32)|decode_vec/faster_hex/4096|invalid/decode/(first|last)/4096)$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]
+
+# Fifty-six cases: identical lowercase encoding and mixed-case decoding inputs.
+bench-compare = [
+    "bench", "--bench", "hex", "--",
+    "^(encode/(faster_hex|hex|const_hex|hex_simd|fashex|better_hex|data_encoding)|decode/(faster_hex_mixed|hex|const_hex|hex_simd|fashex|better_hex|data_encoding))/(8|32|256|4096)$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]
+
+# Hash256: 28 cases; hot/rotating conversion, owned arrays and validation.
+bench-hash = [
+    "bench", "--bench", "hex", "--bench", "check", "--",
+    "^(encode/(faster_hex|const_hex|hex_simd|fashex|better_hex)|decode/(faster_hex_mixed|const_hex|hex_simd|fashex|better_hex)|decode_array/(faster_hex|faster_hex_slice|const_hex|fashex_slice)|rotating_(encode|decode)/(faster_hex|const_hex|hex_simd|fashex|better_hex)|check_compare/(faster_hex|const_hex|hex_simd|better_hex))/32$",
+    "--warm-up-time", "0.2", "--measurement-time", "1",
+    "--sample-size", "30", "--noplot",
+]
