@@ -1,6 +1,6 @@
 [package]
 name = "faster-hex"
-version = "0.10.0"
+version = "0.10.1"
 authors = ["zhangsoledad <787953403@qq.com>"]
 edition = "2018"
 rust-version = "1.61.0"
@@ -15,6 +15,9 @@ exclude = ["afl/*", "benches/*", "fuzz/*", "CHANGELOG.md"]
 [dependencies]
 defmt = { version = "0.3", optional = true }
 serde = { version = "1.0", default-features = false, optional = true }
+
+[build-dependencies]
+autocfg = "1.5.1"
 
 [features]
 default = ["std", "serde"]

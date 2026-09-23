@@ -347,7 +347,7 @@ unsafe fn hex_decode_avx2(mut src: &[u8], mut dst: &mut [u8]) {
         -1, 11, -1, 13, -1, 15, -1,
     );
 
-    while dst.len() >= 32 {
+    while src.len() >= 64 && dst.len() >= 32 {
         let av1 = _mm256_loadu_si256(src.as_ptr() as *const _);
         let av2 = _mm256_loadu_si256(src[32..].as_ptr() as *const _);
 
@@ -389,6 +389,39 @@ mod tests {
         encode::hex_string,
     };
     use proptest::proptest;
+
+    #[test]
+    fn test_unchecked_decode_stops_at_source_end() {
+        use crate::hex_decode_unchecked;
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if cfg!(target_feature = "sse")
+            && !cfg!(target_env = "sgx")
+            && is_x86_feature_detected!("avx2")
+        {
+            assert_eq!(crate::vectorization_support(), crate::Vectorization::AVX2);
+        }
+
+        for &(src_len, dst_len) in &[
+            (0, 32),
+            (1, 32),
+            (31, 32),
+            (32, 32),
+            (63, 32),
+            (64, 33),
+            (96, 64),
+            (127, 64),
+            (128, 65),
+        ] {
+            let src = vec![b'a'; src_len];
+            let mut dst = vec![0x5a; dst_len];
+            let mut expected = dst.clone();
+            expected[..(src_len / 2).min(dst_len)].fill(0xaa);
+
+            hex_decode_unchecked(&src, &mut dst);
+            assert_eq!(dst, expected, "src_len={src_len}, dst_len={dst_len}");
+        }
+    }
 
     #[cfg(not(feature = "alloc"))]
     const CAPACITY: usize = 128;

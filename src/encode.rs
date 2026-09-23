@@ -74,6 +74,8 @@ pub fn hex_string_upper<const N: usize>(src: &[u8]) -> String<N> {
     hex_string_custom_case(src, true)
 }
 
+/// Hex encode src into dst, selecting uppercase digits when requested.
+/// The returned string covers only the written prefix; extra dst bytes remain unchanged.
 pub fn hex_encode_custom<'a>(
     src: &[u8],
     dst: &'a mut [u8],
@@ -102,8 +104,6 @@ pub fn hex_encode_custom<'a>(
             crate::Vectorization::SSE41 => unsafe { hex_encode_sse41(src, dst, upper_case) },
             crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
         }
-        // Safety: We just wrote valid utf8 hex string into the dst
-        return Ok(unsafe { mut_str(dst) });
     }
     #[cfg(target_arch = "aarch64")]
     {
@@ -111,23 +111,25 @@ pub fn hex_encode_custom<'a>(
             crate::Vectorization::Neon => unsafe { hex_encode_neon(src, dst, upper_case) },
             crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
         }
-        // Safety: We just wrote valid utf8 hex string into the dst
-        return Ok(unsafe { mut_str(dst) });
     }
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     {
         hex_encode_custom_case_fallback(src, dst, upper_case);
-        // Safety: We just wrote valid utf8 hex string into the dst
-        Ok(unsafe { mut_str(dst) })
     }
+    // Safety: Every backend writes ASCII into exactly this prefix.
+    Ok(unsafe { mut_str(&mut dst[..expect_dst_len]) })
 }
 
 /// Hex encode src into dst.
 /// The length of dst must be at least src.len() * 2.
+/// The returned string covers only the written prefix; extra dst bytes remain unchanged.
 pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
     hex_encode_custom(src, dst, false)
 }
 
+/// Hex encode src into dst using uppercase digits.
+/// The length of dst must be at least src.len() * 2.
+/// The returned string covers only the written prefix; extra dst bytes remain unchanged.
 pub fn hex_encode_upper<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
     hex_encode_custom(src, dst, true)
 }
@@ -304,7 +306,7 @@ pub fn hex_encode_upper_fallback(src: &[u8], dst: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
-    use crate::encode::{hex_encode, hex_encode_custom_case_fallback};
+    use crate::encode::{hex_encode, hex_encode_custom_case_fallback, hex_encode_upper};
 
     use crate::hex_encode_fallback;
     use core::str;
@@ -328,6 +330,21 @@ mod tests {
             _test_encode_fallback(s, true);
             _test_encode_fallback(s, false);
         }
+    }
+
+    #[test]
+    fn test_encode_oversized_dst_returns_written_prefix() {
+        let mut lower = [0xff; 4];
+        assert_eq!(hex_encode(&[0xab], &mut lower).unwrap(), "ab");
+        assert_eq!(lower, [b'a', b'b', 0xff, 0xff]);
+
+        let mut upper = [0xff; 4];
+        assert_eq!(hex_encode_upper(&[0xab], &mut upper).unwrap(), "AB");
+        assert_eq!(upper, [b'A', b'B', 0xff, 0xff]);
+
+        let mut empty = [0xff; 2];
+        assert_eq!(hex_encode(b"", &mut empty).unwrap(), "");
+        assert_eq!(empty, [0xff; 2]);
     }
 
     #[test]
