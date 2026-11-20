@@ -329,19 +329,18 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn encode_avx2_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], table: __m256i) {
-    let bytes = _mm256_loadu_si256(src.as_ptr().cast());
+    // Arrange the 64-bit quarters as 0, 2, 1, 3. The lane-local unpacks
+    // then produce two consecutive output blocks with one cross-lane shuffle.
+    let bytes = _mm256_permute4x64_epi64::<0xd8>(_mm256_loadu_si256(src.as_ptr().cast()));
     let mask = _mm256_set1_epi8(15);
     let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), mask);
     let low = _mm256_and_si256(bytes, mask);
     let a = _mm256_unpacklo_epi8(high, low);
     let b = _mm256_unpackhi_epi8(high, low);
-    _mm256_storeu_si256(
-        dst.as_mut_ptr().cast(),
-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x20>(a, b)),
-    );
+    _mm256_storeu_si256(dst.as_mut_ptr().cast(), _mm256_shuffle_epi8(table, a));
     _mm256_storeu_si256(
         dst.as_mut_ptr().add(32).cast(),
-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x31>(a, b)),
+        _mm256_shuffle_epi8(table, b),
     );
 }
 
@@ -400,8 +399,8 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
-    let (batches, rest) = src.as_chunks::<64>();
-    let (outputs, remaining) = dst.as_chunks_mut::<128>();
+    let (batches, rest) = src.as_chunks::<32>();
+    let (outputs, remaining) = dst.as_chunks_mut::<64>();
     for (input, output) in batches.iter().zip(outputs) {
         for (input, output) in input
             .as_chunks::<16>()
