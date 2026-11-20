@@ -83,3 +83,7 @@ defmt = {json.dumps(defmt_requirement)}
             project.with_name("lib.rs").write_text(source)
             print(f"Checking {','.join(features)} with defmt {defmt_requirement}", flush=True)
             subprocess.run(["cargo", "check", "--manifest-path", str(project)], env=env, check=True)
+            if features == ["std"]:
+                packages = tomllib.loads(project.with_name("Cargo.lock").read_text())["package"]
+                if any(package["name"] == "heapless" for package in packages):
+                    raise SystemExit("std-only consumer unexpectedly resolved heapless in Cargo.lock")

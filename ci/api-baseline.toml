@@ -1,4 +1,4 @@
 # The accepted API used for 2.0.0. Advance this immutable baseline when a
 # compatible release adds APIs; never move it to conceal a breaking change.
-revision = "80909c878a4f9b7f1891873b024f8d9e04c6effb"
+revision = "546b8bab1b8d25324aad6226739de311a0c670bf"
 cargo-semver-checks = "0.50.0"
