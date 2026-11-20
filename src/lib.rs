@@ -31,7 +31,7 @@
 //! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
 //! `hex_append` and `hex_append_upper` reuse a string's capacity;
 //! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors.
-//! The `heapless-08` feature provides fixed-capacity strings in `heapless_08`.
+//! The `heapless-09` feature provides fixed-capacity strings in `heapless_09`.
 //!
 //! # Conversion contracts
 //!
@@ -65,14 +65,14 @@
 //! | `alloc` | Owned strings and byte vectors; appending to strings |
 //! | `std` | `alloc` and standard-library support in enabled dependencies |
 //! | `serde` | Serde adapters and `alloc`; also works without `std` |
-//! | `heapless-08` | Fixed-capacity strings using `heapless` 0.8, without requiring `alloc` |
-//! | `defmt-03` | `defmt` formatting for errors and case policies |
+//! | `heapless-09` | Fixed-capacity strings using `heapless` 0.9, without requiring `alloc` |
+//! | `defmt` (also `defmt-03`) | `defmt::Format` for [`Error`] and [`CheckCase`] |
 //!
 //! For example, enable Serde without the standard library:
 //!
 //! ```toml
 //! [dependencies]
-//! faster-hex = { version = "1", default-features = false, features = ["serde"] }
+//! faster-hex = { version = "2", default-features = false, features = ["serde"] }
 //! ```
 //!
 //! # Platforms
@@ -84,7 +84,7 @@
 //! selection, SIMD thresholds and instruction sequences are implementation details;
 //! no public backend selection or architecture-specific call is required.
 //!
-//! The minimum supported Rust version is 1.95.0 throughout the 1.0.x line.
+//! The minimum supported Rust version is 1.95.0 throughout the 2.0.x line.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -174,9 +174,9 @@ mod format;
 #[allow(missing_docs)]
 pub mod fuzzing;
 
-#[cfg(feature = "heapless-08")]
-#[cfg_attr(docsrs, doc(cfg(feature = "heapless-08")))]
-pub mod heapless_08;
+#[cfg(feature = "heapless-09")]
+#[cfg_attr(docsrs, doc(cfg(feature = "heapless-09")))]
+pub mod heapless_09;
 
 #[cfg(feature = "serde")]
 mod serde;

@@ -369,10 +369,10 @@ fn strings_and_append_reuse_capacity_preserving_unicode_prefix() {
     assert_eq!(growing, format!("prefix:{}", "ff".repeat(128)));
 }
 
-#[cfg(feature = "heapless-08")]
+#[cfg(feature = "heapless-09")]
 #[test]
 fn heapless_capacity_is_fallible_and_features_are_additive() {
-    use faster_hex::heapless_08::{hex_string, hex_string_upper};
+    use faster_hex::heapless_09::{hex_string, hex_string_upper};
     assert_eq!(hex_string::<0>(&[]).unwrap().as_str(), "");
     assert_eq!(hex_string::<8>(&[0xab]).unwrap().as_str(), "ab");
     assert_eq!(hex_string_upper::<2>(&[0xab]).unwrap().as_str(), "AB");
@@ -382,7 +382,7 @@ fn heapless_capacity_is_fallible_and_features_are_additive() {
     assert_eq!(faster_hex::hex_string(&[0xab]), "ab");
 }
 
-#[cfg(feature = "heapless-08")]
+#[cfg(feature = "heapless-09")]
 #[test]
 fn heapless_checks_exact_odd_and_vector_boundary_capacities() {
     fn check<const N: usize>() {
@@ -390,9 +390,9 @@ fn heapless_checks_exact_odd_and_vector_boundary_capacities() {
             let input: Vec<_> = (0..len).map(|i| (i * 73) as u8).collect();
             for upper in [false, true] {
                 let result = if upper {
-                    faster_hex::heapless_08::hex_string_upper::<N>(&input)
+                    faster_hex::heapless_09::hex_string_upper::<N>(&input)
                 } else {
-                    faster_hex::heapless_08::hex_string::<N>(&input)
+                    faster_hex::heapless_09::hex_string::<N>(&input)
                 };
                 if len * 2 > N {
                     assert_capacity(result.unwrap_err(), len * 2);

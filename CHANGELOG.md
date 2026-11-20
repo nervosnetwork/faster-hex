@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0
+
+- Replace the `heapless-08` feature and `heapless_08` module with `heapless-09`
+  and `heapless_09`. Both fixed-capacity encoders now return `heapless::String<N>`
+  from the 0.9 series. The minimum version is 0.9.4, which includes the
+  [upstream soundness fixes](https://rustsec.org/packages/heapless.html).
+- Add `defmt` as the recommended feature name for logging with `defmt` 1.x.
+  The existing `defmt-03` feature remains available.
+- For downstream dependency and import changes, see the
+  [1.0 to 2.0 migration guide](MIGRATION.md#migrating-from-10-to-20).
+
 ## 1.0.0
 
 Changes since 0.10.1. See [MIGRATION.md](MIGRATION.md) for upgrading existing code.

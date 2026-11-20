@@ -1,6 +1,6 @@
 [package]
 name = "faster-hex"
-version = "1.0.0"
+version = "2.0.0"
 authors = ["zhangsoledad <787953403@qq.com>"]
 edition = "2018"
 rust-version = "1.95.0"
@@ -17,7 +17,7 @@ all-features = true
 
 [dependencies]
 defmt = { version = "0.3", optional = true }
-heapless = { version = "0.8", optional = true, default-features = false }
+heapless = { version = "0.9.4", optional = true, default-features = false }
 serde = { version = "1.0", default-features = false, optional = true }
 
 [features]
@@ -25,8 +25,9 @@ default = ["std", "serde"]
 std = ["alloc", "serde?/std"]
 alloc = ["defmt?/alloc"]
 serde = ["dep:serde", "serde/alloc", "alloc"]
-defmt-03 = ["dep:defmt", "heapless?/defmt-03"]
-heapless-08 = ["dep:heapless"]
+defmt = ["defmt-03"]
+defmt-03 = ["dep:defmt", "heapless?/defmt"]
+heapless-09 = ["dep:heapless"]
 
 [dev-dependencies]
 better-hex = "1.0"

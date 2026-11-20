@@ -30,7 +30,7 @@ path = {json.dumps(str(root / "ci/consumer.rs"))}
 [dependencies]
 faster-hex = {{ path = {json.dumps(str(root))}, default-features = false }}
 serde = {{ version = "1", default-features = false, optional = true }}
-heapless = {{ version = "0.8", default-features = false, optional = true }}
+heapless = {{ version = "=0.9.4", default-features = false, optional = true }}
 defmt = {{ version = "0.3", default-features = false, optional = true }}
 [features]
 ''' + "\n".join(f"{name} = {json.dumps(values)}" for name, values in forwarded.items())
@@ -53,3 +53,37 @@ with tempfile.TemporaryDirectory(prefix="faster-hex-features-") as temporary:
         if args.target:
             command += ["--target", args.target]
         subprocess.run(command, env=env, check=True)
+
+if args.target is None and not args.no_std_only:
+    # Request the exact feature names a downstream manifest uses. The matrix
+    # above also enables their implied features, which can mask a broken alias.
+    logging_source = '''#![no_std]
+pub fn report(error: faster_hex::Error, case: faster_hex::CheckCase) {
+    defmt::warn!("{:?} {:?}", error, case);
+}
+'''
+    for features, defmt_requirement, source in [
+        (["std"], "=0.3.10", "pub use faster_hex::hex_string;\n"),
+        (["defmt"], "1", logging_source),
+        (["defmt-03"], "1", logging_source),
+        (["defmt", "defmt-03"], "1", logging_source),
+    ]:
+        with tempfile.TemporaryDirectory(prefix="faster-hex-consumer-") as temporary:
+            project = Path(temporary) / "Cargo.toml"
+            project.write_text(f'''[package]
+name = "feature-consumer"
+version = "0.0.0"
+edition = "2021"
+[lib]
+path = "lib.rs"
+[dependencies]
+faster-hex = {{ path = {json.dumps(str(root))}, default-features = false, features = {json.dumps(features)} }}
+defmt = {json.dumps(defmt_requirement)}
+''')
+            project.with_name("lib.rs").write_text(source)
+            print(f"Checking {','.join(features)} with defmt {defmt_requirement}", flush=True)
+            subprocess.run(["cargo", "check", "--manifest-path", str(project)], env=env, check=True)
+            if features == ["std"]:
+                packages = tomllib.loads(project.with_name("Cargo.lock").read_text())["package"]
+                if any(package["name"] == "heapless" for package in packages):
+                    raise SystemExit("std-only consumer unexpectedly resolved heapless in Cargo.lock")

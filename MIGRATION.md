@@ -1,10 +1,45 @@
-# Migrating from 0.10 to 1.0
+# Migration guide
+
+## Migrating from 1.0 to 2.0
+
+Set the `faster-hex` dependency to `"2"`. If you use the fixed-capacity
+encoders, change the Cargo feature from `heapless-08` to `heapless-09` and
+imports from `faster_hex::heapless_08` to `faster_hex::heapless_09`.
+Both encoders now return a `heapless` 0.9 string. If your code names that type,
+update your direct `heapless` dependency to `"0.9.4"` as well.
+
+```toml
+[dependencies]
+faster-hex = { version = "2", default-features = false, features = ["heapless-09"] }
+heapless = { version = "0.9.4", default-features = false }
+```
+
+```rust
+use faster_hex::heapless_09::hex_string;
+
+let text: heapless::String<4> = hex_string(&[0xab, 1]).unwrap();
+assert_eq!(text.as_str(), "ab01");
+```
+
+If `std` is the only `faster-hex` feature you enable, you can keep an existing
+pin such as `defmt = "=0.3.10"`.
+
+For logging with `defmt` 1.x, use `features = ["defmt"]` on `faster-hex`.
+Existing manifests can keep `features = ["defmt-03"]`. With either name, Cargo
+considers the `defmt` 1.x requirement from `heapless` 0.9 when resolving the
+lockfile, even if `heapless-09` is disabled.
+In that case, loosen an old pin such as `defmt = "=0.3.10"` to `defmt = "0.3"`.
+Cargo can then select 0.3.100 or a later 0.3 release that shares the 1.x
+`Format` trait. If another crate imposes the pin, update it to a version that
+allows a compatible release.
+
+## Migrating from 0.10 to 1.0
 
 Version 1.0 requires Rust 1.95.0. The default features remain `std, serde`.
 Existing valid, exactly sized slice conversions keep the same bytes and letter-case
 behavior. The changes below make lengths, allocation and backend selection explicit.
 
-## Slice contracts
+### Slice contracts
 
 Since 0.10.1, `hex_encode` and `hex_encode_upper` return only the initialized hex
 prefix. Spare destination bytes remain unchanged and are never exposed through a
@@ -37,7 +72,7 @@ All checked slice APIs preserve the entire destination on every error. Decode er
 precedence is odd input, insufficient output capacity, then invalid character/case.
 `hex_check` remains a character-only check: it can accept an odd number of digits.
 
-## Public API replacements
+### Public API replacements
 
 | Removed export | Replacement |
 | --- | --- |
@@ -84,7 +119,7 @@ should define their own errors rather than manufacture a failed codec operation.
 and are not stable serialization formats. Match variants instead of parsing text.
 `core::error::Error` is implemented with every feature set.
 
-## Features and strings
+### Features and strings
 
 New optional conveniences require no changes to existing slice calls.
 `hex_decode_array::<N>` and `hex_decode_array_with_case::<N>` return `[u8; N]`
@@ -123,7 +158,7 @@ For logs or a `core::fmt::Write` destination, `Hex` avoids an intermediate Strin
 It preserves leading zeroes and uses integer-style formatting flags. Precision
 never truncates bytes; a writer error can leave already accepted text in place.
 
-## Serde compatibility
+### Serde compatibility
 
 Existing adapter module names, JSON representation, prefix/case rules and
 generic `FromIterator<u8>` support remain compatible. The required prefix is exactly
@@ -150,10 +185,11 @@ from those old bytes alone.
 
 ## Compatibility policy
 
-- The 1.x line preserves public signatures, feature names and defaults, exposed
-  dependency types, implemented traits, and documented input/error/mutation rules.
+- Within each major release, faster-hex preserves public signatures, feature names
+  and defaults, exposed dependency types, implemented traits, and documented
+  input/error/mutation rules.
   Features remain additive under Cargo feature unification.
-- Rust 1.95.0 remains the minimum throughout 1.0.x. Later increases require a minor
+- Rust 1.95.0 is the minimum for 1.0.x and 2.0.x. Later increases require a minor
   release and release notes; this does not freeze consumers' dependency versions.
 - New input grammars, storage ownership or partial-progress behavior use separate
   APIs. Adding error variants or fields preserves the meanings of existing errors.
