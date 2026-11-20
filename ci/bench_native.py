@@ -15,7 +15,8 @@ def main():
     # The workflow supplies disposable checkouts. New APIs may need newer timers,
     # but comparisons of existing operations must run the identical harness.
     shutil.copytree(baseline / "benches", candidate / "benches", dirs_exist_ok=True)
-    subprocess.run(["cargo", "generate-lockfile"], cwd=baseline, check=True)
+    if not (baseline / "Cargo.lock").exists():
+        subprocess.run(["cargo", "generate-lockfile"], cwd=baseline, check=True)
     shutil.copy(baseline / "Cargo.lock", candidate / "Cargo.lock")
     shutil.copy(baseline / "Cargo.lock", results / "Cargo.lock")
 
@@ -31,14 +32,20 @@ def main():
     pin = ["taskset", "-c", str(min(os.sched_getaffinity(0)))] if linux else []
     cases = (
         r"^((encode/faster_hex|rotating_encode/faster_hex)/(4|8|32|64|65|256|4096)"
-        r"|decode/faster_hex_mixed/32|rotating_decode/faster_hex/32"
+        r"|decode/faster_hex_mixed/32|rotating_decode/faster_hex/32|decode_array/faster_hex/32"
         r"|invalid/decode/(first|last)/(32|4096)|format/borrowed/32)$"
     )
     command = ["cargo", "bench", "--locked", "--bench", "hex", "--bench", "check", "--bench", "format"]
     env = dict(os.environ, CRITERION_HOME=str(results))
     # Build both before timing. Reversing order helps reveal drift on hosted runners.
-    for checkout in (baseline, candidate):
-        subprocess.run(command + ["--no-run"], cwd=checkout, env=env, check=True)
+    with (results / "binary-sizes.txt").open("w") as sizes:
+        for checkout in (baseline, candidate):
+            built = subprocess.check_output(command + ["--no-run", "--message-format=json"],
+                                            cwd=checkout, env=env, text=True)
+            for line in built.splitlines():
+                artifact = json.loads(line)
+                if artifact.get("executable") and "bench" in artifact["target"]["kind"]:
+                    subprocess.run(["size", artifact["executable"]], stdout=sizes, check=True)
     for checkout, label in ((baseline, "base1"), (candidate, "head1"),
                             (candidate, "head2"), (baseline, "base2")):
         args = ["--", cases, "--warm-up-time", "0.2", "--measurement-time", "1",
@@ -55,7 +62,7 @@ def main():
         rows.append(f"| {case.relative_to(results)} | " + " | ".join(f"{v:.3f}" for v in values) + " |")
     if len(rows) == 2:
         raise RuntimeError("no comparison cases ran")
-    report = "\n".join(rows) + "\n"
+    report = f"### Bench LTO {os.environ.get('CARGO_PROFILE_BENCH_LTO', 'default')}\n\n" + "\n".join(rows) + "\n"
     (results / "comparison.md").write_text(report)
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as out:

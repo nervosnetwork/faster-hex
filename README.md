@@ -37,7 +37,10 @@ and offers explicit lowercase/uppercase policies through `hex_decode_with_case`.
 For a fixed hash, `hex_decode_array::<32>` returns an owned array without heap
 allocation. For logging or an existing text writer, `Hex::new(&bytes)` formats
 directly, including a prefix with `{:#x}`, without a temporary hex string. Use
-`hex_append` to reuse a `String`'s capacity across calls.
+`Hex::new(&bytes).leading_digits(7)` to display a seven-digit abbreviation.
+`hex_append` and `hex_decode_append` reuse an existing `String` or `Vec<u8>`.
+`hex_validate` checks a complete sequence of byte pairs and reports the first
+invalid byte. Use `hex_check` when checking individual digits of any length.
 
 The default features are `std` and `serde`. Set `default-features = false` for a
 dependency-free core. Enable `alloc` for owned output or `heapless-09` for

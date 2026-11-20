@@ -55,6 +55,21 @@ fn formatting(c: &mut Criterion) {
         });
     }
     group.finish();
+    let hash = support::bytes(32);
+    let mut output = String::with_capacity(64);
+    c.bench_function("format/leading_digits/7", |b| {
+        b.iter(|| {
+            output.clear();
+            write!(
+                output,
+                "{}",
+                Hex::new(black_box(&hash)).leading_digits(black_box(7))
+            )
+            .unwrap();
+            black_box(output.as_str());
+        });
+        assert_eq!(output, hex::encode(&hash)[..7]);
+    });
 }
 
 criterion_group!(benches, formatting);

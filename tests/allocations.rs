@@ -140,6 +140,11 @@ fn documented_allocation_free_operations_remain_allocation_free() {
         assert_eq!(suffix, expected.len());
         assert_eq!(text, format!("前缀:{expected}"));
         assert_eq!(count, 0);
+        let mut dst = Vec::with_capacity(bytes.len());
+        let (appended, count) =
+            measure(|| faster_hex::hex_decode_append(expected.as_bytes(), &mut dst));
+        assert_eq!(appended.unwrap(), bytes);
+        assert_eq!(count, 0);
         let (error, count) = measure(|| faster_hex::hex_decode_vec(b"g"));
         assert_eq!(error, Err(faster_hex::Error::OddLength));
         assert_eq!(count, 0);

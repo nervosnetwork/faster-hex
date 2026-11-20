@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add `hex_decode_append` to decode into an existing vector while preserving
+  its contents and length on errors.
+- Add `Hex::leading_digits` for abbreviated identifiers and `hex_validate`
+  to check complete byte pairs with byte-position diagnostics.
+
 ## 2.0.0
 
 - Replace the `heapless-08` feature and `heapless_08` module with `heapless-09`

@@ -315,7 +315,11 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
     let table = _mm256_broadcastsi128_si256(_mm_loadu_si128(table.as_ptr().cast()));
     let (blocks, tail) = src.as_chunks::<32>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
+    let outputs = dst.as_chunks_mut::<64>().0;
+    if let ([input], [], [output]) = (blocks, tail, &mut *outputs) {
+        return encode_avx2_32(input, output, table);
+    }
+    for (input, output) in blocks.iter().zip(outputs) {
         encode_avx2_32(input, output, table);
     }
     if !tail.is_empty() {
@@ -399,8 +403,20 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
-    let (batches, rest) = src.as_chunks::<32>();
-    let (outputs, remaining) = dst.as_chunks_mut::<64>();
+    if src.len() <= 32 {
+        // One or two vector loads cover everything through a 256-bit hash.
+        if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
+            encode_neon_16(input, output, table);
+        }
+        if src.len() > 16 {
+            if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+                encode_neon_16(input, output, table);
+            }
+        }
+        return;
+    }
+    let (batches, rest) = src.as_chunks::<64>();
+    let (outputs, remaining) = dst.as_chunks_mut::<128>();
     for (input, output) in batches.iter().zip(outputs) {
         for (input, output) in input
             .as_chunks::<16>()

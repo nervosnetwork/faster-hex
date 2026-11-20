@@ -148,6 +148,29 @@ fn vectors_keep_slice_decoder_error_precedence_and_grammar() {
     }
 }
 
+#[cfg(feature = "alloc")]
+#[test]
+fn append_commits_only_the_new_suffix_and_can_retry_after_a_late_error() {
+    use faster_hex::hex_decode_append;
+    let mut dst = vec![0xfe];
+    assert!(hex_decode_append(b"", &mut dst).unwrap().is_empty());
+    assert_eq!(hex_decode_append(b"!", &mut dst), Err(Error::OddLength));
+    for size in [32, 1024, 1025, 4096] {
+        let mut input = b"aB".repeat(size);
+        let last = input.len() - 1;
+        input[last] = 0xff;
+        assert!(matches!(hex_decode_append(&input, &mut dst),
+            Err(Error::InvalidChar { index, byte: 0xff, .. }) if index == last));
+        assert_eq!(dst, [0xfe]);
+        input[last] = b'B';
+        let suffix = hex_decode_append(&input, &mut dst).unwrap();
+        assert_eq!(suffix, vec![0xab; size]);
+        suffix[0] = 0;
+        assert_eq!(&dst[..2], &[0xfe, 0]);
+        dst.truncate(1);
+    }
+}
+
 fn owned_block_errors<const N: usize>() {
     let mut input = vec![b'1'; N * 2];
     for (case, invalid) in [
@@ -202,6 +225,9 @@ proptest::proptest! {
         for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
             let mut output = vec![0; src.len() / 2];
             let expected = faster_hex::hex_decode_with_case(&src, &mut output, case).map(|bytes| bytes.to_vec());
+            if case == CheckCase::None {
+                prop_assert_eq!(faster_hex::hex_validate(&src), expected.as_ref().map(|_| ()).map_err(|e| *e));
+            }
             #[cfg(feature = "alloc")]
             prop_assert_eq!(faster_hex::hex_decode_vec_with_case(&src, case), expected.clone());
             let array = hex_decode_array_with_case::<32>(&src, case);

@@ -82,6 +82,37 @@ fn empty_sign_prefix_and_zero_padding_are_explicit() {
     assert_eq!(format!("{hex:.0}"), "ab");
 }
 
+#[test]
+fn leading_digits_clamp_and_preserve_flags_across_chunk_boundaries() {
+    let bytes: Vec<_> = (0..520).map(|i| i as u8).collect();
+    let encoded = hex::encode(&bytes);
+    for count in [
+        0,
+        1,
+        2,
+        7,
+        255,
+        256,
+        257,
+        1023,
+        1024,
+        1025,
+        1039,
+        1040,
+        usize::MAX,
+    ] {
+        let view = Hex::new(&bytes).leading_digits(count);
+        let expected = &encoded[..count.min(encoded.len())];
+        assert_eq!(format!("{view:x}"), expected);
+        assert_eq!(format!("{view}"), expected);
+        let upper = expected.to_ascii_uppercase();
+        assert_eq!(
+            format!("{view:💠^+#12.1X}"),
+            format!("{:💠^+#12.1X}", Digits(&upper))
+        );
+    }
+}
+
 struct FixedWriter {
     bytes: [u8; 1100],
     len: usize,
@@ -175,6 +206,19 @@ fn writes_into_fixed_storage_without_alloc() {
     write!(writer, "hash={VIEW:#X}, again={VIEW}").unwrap();
     assert_eq!(writer.as_str(), "hash=0x00ABCD, again=00abcd");
     assert!(!writer.failed);
+}
+
+#[test]
+fn an_abbreviated_view_propagates_writer_errors_at_the_last_nibble() {
+    let bytes = [0xab; 513];
+    let view = Hex::new(&bytes).leading_digits(1025);
+    for limit in [0, 1, 1023, 1024, 1025] {
+        let mut writer = FixedWriter::new(limit);
+        writer.accept_partial = true;
+        assert_eq!(write!(writer, "{view}").is_ok(), limit == 1025);
+        assert_eq!(writer.as_str(), &hex::encode(bytes)[..limit]);
+        assert!(!writer.called_after_error);
+    }
 }
 
 #[test]

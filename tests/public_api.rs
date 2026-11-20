@@ -94,6 +94,21 @@ fn errors_have_stable_precedence_and_do_not_write() {
 }
 
 #[test]
+fn whole_input_validation_reports_the_first_invalid_byte() {
+    use faster_hex::hex_validate;
+    assert_eq!(hex_validate(b""), Ok(()));
+    assert_eq!(hex_validate(b"!ab"), Err(Error::OddLength));
+    let mut text = b"aF".repeat(4096);
+    assert_eq!(hex_validate(&text), Ok(()));
+    for index in [0, 1, 63, 64, 1023, 1024, 8190] {
+        text[index] = 0xff;
+        text[index + 1] = b'!';
+        assert_invalid(hex_validate(&text).unwrap_err(), index, 0xff);
+        text[index..=index + 1].copy_from_slice(b"aF");
+    }
+}
+
+#[test]
 #[cfg(feature = "defmt-03")]
 fn defmt_formats_on_host_without_an_embedded_logger() {
     let error = hex_decode(b"0g", &mut [0]).unwrap_err();
