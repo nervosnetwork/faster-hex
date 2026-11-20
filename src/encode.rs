@@ -314,49 +314,34 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     }
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
     let table = _mm256_broadcastsi128_si256(_mm_loadu_si128(table.as_ptr().cast()));
-    // Leave one full vector for the final store. For an unaligned length it
-    // overlaps the previous store with the same digits.
-    let blocks = src[..src.len() - 1].as_chunks::<32>().0;
+    let (blocks, tail) = src.as_chunks::<32>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
-        encode_avx2_32(input, output, table, true);
+        encode_avx2_32(input, output, table);
     }
-    if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
-        encode_avx2_32(input, output, table, false);
+    if !tail.is_empty() {
+        if let (Some(input), Some(output)) = (src.last_chunk::<32>(), dst.last_chunk_mut::<64>()) {
+            encode_avx2_32(input, output, table);
+        }
     }
 }
 
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn encode_avx2_32(
-    src: &[u8; 32],
-    dst: &mut [MaybeUninit<u8>; 64],
-    table: __m256i,
-    bulk: bool,
-) {
-    let mut bytes = _mm256_loadu_si256(src.as_ptr().cast());
-    if bulk {
-        // Quarters 0, 2, 1, 3 yield consecutive output lanes after unpacking.
-        bytes = _mm256_permute4x64_epi64::<0xd8>(bytes);
-    }
+unsafe fn encode_avx2_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], table: __m256i) {
+    let bytes = _mm256_loadu_si256(src.as_ptr().cast());
     let mask = _mm256_set1_epi8(15);
     let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), mask);
     let low = _mm256_and_si256(bytes, mask);
     let a = _mm256_unpacklo_epi8(high, low);
     let b = _mm256_unpackhi_epi8(high, low);
-    // The final (often only) vector can unpack immediately after the load.
-    let (a, b) = if bulk {
-        (a, b)
-    } else {
-        (
-            _mm256_permute2x128_si256::<0x20>(a, b),
-            _mm256_permute2x128_si256::<0x31>(a, b),
-        )
-    };
-    _mm256_storeu_si256(dst.as_mut_ptr().cast(), _mm256_shuffle_epi8(table, a));
+    _mm256_storeu_si256(
+        dst.as_mut_ptr().cast(),
+        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x20>(a, b)),
+    );
     _mm256_storeu_si256(
         dst.as_mut_ptr().add(32).cast(),
-        _mm256_shuffle_epi8(table, b),
+        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x31>(a, b)),
     );
 }
 
