@@ -638,24 +638,22 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
 
 #[inline(always)]
 fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
-    const BLOCK: usize = 256;
     let table = case.decode_table();
-    // A malformed first pair can be reported before any SIMD rescan.
-    if src.len() >= 16 {
+    let skipped = if src.len() > 64 {
+        // Long inputs keep a single scan in 64-byte blocks.
+        valid_block_prefix::<64>(src, case)
+    } else if src.len() >= 16 {
+        // A hash needs at most four 16-byte probes. An invalid first pair
+        // can be reported before any of them.
         for (index, &byte) in src[..2].iter().enumerate() {
             if table[usize::from(byte)] == NIL {
                 return Err(Error::InvalidChar { index, byte });
             }
         }
-    }
-    // Check long runs in 256-byte blocks to amortize SIMD dispatch. Then
-    // narrow the first rejected block to 16 bytes before the scalar scan.
-    let skipped = if src.len() > BLOCK {
-        valid_block_prefix::<BLOCK>(src, case)
+        valid_block_prefix::<16>(src, case)
     } else {
         0
     };
-    let skipped = skipped + valid_block_prefix::<16>(&src[skipped..], case);
     for (offset, &byte) in src[skipped..].iter().enumerate() {
         let index = skipped + offset;
         if table[usize::from(byte)] == NIL {
