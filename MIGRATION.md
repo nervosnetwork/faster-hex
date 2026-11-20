@@ -22,8 +22,14 @@ assert_eq!(text.as_str(), "ab01");
 ```
 
 The `defmt-03` feature requires `defmt` 0.3.100 or later in the 0.3 series
-to format these strings when both features are enabled. For a 1.0 consumer
-using only `std`, updating the `faster-hex` version is sufficient.
+to format these strings when both features are enabled.
+
+Even if `std` is the only `faster-hex` feature you enable, Cargo considers
+the optional `defmt` dependency when generating `Cargo.lock`. The `std`
+feature enables `alloc`, which forwards `defmt?/alloc`. A pin such as
+`defmt = "=0.3.10"` therefore prevents Cargo from resolving `faster-hex` 2.0.
+Change the pin to a compatible requirement such as `defmt = "0.3.100"`.
+If another crate imposes the pin, update it to a version that allows that range.
 
 ## Migrating from 0.10 to 1.0
 
