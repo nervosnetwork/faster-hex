@@ -125,44 +125,58 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
 /// ```
 #[inline]
 pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        match crate::vectorization_support() {
-            crate::Vectorization::AVX512 => {
-                // SAFETY: Dispatch checks AVX-512BW and its OS state.
-                unsafe { x86::hex_check_avx512_with_case(src, check_case) }
-            }
-            crate::Vectorization::AVX2 => {
-                // SAFETY: Dispatch guarantees AVX2; the checker bounds every load.
-                unsafe { x86::hex_check_avx2_with_case(src, check_case) }
-            }
-            crate::Vectorization::SSE41 => {
-                // SAFETY: Dispatch checks SSE4.1; the checker bounds every load.
-                unsafe { x86::hex_check_sse_with_case(src, check_case) }
-            }
-            crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
-        }
-    }
+    let check = digit_checker(check_case);
+    check(src)
+}
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        match crate::vectorization_support() {
-            crate::Vectorization::Neon => {
-                // SAFETY: Dispatch guarantees NEON; the checker bounds every load.
-                unsafe { aarch64::hex_check_neon_with_case(src, check_case) }
+// A diagnostic scan uses the same case policy and CPU backend for every block.
+#[inline]
+fn digit_checker(check_case: CheckCase) -> impl Fn(&[u8]) -> bool {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+    let backend = crate::vectorization_support();
+    move |src| {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            match backend {
+                crate::Vectorization::AVX512 => {
+                    // SAFETY: Dispatch checks AVX-512BW and its OS state.
+                    unsafe { x86::hex_check_avx512_with_case(src, check_case) }
+                }
+                crate::Vectorization::AVX2 => {
+                    // SAFETY: Dispatch guarantees AVX2; the checker bounds every load.
+                    unsafe { x86::hex_check_avx2_with_case(src, check_case) }
+                }
+                crate::Vectorization::SSE41 => {
+                    // SAFETY: Dispatch checks SSE4.1; the checker bounds every load.
+                    unsafe { x86::hex_check_sse_with_case(src, check_case) }
+                }
+                crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
             }
-            crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
         }
-    }
 
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    hex_check_fallback_with_case(src, check_case)
+        #[cfg(target_arch = "aarch64")]
+        {
+            match backend {
+                crate::Vectorization::Neon => {
+                    // SAFETY: Dispatch guarantees NEON; the checker bounds every load.
+                    unsafe { aarch64::hex_check_neon_with_case(src, check_case) }
+                }
+                crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
+            }
+        }
+
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+        hex_check_fallback_with_case(src, check_case)
+    }
 }
 
 /// Check if the input is valid hex bytes slice with case check
 pub(crate) fn hex_check_fallback_with_case(src: &[u8], check_case: CheckCase) -> bool {
-    let table = check_case.decode_table();
-    src.iter().all(|&byte| table[usize::from(byte)] != NIL)
+    match check_case {
+        CheckCase::None => src.iter().all(|&x| UNHEX[x as usize] != NIL),
+        CheckCase::Lower => src.iter().all(|&x| UNHEX_LOWER[x as usize] != NIL),
+        CheckCase::Upper => src.iter().all(|&x| UNHEX_UPPER[x as usize] != NIL),
+    }
 }
 
 /// Which ASCII letter cases are accepted when checking or decoding hex.
@@ -663,12 +677,11 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     Ok(())
 }
 
-#[inline]
+// Decoding and validation share one copy of each diagnostic scan.
+#[inline(never)]
 fn valid_block_prefix<const N: usize>(src: &[u8], case: CheckCase) -> usize {
-    src.chunks_exact(N)
-        .take_while(|chunk| hex_check_with_case(chunk, case))
-        .count()
-        * N
+    let check = digit_checker(case);
+    src.chunks_exact(N).take_while(|chunk| check(chunk)).count() * N
 }
 
 // Internal conversion only. Even if miscalled with short input, never pass an
