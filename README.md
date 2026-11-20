@@ -195,9 +195,10 @@ and a shared `CRITERION_HOME` for reports. Reusing a build directory across copi
 of the same package can select stale artifacts. Keep compiler flags, features
 and the dependency lockfile identical on both sides.
 
-The four benchmark targets cover conversion, arrays and strings (`hex`), validation
-and invalid-byte positions (`check`), JSON/Postcard adapters (`serde`), and borrowed
-formatting (`format`). Run a focused alias during development; the full matrix
+The benchmark targets cover conversion, arrays and strings (`hex`), validation
+and invalid-byte positions (`check`), JSON/Postcard adapters (`serde`), borrowed
+formatting (`format`), and Git abbreviations written to a slice or formatter
+(`prefix`). Run a focused alias during development. The full matrix
 uses Criterion's longer default sampling. CI runs `cargo bench --all-features
 --benches -- --test` to execute cases without collecting timings. SIMD alignment
 and boundary correctness belong to the forced-backend and guard-page tests.

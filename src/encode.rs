@@ -414,8 +414,8 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
-    if src.len() <= 32 {
-        // One or two vector loads cover everything through a 256-bit hash.
+    if matches!(src.len(), 16 | 32) {
+        // Complete vectors cover these sizes without a tail.
         if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
             encode_neon_16(input, output, table);
         }

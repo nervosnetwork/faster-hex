@@ -1,5 +1,6 @@
 """Compare public codec and downstream workloads on one host with paired builds."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,10 +14,10 @@ import tempfile
 
 CASES = {
     *(f"encode/faster_hex/{n}" for n in (2, 4, 8, 20, 32, 64, 65, 256, 4096)),
-    *(f"decode/faster_hex_mixed/{n}" for n in (2, 20, 32, 4096)),
+    *(f"decode/faster_hex_mixed/{n}" for n in (2, 4, 20, 32, 4096)),
     *(f"rotating_encode/faster_hex/{n}" for n in (8, 32, 64)),
     "rotating_decode/faster_hex/32", "decode_array/faster_hex/32", "format/borrowed/32",
-    *(f"invalid/decode/{position}/{n}" for position in ("first", "last") for n in (32, 4096)),
+    *(f"invalid/decode/{position}/{n}" for position in ("first", "last") for n in (1, 32, 4096)),
     *(f"serde_json/serialize_reuse/{n}" for n in (10, 32, 65, 66, 4096)),
     *(f"serde_json/deserialize/{n}" for n in (32, 4096, 65536)),
     *(f"git_prefix/{operation}/{size}b_{digits}digits" for operation in ("buffer", "display")
@@ -59,8 +60,46 @@ def slower(base, head):
             > max(v["confidence_interval"]["upper_bound"] for v in base))
 
 
-def main():
-    baseline, candidate, results = (Path(arg).resolve() for arg in sys.argv[1:])
+def case_filter(cases):
+    return "^(" + "|".join(re.escape(case) for case in sorted(cases)) + ")$"
+
+
+def build(checkout, work, role, env, sizes):
+    # Cargo's package identity includes the source path. Compile both revisions
+    # here so moving identical source cannot change symbol hashes or code layout.
+    source = work / "source"
+    shutil.copytree(checkout, source, copy_function=shutil.copy,
+                    ignore=shutil.ignore_patterns(".git", "target", "__pycache__"))
+    if role == "head":
+        subprocess.run(["cargo", "clean", "--package", "faster-hex", "--profile", "bench"],
+                       cwd=source, env=env, check=True)
+    args = ["cargo", "bench", "--locked", "--no-run", "--message-format=json"]
+    for name in ("hex", "check", "format", "serde", "prefix"):
+        args.extend(["--bench", name])
+    built = subprocess.check_output(args, cwd=source, env=env, text=True)
+    binaries = []
+    digests = {}
+    folder = work / role
+    folder.mkdir()
+    for artifact in map(json.loads, built.splitlines()):
+        if not artifact.get("executable") or "bench" not in artifact["target"]["kind"]:
+            continue
+        exe = Path(shutil.copy2(artifact["executable"], folder / artifact["target"]["name"]))
+        binaries.append(exe)
+        digest = hashlib.sha256(exe.read_bytes()).hexdigest()
+        print(f"{role}/{exe.name} {digest}", file=sizes, flush=True)
+        subprocess.run(["size", exe], stdout=sizes, check=True)
+        listing = subprocess.check_output([exe, "--list", case_filter(CASES)], cwd=work, env=env, text=True)
+        for line in listing.splitlines():
+            if line.endswith(": benchmark"):
+                digests[line.removesuffix(": benchmark")] = digest
+    if digests.keys() != CASES:
+        raise ValueError(f"{role}: missing {sorted(CASES - digests.keys())}, unexpected {sorted(digests.keys() - CASES)}")
+    shutil.rmtree(source)
+    return sorted(binaries), digests
+
+
+def compare(baseline, candidate, results, work):
     results.mkdir(parents=True, exist_ok=True)
     samples = Path(tempfile.mkdtemp(prefix="samples-", dir=results))
     prepare_checkouts(baseline, candidate)
@@ -75,27 +114,19 @@ def main():
     print("".join(metadata), flush=True)
 
     pin = ["taskset", "-c", str(min(os.sched_getaffinity(0)))] if linux else []
-    command = ["cargo", "bench", "--locked", "--bench", "hex", "--bench", "check",
-               "--bench", "format", "--bench", "serde", "--bench", "prefix"]
-    env = dict(os.environ, CRITERION_HOME=str(samples), CARGO_TARGET_DIR="target")
+    env = dict(os.environ, CRITERION_HOME=str(samples), CARGO_TARGET_DIR=str(candidate / "target/native-comparison"))
     with (results / "binary-sizes.txt").open("w") as sizes:
-        for checkout in (baseline, candidate):
-            built = subprocess.check_output(command + ["--no-run", "--message-format=json"],
-                                            cwd=checkout, env=env, text=True)
-            for line in built.splitlines():
-                artifact = json.loads(line)
-                if artifact.get("executable") and "bench" in artifact["target"]["kind"]:
-                    print(f"{checkout.name}/{artifact['target']['name']}", file=sizes, flush=True)
-                    subprocess.run(["size", artifact["executable"]], stdout=sizes, check=True)
+        base_bins, base_hashes = build(baseline, work, "base", env, sizes)
+        head_bins, head_hashes = build(candidate, work, "head", env, sizes)
 
     def measure(order, cases, seconds, count):
-        pattern = "^(" + "|".join(re.escape(case) for case in sorted(cases)) + ")$"
         runs = {}
         for label in order:
-            checkout = baseline if label.startswith("base") else candidate
-            args = ["--", pattern, "--warm-up-time", "0.2", "--measurement-time", str(seconds),
+            binaries = base_bins if label.startswith("base") else head_bins
+            args = ["--bench", case_filter(cases), "--warm-up-time", "0.2", "--measurement-time", str(seconds),
                     "--sample-size", str(count), "--noplot", "--save-baseline", label]
-            subprocess.run(pin + command + args, cwd=checkout, env=env, check=True)
+            for exe in binaries:
+                subprocess.run(pin + [exe] + args, cwd=work, env=env, check=True)
             runs[label] = estimates(samples, label, cases)
         return runs
 
@@ -107,14 +138,20 @@ def main():
     suspect = {case for case in CASES if regressed(case, 1, 2)}
     if suspect:
         runs.update(measure(("head3", "base3", "base4", "head4"), suspect, 2, 40))
-    confirmed = {case for case in suspect if regressed(case, 3, 4)}
+    repeated = {case for case in suspect if regressed(case, 3, 4)}
+    same_binary = {case for case in repeated if base_hashes[case] == head_hashes[case]}
+    confirmed = repeated - same_binary
 
     rows = [f"### Bench LTO {os.environ.get('CARGO_PROFILE_BENCH_LTO', 'default')}", "",
             "| Case (ns) | Base 1 | Head 1 | Base 2 | Head 2 | Retest |",
             "|---|---:|---:|---:|---:|---|"]
     for case in sorted(CASES):
         values = [runs[label][case]["point_estimate"] for label in ("base1", "head1", "base2", "head2")]
-        status = "confirmed slower" if case in confirmed else "not confirmed" if case in suspect else ""
+        status = ""
+        if case in suspect:
+            status = "confirmed slower" if case in confirmed else "not confirmed"
+        if case in same_binary:
+            status = "same executable, timing drift"
         rows.append(f"| {case} | " + " | ".join(f"{v:.3f}" for v in values) + f" | {status} |")
     report = "\n".join(rows) + "\n"
     (results / "comparison.md").write_text(report)
@@ -123,6 +160,12 @@ def main():
             out.write(report)
     if confirmed:
         raise SystemExit("Confirmed slower in both experiments: " + ", ".join(sorted(confirmed)))
+
+
+def main():
+    baseline, candidate, results = (Path(arg).resolve() for arg in sys.argv[1:])
+    with tempfile.TemporaryDirectory(prefix="faster-hex-bench-") as work:
+        compare(baseline, candidate, results, Path(work))
 
 
 if __name__ == "__main__":

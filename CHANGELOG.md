@@ -7,7 +7,8 @@
 - Add `Hex::leading_digits` for abbreviated identifiers. Format the view or
   call `encode_to` to write exactly the selected lowercase digits into a buffer.
 - Add `hex_validate` to check complete byte pairs with byte-position diagnostics.
-- Encode 16–32 byte inputs with one or two NEON vectors.
+- Encode 16- and 32-byte inputs with one or two NEON vectors. Short scalar
+  decodes combine nibble validity into one check before writing the result.
   See [native measurements](OPTIMIZATION.md).
 
 ## 2.0.0

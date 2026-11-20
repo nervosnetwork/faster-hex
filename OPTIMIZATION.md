@@ -1,14 +1,13 @@
 # Native optimization results
 
-The baseline is faster-hex 2.0.0. Sizes count binary bytes, so a 32-byte hash
-encodes to or decodes from 64 hex digits. Measurements use the public APIs.
-[Measured revision](https://github.com/nervosnetwork/faster-hex/commit/ec29e58b3e364d75e46cd158f64418c12e8f3388)
-and [native x86 comparison](https://github.com/nervosnetwork/faster-hex/actions/runs/44690188566).
+Sizes count binary bytes. A 32-byte hash encodes to 64 hex digits. The codec
+comparisons use the public APIs and the released 2.0.0 as the baseline. The
+prefix comparisons also run against the branch before adding `encode_to`.
 
 ## Encoding on AArch64
 
-One or two 16-byte NEON loads cover inputs from 16 through 32 bytes. Larger
-inputs keep their existing 64-byte loop and tail handling. Reducing the bulk
+One or two 16-byte NEON loads cover complete 16- and 32-byte inputs. Other
+lengths use the existing block and tail handling. Reducing the bulk
 loop's batch size in an earlier trial slowed 4 KiB encoding by about 10% on
 the M5 Pro.
 
@@ -51,8 +50,10 @@ Cargo features, the SSE4.1 and AVX2 encoder instructions matched 2.0.0.
 The error path's instruction sequence also matched apart from the source
 location passed to a bounds-check failure.
 
-The final native Linux runs timed rejection of the last digit of a 4 KiB
-payload as follows. Each value is in nanoseconds per call.
+The native Linux comparisons for the earlier SIMD changes timed rejection of
+the last digit of a 4 KiB payload in nanoseconds per call.
+[Measured revision](https://github.com/nervosnetwork/faster-hex/commit/ec29e58b3e364d75e46cd158f64418c12e8f3388)
+and [native comparison](https://github.com/nervosnetwork/faster-hex/actions/runs/44690188566).
 
 | CPU | Default 2.0.0 | Default candidate | ThinLTO 2.0.0 | ThinLTO candidate |
 |---|---:|---:|---:|---:|
@@ -75,6 +76,46 @@ formatting case writes into a reusable `String`.
 `Hex::new(&hash).leading_digits(7)` formatted a seven-digit prefix in 6.27 ns.
 The validator adds an even-length check and reports the first invalid byte.
 
+## Git prefixes and CKB bytes
+
+`gix_hash::Prefix::hex_to_buf` can receive a buffer exactly as long as the
+abbreviation. Seven digits need three complete bytes and the high nibble of
+the fourth. `Hex::new(bytes).leading_digits(7).encode_to(dst)` writes directly
+into those seven slots and returns their string view. The caller previously
+selected the complete pairs, wrote the last digit and validated the resulting
+UTF-8. A short buffer now reports the required size before writing any bytes.
+[gitoxide's buffer implementation](https://github.com/GitoxideLabs/gitoxide/blob/a7e739482cd6fe357ca8ebdbf82da5f1945e3e38/gix-hash/src/prefix.rs#L41-L64).
+
+The Git display formatter already owns enough stack space for the full ID.
+Its existing full encode, slice and `write_str` sequence is a separate
+workload. Substituting the buffer API there cost 3–9% on the M5 Pro in the
+reverse-order retest of five display cases. On a Xeon 6975P-C the seven-digit
+display cases cost 30–35% in the default build, even as the seven-digit buffer
+cases improved by 62%. The final downstream experiment
+uses the new method only in `Prefix::hex_to_buf`. A runtime tail option in
+the shared encoder also took a hot 32-byte call from 1.37 to 2.45 ns. The
+full encoder now runs its original byte-pair kernels independently of the
+odd-prefix operation.
+[gitoxide's formatter](https://github.com/GitoxideLabs/gitoxide/blob/a7e739482cd6fe357ca8ebdbf82da5f1945e3e38/gix-hash/src/oid.rs#L49-L59)
+and [paired native experiment](https://github.com/nervosnetwork/faster-hex/actions/runs/44721581787).
+
+In the real `gix-hash` crate on an M5 Pro, the seven-digit `Prefix::hex_to_buf`
+call took 4.37–4.56 ns with the previous code and 1.50–1.52 ns using this
+method. Those ranges cover two measurements each of SHA-1 and SHA-256 in both
+profiles. At full length, the same buffer method took 1.39–1.44 ns, down
+from 4.67–4.81 ns for SHA-1 and 3.44–3.65 ns for SHA-256.
+
+CKB's `JsonBytes` visitor checks the protocol's `0x` prefix and takes
+ownership of the result. In a local comparison using its real type and the
+same JSON error handling, decoding into a fresh `Vec` with `hex_decode_vec`
+took 736–749 ns at 4 KiB, against 770–803 ns for the existing slice decoder
+with a freshly allocated destination. At 64 KiB the corresponding ranges
+were 12.15–12.23 and 12.63–12.81 µs. An existing destination with spare
+capacity has a different entry point, `hex_decode_append`. Streaming output
+through Serde's `collect_str` also added work on small CKB hashes, so the
+serializer still uses a stack buffer through 65 bytes.
+[CKB's JSON visitor](https://github.com/nervosnetwork/ckb/blob/2061bc092a5dd447a741fad03b02628203b35e96/util/jsonrpc-types/src/bytes.rs#L85-L106).
+
 ## Reproducing the measurements
 
 From a branch containing the comparison workflow, run
@@ -83,15 +124,22 @@ From a branch containing the comparison workflow, run
 gh workflow run rust.yml --ref YOUR_BRANCH -f benchmark_base=v2.0.0
 ```
 
-Each runner uses Rust 1.95.0, the same dependency lock and 2.0.0's Criterion
-timers. Each profile runs baseline, candidate, candidate, baseline on one
-host. The rotating case cycles through 4,096 distinct hashes. The artifacts
-include the CPU model, commit IDs, raw samples, both paired estimates and
-sizes of the linked benchmark executables. Hosted runner CPU models vary.
-Dedicated Core i9-14900K measurements remain open.
+Each runner uses Rust 1.95.0, a shared dependency lock and matching Criterion
+workloads. Both revisions build at the same path to keep Cargo's package
+identity stable. The runner saves each executable and its SHA-256 digest
+before rebuilding the package. Default and ThinLTO builds each run baseline, candidate, candidate,
+baseline on one CPU model. The rotating case cycles through 4,096 distinct
+hashes. The reports cover raw encoders and decoders, error positions, Git
+prefixes and JSON at both sides of the 65-byte stack-buffer boundary.
+The artifacts include the CPU model, commit IDs, raw samples and sizes of the
+linked benchmark executables. A suspected slowdown triggers longer samples in
+the opposite order. It is reported as a code regression only when both
+experiments separate the revisions' 95% intervals and their executables
+differ. Timing differences between byte-identical binaries are reported as
+drift. Hosted runner CPU models vary.
 
-For a local comparison, use two disposable checkouts. The script copies the
-baseline's benchmarks and lockfile into the candidate checkout.
+For a local comparison, use two disposable checkouts. The script writes the
+shared benchmark harness and dependency lock to those checkouts.
 
 ```sh
 for lto in false thin; do
@@ -99,11 +147,10 @@ for lto in false thin; do
 done
 ```
 
-To time the three new APIs, run the candidate's own benchmarks from a clean
-checkout.
+To time the new operations from a clean checkout, run
 
 ```sh
-cargo bench --bench hex --bench check --bench format -- \
-  '^(decode_append/.+/(32|4096)|check_valid/(either|byte_pairs)/(32|4096)|format/leading_digits/7)$' \
+cargo bench --bench hex --bench check --bench format --bench prefix -- \
+  '^(decode_append/.+/(32|4096)|check_valid/(either|byte_pairs)/(32|4096)|format/leading_digits/7|git_prefix/.+)$' \
   --warm-up-time 0.2 --measurement-time 2 --sample-size 40 --noplot
 ```
