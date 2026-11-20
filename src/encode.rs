@@ -318,23 +318,24 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     // overlaps the previous store with the same digits.
     let blocks = src[..src.len() - 1].as_chunks::<32>().0;
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
-        encode_avx2_32::<true>(input, output, table);
+        encode_avx2_32(input, output, table, true);
     }
     if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
-        encode_avx2_32::<false>(input, output, table);
+        encode_avx2_32(input, output, table, false);
     }
 }
 
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn encode_avx2_32<const BULK: bool>(
+unsafe fn encode_avx2_32(
     src: &[u8; 32],
     dst: &mut [MaybeUninit<u8>; 64],
     table: __m256i,
+    bulk: bool,
 ) {
     let mut bytes = _mm256_loadu_si256(src.as_ptr().cast());
-    if BULK {
+    if bulk {
         // Quarters 0, 2, 1, 3 yield consecutive output lanes after unpacking.
         bytes = _mm256_permute4x64_epi64::<0xd8>(bytes);
     }
@@ -344,7 +345,7 @@ unsafe fn encode_avx2_32<const BULK: bool>(
     let a = _mm256_unpacklo_epi8(high, low);
     let b = _mm256_unpackhi_epi8(high, low);
     // The final (often only) vector can unpack immediately after the load.
-    let (a, b) = if BULK {
+    let (a, b) = if bulk {
         (a, b)
     } else {
         (
