@@ -396,11 +396,14 @@ unsafe fn encode_sse41_16(src: &[u8; 16], dst: &mut [MaybeUninit<u8>; 32], table
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
+    let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
+    let table = vld1q_u8(table.as_ptr());
+    if src.len() > 32 {
+        return encode_neon_bulk(src, dst, table);
+    }
     if src.len() < 8 {
         return hex_encode_custom_case_fallback(src, dst, upper_case);
     }
-    let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
-    let table = vld1q_u8(table.as_ptr());
     if src.len() < 16 {
         if let (Some(input), Some(output)) = (src.first_chunk::<8>(), dst.first_chunk_mut::<16>()) {
             encode_neon_8(input, output, table);
@@ -413,18 +416,21 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
-    if src.len() <= 32 {
-        // First and last vectors cover a short hash. Overlap writes the same digits.
-        if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
+    // First and last vectors cover a short hash. Overlap writes the same digits.
+    if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
+        encode_neon_16(input, output, table);
+    }
+    if src.len() > 16 {
+        if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
             encode_neon_16(input, output, table);
         }
-        if src.len() > 16 {
-            if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
-                encode_neon_16(input, output, table);
-            }
-        }
-        return;
     }
+}
+
+#[inline]
+#[target_feature(enable = "neon")]
+#[cfg(target_arch = "aarch64")]
+unsafe fn encode_neon_bulk(src: &[u8], dst: &mut [MaybeUninit<u8>], table: uint8x16_t) {
     let (batches, rest) = src.as_chunks::<64>();
     let (outputs, remaining) = dst.as_chunks_mut::<128>();
     for (input, output) in batches.iter().zip(outputs) {
@@ -444,9 +450,8 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     if !tail.is_empty() {
         // Re-encode the last complete block to cover a short tail. The overlap
         // writes the same bytes and never accesses outside either slice.
-        match (src.last_chunk::<16>(), dst.last_chunk_mut::<32>()) {
-            (Some(input), Some(output)) => encode_neon_16(input, output, table),
-            _ => hex_encode_custom_case_fallback(src, dst, upper_case),
+        if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+            encode_neon_16(input, output, table);
         }
     }
 }

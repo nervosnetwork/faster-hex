@@ -14,7 +14,7 @@ import tempfile
 from bench_linked import build_linked
 
 CASES = {
-    *(f"encode/faster_hex/{n}" for n in (2, 4, 8, 16, 20, 32, 64, 65, 256, 4096)),
+    *(f"encode/faster_hex/{n}" for n in (2, 4, 8, 16, 20, 32, 33, 48, 64, 65, 256, 4096)),
     *(f"decode/faster_hex_mixed/{n}" for n in (2, 4, 20, 32, 4096)),
     *(f"rotating_encode/faster_hex/{n}" for n in (8, 32, 64)),
     "rotating_decode/faster_hex/32", "decode_array/faster_hex/32",
