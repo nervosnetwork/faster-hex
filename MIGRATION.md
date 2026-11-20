@@ -21,15 +21,15 @@ let text: heapless::String<4> = hex_string(&[0xab, 1]).unwrap();
 assert_eq!(text.as_str(), "ab01");
 ```
 
-The `defmt-03` feature requires `defmt` 0.3.100 or later in the 0.3 series
-to format these strings when both features are enabled.
+If `std` is the only `faster-hex` feature you enable, you can keep an existing
+pin such as `defmt = "=0.3.10"`.
 
-Even if `std` is the only `faster-hex` feature you enable, Cargo considers
-the optional `defmt` dependency when generating `Cargo.lock`. The `std`
-feature enables `alloc`, which forwards `defmt?/alloc`. A pin such as
-`defmt = "=0.3.10"` therefore prevents Cargo from resolving `faster-hex` 2.0.
-Change the pin to a compatible requirement such as `defmt = "0.3.100"`.
-If another crate imposes the pin, update it to a version that allows that range.
+With `defmt-03` enabled, Cargo also considers the `defmt` 1.x requirement from
+`heapless` 0.9 when resolving the lockfile, even if `heapless-09` is disabled.
+In that case, loosen an old pin such as `defmt = "=0.3.10"` to `defmt = "0.3"`.
+Cargo can then select 0.3.100 or a later 0.3 release that shares the 1.x
+`Format` trait. If another crate imposes the pin, update it to a version that
+allows a compatible release.
 
 ## Migrating from 0.10 to 1.0
 

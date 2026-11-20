@@ -16,8 +16,7 @@ exclude = ["afl/*", "benches/*", "fuzz/*", "ci/*", ".github/*", ".cargo/*", ".gi
 all-features = true
 
 [dependencies]
-# 0.3.100 shares the defmt 1.x Format trait used by heapless 0.9.
-defmt = { version = "0.3.100", optional = true }
+defmt = { version = "0.3", optional = true }
 heapless = { version = "0.9.4", optional = true, default-features = false }
 serde = { version = "1.0", default-features = false, optional = true }
 

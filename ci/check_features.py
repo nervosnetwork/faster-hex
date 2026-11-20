@@ -53,3 +53,22 @@ with tempfile.TemporaryDirectory(prefix="faster-hex-features-") as temporary:
         if args.target:
             command += ["--target", args.target]
         subprocess.run(command, env=env, check=True)
+
+if args.target is None and not args.no_std_only:
+    # The matrix above resolves every optional root dependency into its lockfile.
+    # A separate consumer exercises a real std-only graph with an older defmt pin.
+    with tempfile.TemporaryDirectory(prefix="faster-hex-std-") as temporary:
+        project = Path(temporary) / "Cargo.toml"
+        project.write_text(f'''[package]
+name = "std-consumer"
+version = "0.0.0"
+edition = "2021"
+[lib]
+path = "lib.rs"
+[dependencies]
+faster-hex = {{ path = {json.dumps(str(root))}, default-features = false, features = ["std"] }}
+defmt = "=0.3.10"
+''')
+        project.with_name("lib.rs").write_text("pub use faster_hex::hex_string;\n")
+        print("Checking std with defmt pinned to 0.3.10", flush=True)
+        subprocess.run(["cargo", "check", "--manifest-path", str(project)], env=env, check=True)
