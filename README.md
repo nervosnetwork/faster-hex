@@ -36,11 +36,13 @@ and offers explicit lowercase/uppercase policies through `hex_decode_with_case`.
 
 For a fixed hash, `hex_decode_array::<32>` returns an owned array without heap
 allocation. For logging or an existing text writer, `Hex::new(&bytes)` formats
-directly, including a prefix with `{:#x}`, without a temporary hex string. Use
-`Hex::new(&bytes).leading_digits(7)` to display a seven-digit abbreviation.
-`hex_append` and `hex_decode_append` reuse an existing `String` or `Vec<u8>`.
-`hex_validate` checks a complete sequence of byte pairs and reports the first
-invalid byte. Use `hex_check` when checking individual digits of any length.
+directly, including a prefix with `{:#x}`, without a temporary hex string.
+`hex_append` reuses an existing `String`.
+
+On the development branch, `Hex::new(&bytes).leading_digits(7)` displays a
+seven-digit abbreviation and `hex_decode_append` decodes into an existing
+`Vec<u8>`. `hex_validate` checks complete byte pairs and reports the first
+invalid byte. Use `hex_check` to check individual digits of any length.
 
 The default features are `std` and `serde`. Set `default-features = false` for a
 dependency-free core. Enable `alloc` for owned output or `heapless-09` for
@@ -199,7 +201,8 @@ uses Criterion's longer default sampling. CI runs `cargo bench --all-features
 --benches -- --test` to execute cases without collecting timings. SIMD alignment
 and boundary correctness belong to the forced-backend and guard-page tests.
 
-Deferred work: [further optimization](OPTIMIZATION.md).
+For native measurements against 2.0.0 and the command to reproduce them, see
+[optimization results](OPTIMIZATION.md).
 
 ## License
 

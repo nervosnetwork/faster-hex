@@ -36,7 +36,9 @@ def main():
         r"|invalid/decode/(first|last)/(32|4096)|format/borrowed/32)$"
     )
     command = ["cargo", "bench", "--locked", "--bench", "hex", "--bench", "check", "--bench", "format"]
-    env = dict(os.environ, CRITERION_HOME=str(results))
+    # Cargo resolves this relative to each checkout, including when the caller
+    # normally points CARGO_TARGET_DIR at a shared build cache.
+    env = dict(os.environ, CRITERION_HOME=str(results), CARGO_TARGET_DIR="target")
     # Build both before timing. Reversing order helps reveal drift on hosted runners.
     with (results / "binary-sizes.txt").open("w") as sizes:
         for checkout in (baseline, candidate):
