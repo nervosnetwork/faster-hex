@@ -25,6 +25,7 @@ default = ["std", "serde"]
 std = ["alloc", "serde?/std"]
 alloc = ["defmt?/alloc"]
 serde = ["dep:serde", "serde/alloc", "alloc"]
+defmt = ["defmt-03"]
 defmt-03 = ["dep:defmt", "heapless?/defmt"]
 heapless-09 = ["dep:heapless"]
 

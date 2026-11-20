@@ -24,8 +24,10 @@ assert_eq!(text.as_str(), "ab01");
 If `std` is the only `faster-hex` feature you enable, you can keep an existing
 pin such as `defmt = "=0.3.10"`.
 
-With `defmt-03` enabled, Cargo also considers the `defmt` 1.x requirement from
-`heapless` 0.9 when resolving the lockfile, even if `heapless-09` is disabled.
+For logging with `defmt` 1.x, use `features = ["defmt"]` on `faster-hex`.
+Existing manifests can keep `features = ["defmt-03"]`. With either name, Cargo
+considers the `defmt` 1.x requirement from `heapless` 0.9 when resolving the
+lockfile, even if `heapless-09` is disabled.
 In that case, loosen an old pin such as `defmt = "=0.3.10"` to `defmt = "0.3"`.
 Cargo can then select 0.3.100 or a later 0.3 release that shares the 1.x
 `Format` trait. If another crate imposes the pin, update it to a version that

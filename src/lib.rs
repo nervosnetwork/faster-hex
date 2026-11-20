@@ -66,7 +66,7 @@
 //! | `std` | `alloc` and standard-library support in enabled dependencies |
 //! | `serde` | Serde adapters and `alloc`; also works without `std` |
 //! | `heapless-09` | Fixed-capacity strings using `heapless` 0.9, without requiring `alloc` |
-//! | `defmt-03` | `defmt` formatting for errors and case policies |
+//! | `defmt` (also `defmt-03`) | `defmt::Format` for [`Error`] and [`CheckCase`] |
 //!
 //! For example, enable Serde without the standard library:
 //!

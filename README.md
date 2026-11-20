@@ -40,7 +40,17 @@ directly, including a prefix with `{:#x}`, without a temporary hex string. Use
 `hex_append` to reuse a `String`'s capacity across calls.
 
 The default features are `std` and `serde`. Set `default-features = false` for a
-dependency-free core. Optional features include `alloc`, `heapless-09` and `defmt-03`.
+dependency-free core. Enable `alloc` for owned output or `heapless-09` for
+fixed-capacity strings.
+
+For embedded logging with `defmt` 1.x, use `features = ["defmt"]` to format
+`Error` and `CheckCase`. Existing projects can keep `features = ["defmt-03"]`.
+
+```toml
+[dependencies]
+defmt = "1"
+faster-hex = { version = "2", default-features = false, features = ["defmt"] }
+```
 
 [API documentation](https://docs.rs/faster-hex) follows the released crate. For a
 local checkout, run `cargo doc --all-features --no-deps --open`.
