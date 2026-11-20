@@ -163,7 +163,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The API baseline is an immutable commit, including before 1.0 is tagged.
+          # The API baseline is an immutable commit.
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
@@ -254,7 +254,8 @@ jobs:
           key: cargo-audit
       - run: cargo install cargo-audit --version 0.22.2 --locked
       - run: cargo generate-lockfile
-      - run: cargo audit
+      # RustSec classifies the heapless advisories in #75 as unsound warnings.
+      - run: cargo audit --deny unsound
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

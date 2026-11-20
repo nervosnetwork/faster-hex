@@ -39,7 +39,7 @@ def check_manifest(baseline, current):
     old_release = baseline["package"]["version"].split(".")[:2]
     new_release = current["package"]["version"].split(".")[:2]
     if old_release == new_release and baseline["package"].get("rust-version") != current["package"].get("rust-version"):
-        raise ValueError("the minimum Rust version must remain fixed within the 1.0.x line")
+        raise ValueError("the minimum Rust version must remain fixed within a patch release line")
 
 
 def main():

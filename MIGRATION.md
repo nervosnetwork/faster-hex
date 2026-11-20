@@ -21,9 +21,9 @@ let text: heapless::String<4> = hex_string(&[0xab, 1]).unwrap();
 assert_eq!(text.as_str(), "ab01");
 ```
 
-The `defmt-03` feature uses the 0.3.100 compatibility release so it can format
-these strings when both features are enabled. For a 1.0 consumer using only
-`std`, updating the `faster-hex` version is sufficient.
+The `defmt-03` feature requires `defmt` 0.3.100 or later in the 0.3 series
+to format these strings when both features are enabled. For a 1.0 consumer
+using only `std`, updating the `faster-hex` version is sufficient.
 
 ## Migrating from 0.10 to 1.0
 
