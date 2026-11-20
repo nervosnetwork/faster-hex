@@ -100,7 +100,9 @@ fn whole_input_validation_reports_the_first_invalid_byte() {
     assert_eq!(hex_validate(b"!ab"), Err(Error::OddLength));
     let mut text = b"aF".repeat(4096);
     assert_eq!(hex_validate(&text), Ok(()));
-    for index in [0, 1, 15, 16, 17, 63, 64, 65, 1023, 1024, 8190] {
+    for index in [
+        0, 1, 15, 16, 17, 63, 64, 65, 255, 256, 257, 1023, 1024, 8190,
+    ] {
         text[index] = 0xff;
         text[index + 1] = b'!';
         assert_invalid(hex_validate(&text).unwrap_err(), index, 0xff);

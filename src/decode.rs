@@ -638,6 +638,7 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
 
 #[inline(always)]
 fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
+    const BLOCK: usize = 256;
     let table = case.decode_table();
     // A malformed first pair can be reported before any SIMD rescan.
     if src.len() >= 16 {
@@ -647,22 +648,14 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
             }
         }
     }
-    // Skip valid 64-byte blocks, then narrow the first failure to 16 bytes.
-    // A single 64-byte input has already failed its full-input check.
-    let skipped = if src.len() > 64 {
-        src.chunks_exact(64)
-            .take_while(|chunk| hex_check_with_case(chunk, case))
-            .count()
-            * 64
+    // Check long runs in 256-byte blocks to amortize SIMD dispatch. Then
+    // narrow the first rejected block to 16 bytes before the scalar scan.
+    let skipped = if src.len() > BLOCK {
+        valid_block_prefix::<BLOCK>(src, case)
     } else {
         0
     };
-    let skipped = skipped
-        + src[skipped..]
-            .chunks_exact(16)
-            .take_while(|chunk| hex_check_with_case(chunk, case))
-            .count()
-            * 16;
+    let skipped = skipped + valid_block_prefix::<16>(&src[skipped..], case);
     for (offset, &byte) in src[skipped..].iter().enumerate() {
         let index = skipped + offset;
         if table[usize::from(byte)] == NIL {
@@ -670,6 +663,14 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+#[inline]
+fn valid_block_prefix<const N: usize>(src: &[u8], case: CheckCase) -> usize {
+    src.chunks_exact(N)
+        .take_while(|chunk| hex_check_with_case(chunk, case))
+        .count()
+        * N
 }
 
 // Internal conversion only. Even if miscalled with short input, never pass an
