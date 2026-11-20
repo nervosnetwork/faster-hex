@@ -607,16 +607,13 @@ pub(crate) fn hex_decode_short_scalar(
         CheckCase::Upper => &UNHEX_UPPER,
     };
     let mut decoded = 0u64;
-    let mut nibbles = 0;
     for pair in src.as_chunks::<2>().0 {
         let high = table[usize::from(pair[0])];
         let low = table[usize::from(pair[1])];
-        nibbles |= high | low;
+        if high | low == NIL {
+            return Err(());
+        }
         decoded = decoded << 8 | u64::from(high << 4 | low);
-    }
-    // Any invalid lookup sets all bits. Valid nibbles only set the low four.
-    if nibbles == NIL {
-        return Err(());
     }
     // The word is built in input order, so its low byte belongs in the last slot.
     for slot in dst.iter_mut().rev() {
