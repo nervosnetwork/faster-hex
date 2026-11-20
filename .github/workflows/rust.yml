@@ -9,6 +9,10 @@ on:
         description: Git ref for a same-host native x86 benchmark comparison
         required: false
         type: string
+      benchmark_filter:
+        description: Optional regular expression selecting comparison cases
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,7 +31,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.benchmark_base != ''
     name: Native comparison / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 50
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -47,6 +51,8 @@ jobs:
           toolchain: 1.95.0
       - name: Compare both profiles on this CPU
         shell: bash
+        env:
+          FASTER_HEX_BENCH_FILTER: ${{ inputs.benchmark_filter }}
         run: |
           result=0
           for lto in false thin; do
@@ -86,7 +92,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo fmt --manifest-path fuzz/Cargo.toml --all -- --check
       - run: cargo fmt --manifest-path afl/Cargo.toml --all -- --check
-      - run: rustfmt --edition 2021 --check ci/consumer.rs ci/fuzz_coverage.rs ci/bench_prefix_v2.rs
+      - run: rustfmt --edition 2021 --check ci/consumer.rs ci/fuzz_coverage.rs ci/bench_prefix_v2.rs ci/bench_serde_dispatch.rs
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo clippy --lib --no-default-features -- -D warnings
         env:

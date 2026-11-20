@@ -133,10 +133,13 @@ hashes. The reports cover raw encoders and decoders, error positions, Git
 prefixes and JSON at both sides of the 65-byte stack-buffer boundary.
 The artifacts include the CPU model, commit IDs, raw samples and sizes of the
 linked benchmark executables. A suspected slowdown triggers longer samples in
-the opposite order. It is reported as a code regression only when both
-experiments separate the revisions' 95% intervals and their executables
-differ. Timing differences between byte-identical binaries are reported as
-drift. Hosted runner CPU models vary.
+the opposite order. The report retains differences reproduced in independent
+builds. For those cases a third experiment links both revisions into one
+consumer. Its JSON adapter uses a shared payload type and times the same
+writer on pre-encoded text as a control. The workflow fails when the slowdown
+also reproduces in this executable. Each comparison requires separation across
+both replicas' 95% intervals. Raw samples and build-specific differences
+remain in the report. Hosted runner CPU models vary.
 
 For a local comparison, use two disposable checkouts. The script writes the
 shared benchmark harness and dependency lock to those checkouts.
