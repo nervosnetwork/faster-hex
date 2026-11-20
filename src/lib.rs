@@ -65,7 +65,7 @@
 //! | Feature | Provides |
 //! | --- | --- |
 //! | None | Slice and fixed-array conversion, borrowed formatting, and `core::error::Error` |
-//! | `alloc` | Owned strings and byte vectors; appending to strings |
+//! | `alloc` | Owned strings and byte vectors, including appending to either |
 //! | `std` | `alloc` and standard-library support in enabled dependencies |
 //! | `serde` | Serde adapters and `alloc`; also works without `std` |
 //! | `heapless-09` | Fixed-capacity strings using `heapless` 0.9, without requiring `alloc` |
@@ -87,7 +87,7 @@
 //! selection, SIMD thresholds and instruction sequences are implementation details;
 //! no public backend selection or architecture-specific call is required.
 //!
-//! The minimum supported Rust version is 1.95.0 throughout the 2.0.x line.
+//! The minimum supported Rust version is 1.95.0.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]

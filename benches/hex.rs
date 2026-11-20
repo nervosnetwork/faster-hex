@@ -264,33 +264,22 @@ fn allocation(c: &mut Criterion) {
     group.finish();
 }
 
-fn append_decoded(c: &mut Criterion) {
+fn decode_append(c: &mut Criterion) {
     let mut group = c.benchmark_group("decode_append");
     for len in [32, 4096] {
         let bytes = support::bytes(len);
         let input = hex::encode(&bytes);
         let mut output = Vec::with_capacity(len + 1);
         output.push(0xff);
-        for reuse in [false, true] {
-            let name = if reuse {
-                "faster_hex"
-            } else {
-                "vec_then_extend"
-            };
-            group.bench_function(BenchmarkId::new(name, len), |b| {
-                b.iter(|| {
-                    output.truncate(1);
-                    let src = black_box(input.as_bytes());
-                    if reuse {
-                        hex_decode_append(src, black_box(&mut output)).unwrap();
-                    } else {
-                        black_box(&mut output).extend_from_slice(&hex_decode_vec(src).unwrap());
-                    }
-                    black_box(output.as_slice());
-                });
-                assert_eq!(&output[1..], bytes);
+        group.bench_function(BenchmarkId::from_parameter(len), |b| {
+            b.iter(|| {
+                output.truncate(1);
+                black_box(
+                    hex_decode_append(black_box(input.as_bytes()), black_box(&mut output)).unwrap(),
+                );
             });
-        }
+            assert_eq!(&output[1..], bytes);
+        });
     }
 }
 
@@ -399,7 +388,7 @@ criterion_group!(
     conversion,
     decode_array,
     decode_vec,
-    append_decoded,
+    decode_append,
     allocation,
     rotating
 );

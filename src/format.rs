@@ -90,16 +90,20 @@ impl<'a> Hex<'a> {
         Self { bytes }
     }
 
-    /// Shows at most `count` leading hex digits, excluding any sign or `0x`.
+    /// Selects at most `count` leading hexadecimal digits for formatting or encoding.
     ///
-    /// An odd count includes only the high nibble of the last byte. A larger
-    /// count shows the complete input. Width and padding apply to the visible digits.
+    /// Each byte contributes two digits. Any count is valid, including zero.
+    /// An odd count ends with the high nibble of the last selected byte. A count
+    /// beyond the end shows the whole input. Only the selected bytes are encoded.
+    /// Formatting width and padding apply to the visible digits. A sign or `0x`
+    /// prefix does not count toward `count`.
     ///
     /// ```
     /// use faster_hex::Hex;
-    /// let short = Hex::new(&[0xde, 0xad, 0xbe, 0xef]).leading_digits(7);
-    /// assert_eq!(format!("{short}"), "deadbee");
-    /// assert_eq!(format!("{short:#X}"), "0xDEADBEE");
+    /// let id = Hex::new(&[0xde, 0xad, 0xbe, 0xef, 0x12, 0x34]);
+    /// assert_eq!(id.leading_digits(5).to_string(), "deadb");
+    /// assert_eq!(format!("{:#X}", id.leading_digits(10)), "0xDEADBEEF12");
+    /// assert_eq!(id.leading_digits(20).to_string(), "deadbeef1234");
     /// ```
     pub const fn leading_digits(self, count: usize) -> LeadingDigits<'a> {
         let (bytes, omit_low_nibble) = match self.bytes.split_at_checked(count.div_ceil(2)) {

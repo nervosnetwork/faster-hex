@@ -15,7 +15,7 @@ struct TextPayload<'a> {
 
 fn serde(c: &mut Criterion) {
     let mut group = c.benchmark_group("serde_json");
-    for len in [0, 10, 32, 64, 65, 66, 256, 4096, 65536] {
+    for len in [0, 10, 32, 64, 65, 66, 256, 4096] {
         let input = Payload {
             bytes: (0..len).map(|i| (i * 37 + 11) as u8).collect(),
         };

@@ -1,16 +1,13 @@
 # Changelog
 
-## Unreleased
+## 2.1.0
 
-- Add `hex_decode_append` to decode into an existing vector while preserving
-  its contents and length on errors.
-- Add `Hex::leading_digits` for abbreviated identifiers. Format the view or
-  call `encode_to` to write exactly the selected lowercase digits into a buffer.
-- Add `hex_validate` to check complete byte pairs with byte-position diagnostics.
-- On AArch64, encode 16–32 bytes with at most two NEON vectors and send longer
-  inputs directly to the bulk loop. On invalid hex, check the first pair early
-  and locate the offending byte within a rejected block.
-  See [native measurements](OPTIMIZATION.md).
+- Add `Hex::leading_digits` for abbreviated hashes, including odd digit counts.
+  Format the view or write it directly into a byte buffer with `encode_to`.
+- Add `hex_decode_append` to decode into an existing vector. It returns the
+  appended slice and preserves the original bytes and length on error.
+- Add `hex_validate` to check complete hex byte pairs and report the first invalid byte.
+- Speed up encoding 16–32-byte inputs on AArch64 and locating invalid hex digits.
 
 ## 2.0.0
 

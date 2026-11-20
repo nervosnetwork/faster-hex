@@ -1,4 +1,4 @@
-pub const LENGTHS: &[usize] = &[1, 2, 4, 8, 10, 16, 20, 32, 33, 48, 64, 65, 256, 4096, 65536];
+pub const LENGTHS: &[usize] = &[1, 4, 8, 10, 16, 20, 32, 33, 64, 65, 256, 4096, 65536];
 
 pub fn bytes(len: usize) -> Vec<u8> {
     let mut state = 0x243f_6a88u32;
