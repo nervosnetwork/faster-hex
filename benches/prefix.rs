@@ -9,7 +9,10 @@ struct Abbreviation<'a>(&'a [u8], usize);
 
 impl fmt::Display for Abbreviation<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(prefix::for_display(self.0, self.1, &mut [0; 64]))
+        // gix's formatter owns a full-size scratch buffer, even for a short ID.
+        let mut buffer = [0; 64];
+        let text = faster_hex::hex_encode(self.0, &mut buffer).unwrap();
+        f.write_str(&text[..self.1.min(text.len())])
     }
 }
 

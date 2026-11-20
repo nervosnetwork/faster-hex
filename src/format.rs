@@ -269,7 +269,7 @@ impl LeadingDigits<'_> {
     #[inline]
     pub fn encode_to(self, dst: &mut [u8]) -> Result<&mut str, crate::Error> {
         if self.omit_low_nibble {
-            crate::encode::hex_encode_custom::<true>(self.hex.bytes, dst, false)
+            crate::encode::encode_odd(self.hex.bytes, dst)
         } else {
             crate::hex_encode(self.hex.bytes, dst)
         }

@@ -372,6 +372,31 @@ fn array_decoding_keeps_the_text_hint_and_input_modes() {
 }
 
 #[test]
+fn large_owned_payloads_keep_case_errors_relative_to_the_hex_digits() {
+    use serde::de::value::BorrowedStrDeserializer;
+
+    let mut text = format!("0x{}", "ab".repeat(1025));
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let bytes: Vec<u8> = faster_hex::withpfx_lowercase::deserialize(de).unwrap();
+    assert_eq!(bytes, vec![0xab; 1025]);
+
+    text.replace_range(2 + 2048.., "Ag");
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let result: Result<Vec<u8>, _> = faster_hex::withpfx_lowercase::deserialize(de);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "invalid hex byte 0x41 at index 2048"
+    );
+
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let result: Result<Vec<u8>, _> = faster_hex::deserialize_bounded::<1024, _, _>(de);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "expected at most 1024 decoded bytes, got 1025"
+    );
+}
+
+#[test]
 fn errors_preserve_prefix_length_character_and_utf8_precedence() {
     for (text, expected) in [
         ("0Xg", "invalid prefix"),

@@ -17,7 +17,7 @@ use core::mem::MaybeUninit;
 use crate::error::Error;
 
 // SIMD callers establish CPU/OS support and exactly twice the source length
-// in destination space. Each kernel initializes every output byte with ASCII.
+// in destination space. Each kernel initializes its output with ASCII.
 const TABLE_LOWER: &[u8; 16] = b"0123456789abcdef";
 const TABLE_UPPER: &[u8; 16] = b"0123456789ABCDEF";
 
@@ -88,7 +88,7 @@ pub fn hex_string_upper(src: &[u8]) -> String {
 }
 
 #[inline]
-pub(crate) fn hex_encode_custom<'a, const OMIT_LOW: bool>(
+pub(crate) fn hex_encode_custom<'a>(
     src: &[u8],
     dst: &'a mut [u8],
     upper_case: bool,
@@ -96,39 +96,22 @@ pub(crate) fn hex_encode_custom<'a, const OMIT_LOW: bool>(
     // SAFETY: MaybeUninit has the same layout as u8. encode only writes initialized
     // ASCII bytes; it never makes an existing byte uninitialized, including on error.
     let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
-    encode_digits::<OMIT_LOW>(src, output, upper_case)
+    encode(src, output, upper_case)
 }
 
+// One boundary for caller-owned bytes, allocation spare capacity and formatting:
+// validate the size, initialize the exact ASCII prefix, then return its string view.
 #[inline]
 pub(crate) fn encode<'a>(
     src: &[u8],
     dst: &'a mut [MaybeUninit<u8>],
     upper_case: bool,
 ) -> Result<&'a mut str, Error> {
-    encode_digits::<false>(src, dst, upper_case)
-}
-
-#[inline]
-fn encode_digits<'a, const OMIT_LOW: bool>(
-    src: &[u8],
-    dst: &'a mut [MaybeUninit<u8>],
-    upper_case: bool,
-) -> Result<&'a mut str, Error> {
-    let full = src.len().checked_mul(2).ok_or(Error::Overflow)?;
-    let odd = OMIT_LOW && !src.is_empty();
-    let len = full - usize::from(odd);
+    let len = src.len().checked_mul(2).ok_or(Error::Overflow)?;
     if dst.len() < len {
         return Err(Error::OutputTooSmall { required: len });
     }
-    let output = &mut dst[..len];
-    let (src, dst) = if odd {
-        let last = src.len() - 1;
-        let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
-        output[len - 1].write(table[usize::from(src[last] >> 4)]);
-        (&src[..last], &mut output[..len - 1])
-    } else {
-        (src, &mut *output)
-    };
+    let dst = &mut dst[..len];
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
@@ -161,15 +144,30 @@ fn encode_digits<'a, const OMIT_LOW: bool>(
     {
         hex_encode_custom_case_fallback(src, dst, upper_case);
     }
-    // SAFETY: The backend initialized all byte pairs with ASCII. If present,
-    // the final high digit was initialized by the lookup above. MaybeUninit<u8>
-    // has u8's layout. The returned string excludes spare destination capacity.
+    // SAFETY: Every backend initialized all len elements with ASCII, using the
+    // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
+    // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
     Ok(unsafe {
         core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(
-            output.as_mut_ptr().cast(),
+            dst.as_mut_ptr().cast(),
             len,
         ))
     })
+}
+
+// An odd digit count always selects at least the high nibble of the last byte.
+#[inline]
+pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+    let (&last, pairs) = src.split_last().expect("an odd prefix selects a byte");
+    let required = pairs.len() * 2 + 1;
+    let output = dst
+        .get_mut(..required)
+        .ok_or(Error::OutputTooSmall { required })?;
+    let written = hex_encode(pairs, output)?.len();
+    output[written] = TABLE_LOWER[usize::from(last >> 4)];
+    // SAFETY: hex_encode wrote the complete pairs as ASCII. The only
+    // remaining byte was filled from the ASCII digit table.
+    Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
 }
 
 /// Encodes all of `src` as lowercase hex into `dst` without allocation.
@@ -216,7 +214,7 @@ fn encode_digits<'a, const OMIT_LOW: bool>(
 /// ```
 #[inline]
 pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
-    hex_encode_custom::<false>(src, dst, false)
+    hex_encode_custom(src, dst, false)
 }
 
 /// Encodes all of `src` as uppercase hex into `dst` without allocation.
@@ -239,7 +237,7 @@ pub fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Erro
 /// ```
 #[inline]
 pub fn hex_encode_upper<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
-    hex_encode_custom::<false>(src, dst, true)
+    hex_encode_custom(src, dst, true)
 }
 
 /// Appends lowercase hexadecimal digits to `dst` and returns the appended suffix.

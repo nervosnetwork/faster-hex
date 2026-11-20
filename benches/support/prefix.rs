@@ -5,5 +5,3 @@ pub fn to_buf<'a>(src: &[u8], digits: usize, dst: &'a mut [u8]) -> &'a mut str {
         .encode_to(dst)
         .unwrap()
 }
-
-pub use to_buf as for_display;
