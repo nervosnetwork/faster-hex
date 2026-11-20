@@ -8,9 +8,25 @@ import sys
 import tempfile
 import unittest
 
+from bench_native import estimates, slower
 from check_api import check_manifest, feature_sets
 from check_fuzz_coverage import KERNELS, kernel_counts
 from corpus import contents, merge, replace
+
+
+class BenchmarkTests(unittest.TestCase):
+    def test_both_pairs_must_be_slower_than_baseline_variation(self):
+        def interval(low, high):
+            return {"confidence_interval": {"lower_bound": low, "upper_bound": high}}
+
+        base = [interval(9, 11), interval(12, 14)]
+        self.assertFalse(slower(base, [interval(12, 13), interval(15, 16)]))
+        self.assertTrue(slower(base, [interval(15, 16), interval(17, 18)]))
+
+    def test_each_run_must_produce_every_selected_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "missing .*encode"):
+                estimates(Path(directory), "head1", {"encode"})
 
 
 class ApiTests(unittest.TestCase):

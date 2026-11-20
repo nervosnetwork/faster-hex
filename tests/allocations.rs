@@ -97,6 +97,13 @@ fn documented_allocation_free_operations_remain_allocation_free() {
     let (text, count) = measure(|| hex_encode(&bytes, &mut encoded));
     assert_eq!(&*text.unwrap(), expected);
     assert_eq!(count, 0);
+    let (prefix, count) = measure(|| {
+        Hex::new(&bytes)
+            .leading_digits(7)
+            .encode_to(&mut encoded[..7])
+    });
+    assert_eq!(prefix.unwrap(), &expected[..7]);
+    assert_eq!(count, 0);
     let mut decoded = [0; 513];
     let (data, count) = measure(|| hex_decode(expected.as_bytes(), &mut decoded));
     assert_eq!(data.unwrap(), bytes);

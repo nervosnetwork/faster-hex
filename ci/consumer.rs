@@ -21,6 +21,10 @@ pub fn required_traits() {
 pub const EMPTY: Hex<'static> = Hex::new(&[]);
 pub const SHORT: faster_hex::LeadingDigits<'static> = EMPTY.leading_digits(7);
 
+pub fn short_into<'dst>(src: &[u8], dst: &'dst mut [u8]) -> Result<&'dst mut str, Error> {
+    Hex::new(src).leading_digits(7).encode_to(dst)
+}
+
 // Preserve exact return types and independent source/destination lifetimes.
 // Generic rustdoc lints do not catch every change between non-unit types.
 type Encode = for<'src, 'dst> fn(&'src [u8], &'dst mut [u8]) -> Result<&'dst mut str, Error>;

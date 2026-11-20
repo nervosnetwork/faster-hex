@@ -27,7 +27,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.benchmark_base != ''
     name: Native comparison / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -48,9 +48,11 @@ jobs:
       - name: Compare both profiles on this CPU
         shell: bash
         run: |
+          result=0
           for lto in false thin; do
-            CARGO_PROFILE_BENCH_LTO="$lto" python3 candidate/ci/bench_native.py baseline candidate "results/$lto"
+            CARGO_PROFILE_BENCH_LTO="$lto" python3 candidate/ci/bench_native.py baseline candidate "results/$lto" || result=1
           done
+          exit "$result"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -84,7 +86,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo fmt --manifest-path fuzz/Cargo.toml --all -- --check
       - run: cargo fmt --manifest-path afl/Cargo.toml --all -- --check
-      - run: rustfmt --edition 2021 --check ci/consumer.rs ci/fuzz_coverage.rs
+      - run: rustfmt --edition 2021 --check ci/consumer.rs ci/fuzz_coverage.rs ci/bench_prefix_v2.rs
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo clippy --lib --no-default-features -- -D warnings
         env:

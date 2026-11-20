@@ -113,6 +113,38 @@ fn leading_digits_clamp_and_preserve_flags_across_chunk_boundaries() {
     }
 }
 
+#[test]
+fn selected_digits_encode_into_exact_storage_and_preserve_spare_bytes() {
+    for len in [0, 1, 2, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 129, 513] {
+        let bytes: Vec<_> = (0..len).map(|i| (i * 31 + 3) as u8).collect();
+        let full = hex::encode(&bytes);
+        for digits in [
+            0,
+            1,
+            7,
+            8,
+            full.len().saturating_sub(1),
+            full.len(),
+            usize::MAX,
+        ] {
+            let view = Hex::new(&bytes).leading_digits(digits);
+            let expected = &full[..digits.min(full.len())];
+            for extra in [0, 5] {
+                let mut buf = vec![0xff; 1 + expected.len() + extra];
+                assert_eq!(view.encode_to(&mut buf[1..]).unwrap(), expected);
+                assert_eq!(buf[0], 0xff);
+                assert!(buf[1 + expected.len()..].iter().all(|&b| b == 0xff));
+            }
+            if !expected.is_empty() {
+                let mut short = vec![0xa5; expected.len() - 1];
+                assert!(matches!(view.encode_to(&mut short),
+                    Err(faster_hex::Error::OutputTooSmall { required, .. }) if required == expected.len()));
+                assert!(short.iter().all(|&b| b == 0xa5));
+            }
+        }
+    }
+}
+
 struct FixedWriter {
     bytes: [u8; 1100],
     len: usize,

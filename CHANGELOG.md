@@ -4,8 +4,9 @@
 
 - Add `hex_decode_append` to decode into an existing vector while preserving
   its contents and length on errors.
-- Add `Hex::leading_digits` for abbreviated identifiers and `hex_validate`
-  to check complete byte pairs with byte-position diagnostics.
+- Add `Hex::leading_digits` for abbreviated identifiers. Format the view or
+  call `encode_to` to write exactly the selected lowercase digits into a buffer.
+- Add `hex_validate` to check complete byte pairs with byte-position diagnostics.
 - Encode 16–32 byte inputs with one or two NEON vectors.
   See [native measurements](OPTIMIZATION.md).
 

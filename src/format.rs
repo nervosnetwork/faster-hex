@@ -62,7 +62,8 @@ pub struct Hex<'a> {
 }
 
 /// A borrowed view of the leading hexadecimal digits selected by [`Hex::leading_digits`].
-/// Supports the same formatting flags as [`Hex`].
+/// Supports the same formatting flags as [`Hex`]. Use [`Self::encode_to`]
+/// to write its lowercase digits into a byte slice.
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 pub struct LeadingDigits<'a> {
@@ -249,6 +250,31 @@ impl fmt::UpperHex for Hex<'_> {
 }
 
 impl LeadingDigits<'_> {
+    /// Encodes the selected lowercase digits into caller-provided storage.
+    /// Returns the written prefix, borrowing only `dst`. No space is needed
+    /// for the unused low nibble of an odd-length prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::OutputTooSmall`] if the selected digits do not fit,
+    /// leaving the destination unchanged. Spare capacity is left untouched on success.
+    ///
+    /// ```
+    /// use faster_hex::Hex;
+    /// let mut dst = [0; 7];
+    /// let text = Hex::new(&[0xde, 0xad, 0xbe, 0xef]).leading_digits(7).encode_to(&mut dst)?;
+    /// assert_eq!(text, "deadbee");
+    /// # Ok::<(), faster_hex::Error>(())
+    /// ```
+    #[inline]
+    pub fn encode_to(self, dst: &mut [u8]) -> Result<&mut str, crate::Error> {
+        if self.omit_low_nibble {
+            crate::encode::hex_encode_custom::<true>(self.hex.bytes, dst, false)
+        } else {
+            crate::hex_encode(self.hex.bytes, dst)
+        }
+    }
+
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         if self.omit_low_nibble {
             self.hex.format::<true>(f, upper)

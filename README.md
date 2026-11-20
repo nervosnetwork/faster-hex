@@ -40,9 +40,10 @@ directly, including a prefix with `{:#x}`, without a temporary hex string.
 `hex_append` reuses an existing `String`.
 
 On the development branch, `Hex::new(&bytes).leading_digits(7)` displays a
-seven-digit abbreviation and `hex_decode_append` decodes into an existing
-`Vec<u8>`. `hex_validate` checks complete byte pairs and reports the first
-invalid byte. Use `hex_check` to check individual digits of any length.
+seven-digit abbreviation. Its `encode_to(&mut dst)` method writes the same
+lowercase digits into a seven-byte buffer. `hex_decode_append` decodes into an
+existing `Vec<u8>`. `hex_validate` checks complete byte pairs and reports the
+first invalid byte. Use `hex_check` to check individual digits of any length.
 
 The default features are `std` and `serde`. Set `default-features = false` for a
 dependency-free core. Enable `alloc` for owned output or `heapless-09` for

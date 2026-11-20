@@ -72,7 +72,7 @@ fn hex_string_custom_case<const N: usize>(src: &[u8], upper: bool) -> Result<Str
     buffer
         .resize(len, 0)
         .map_err(|_| Error::OutputTooSmall { required: len })?;
-    hex_encode_custom(src, &mut buffer, upper)?;
+    hex_encode_custom::<false>(src, &mut buffer, upper)?;
     // SAFETY: Every byte in the vector was encoded as ASCII hex.
     Ok(unsafe { String::from_utf8_unchecked(buffer) })
 }

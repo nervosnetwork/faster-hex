@@ -65,6 +65,11 @@ name = "format"
 harness = false
 required-features = ["std"]
 
+[[bench]]
+name = "prefix"
+harness = false
+required-features = ["std"]
+
 [lints.clippy]
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
