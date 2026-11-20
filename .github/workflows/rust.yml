@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       benchmark_base:
-        description: Git ref for a same-host native x86 benchmark comparison
+        description: Git ref providing the baseline and its native x86 benchmark cases
         required: false
         type: string
 
@@ -35,7 +35,6 @@ jobs:
         lto: ["false", thin]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      CRITERION_HOME: ${{ github.workspace }}/results
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,13 +48,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare the development suite on this CPU
+      - name: Compare the same benchmarks in both run orders
         shell: bash
         run: |
-          # Use the same case selection on both revisions. New APIs have no baseline.
           cp candidate/.cargo/config.toml baseline/.cargo/config.toml
-          (cd baseline && cargo bench-dev --save-baseline before)
-          (cd candidate && cargo bench-dev --baseline-lenient before)
+          cp -R baseline/benches/. candidate/benches/
+          # Compile both drivers before timing either revision.
+          for revision in baseline candidate; do
+            (cd "$revision" && cargo bench-dev --list)
+          done
+          export CRITERION_HOME="$GITHUB_WORKSPACE/results/base-first"
+          (cd baseline && cargo bench-dev --save-baseline base)
+          (cd candidate && cargo bench-dev --baseline base)
+          export CRITERION_HOME="$GITHUB_WORKSPACE/results/head-first"
+          (cd candidate && cargo bench-dev --save-baseline head)
+          (cd baseline && cargo bench-dev --baseline head)
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
