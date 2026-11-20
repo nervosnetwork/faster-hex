@@ -41,16 +41,12 @@ compare the same inputs on another CPU.
   and [repeat on the 9V45](https://github.com/nervosnetwork/faster-hex/actions/runs/44685729896).
 - Selecting the checker once per scan also improved short errors, but the
   same 4 KiB failure went from 431 to 688 ns on a Xeon 6975P-C and from
-  471 to 874 ns on an EPYC 9V74 in the default build. Decoding and the new
-  `hex_validate` therefore share 2.0.0's error scan. Long inputs skip valid
-  64-byte blocks before finding the exact byte. Improving this further
-  requires checking successful hashes as well as early and late errors.
+  471 to 874 ns on an EPYC 9V74 in the default build. Decoding and
+  `hex_validate` retain 2.0.0's 64-byte SIMD scan for long inputs.
   [Checker experiment](https://github.com/nervosnetwork/faster-hex/actions/runs/44688664932).
 
 In a release assembly comparison for `x86_64-unknown-linux-gnu` with no
-Cargo features, the SSE4.1 and AVX2 encoder instructions matched 2.0.0.
-The error path's instruction sequence also matched apart from the source
-location passed to a bounds-check failure.
+Cargo features, the SSE4.1 and AVX2 encoder kernels matched 2.0.0.
 
 The native Linux comparisons for the earlier SIMD changes timed rejection of
 the last digit of a 4 KiB payload in nanoseconds per call.
@@ -61,6 +57,11 @@ and [native comparison](https://github.com/nervosnetwork/faster-hex/actions/runs
 |---|---:|---:|---:|---:|
 | Intel Xeon 6975P-C | 431 | 435 | 427 | 427 |
 | AMD EPYC 7763 | 603 | 601 | 611 | 611 |
+
+The current diagnostic checks the first pair before that bulk scan. Within a
+rejected block it tests four table entries together, then reports the exact
+index with the same digit table. The decoder enters this path only after its
+backend reports an error.
 
 ## Costs of the new APIs
 

@@ -256,15 +256,20 @@ fn diagnostics_identify_the_first_invalid_byte_for_each_policy() {
 
 #[test]
 fn diagnostic_block_skipping_keeps_byte_offsets_and_first_error() {
-    for len in [64, 66, 128, 130, 8192] {
-        for position in [0, 31, 32, 63, 64, 65, len - 1] {
+    for len in [2, 4, 6, 64, 66, 128, 130, 8192] {
+        for position in [0, 1, 2, 3, 4, 5, 31, 32, 63, 64, 65, len - 1] {
             if position >= len {
                 continue;
             }
+            let mut input = vec![b'0'; len];
+            input[len - 1] = 0xff;
+            input[position] = b'!';
+            assert_invalid(
+                faster_hex::hex_validate(&input).unwrap_err(),
+                position,
+                b'!',
+            );
             for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
-                let mut input = vec![b'0'; len];
-                input[len - 1] = 0xff;
-                input[position] = b'!';
                 let mut output = vec![0xa5; len / 2 + 3];
                 assert_invalid(
                     hex_decode_with_case(&input, &mut output, case).unwrap_err(),
