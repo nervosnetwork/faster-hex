@@ -628,7 +628,7 @@ pub(crate) fn hex_decode_short_scalar(
 
 // Backends report validity; diagnostics belong to the public boundary. The
 // successful SIMD path does not track byte positions or construct an error.
-#[inline]
+#[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     diagnose_invalid(src, case)?;
     // Recover if a backend rejected valid input; the caller needs initialized bytes.
@@ -636,16 +636,20 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
     Ok(())
 }
 
-#[cold]
+#[inline(always)]
 fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     let table = case.decode_table();
-    let skipped = if src.len() > 64 {
-        // Catch a malformed leading pair before setting up a second SIMD scan.
+    // A malformed first pair can be reported before any SIMD rescan.
+    if src.len() >= 16 {
         for (index, &byte) in src[..2].iter().enumerate() {
             if table[usize::from(byte)] == NIL {
                 return Err(Error::InvalidChar { index, byte });
             }
         }
+    }
+    // Skip valid 64-byte blocks, then narrow the first failure to 16 bytes.
+    // A single 64-byte input has already failed its full-input check.
+    let skipped = if src.len() > 64 {
         src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
             .count()
@@ -653,6 +657,12 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     } else {
         0
     };
+    let skipped = skipped
+        + src[skipped..]
+            .chunks_exact(16)
+            .take_while(|chunk| hex_check_with_case(chunk, case))
+            .count()
+            * 16;
     for (offset, &byte) in src[skipped..].iter().enumerate() {
         let index = skipped + offset;
         if table[usize::from(byte)] == NIL {

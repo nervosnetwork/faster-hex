@@ -45,6 +45,7 @@ def main():
             for line in built.splitlines():
                 artifact = json.loads(line)
                 if artifact.get("executable") and "bench" in artifact["target"]["kind"]:
+                    print(f"{checkout.name}/{artifact['target']['name']}", file=sizes, flush=True)
                     subprocess.run(["size", artifact["executable"]], stdout=sizes, check=True)
     for checkout, label in ((baseline, "base1"), (candidate, "head1"),
                             (candidate, "head2"), (baseline, "base2")):
