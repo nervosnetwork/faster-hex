@@ -84,9 +84,9 @@ fuzz_target!(|data: &[u8]| {
                 expected
             );
         }
-        #[cfg(feature = "heapless-08")]
+        #[cfg(feature = "heapless-09")]
         {
-            let result = faster_hex::heapless_08::hex_string::<64>(data);
+            let result = faster_hex::heapless_09::hex_string::<64>(data);
             if data.len() <= 32 {
                 assert_eq!(result.unwrap().as_bytes(), expected);
             } else {

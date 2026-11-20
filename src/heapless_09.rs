@@ -1,20 +1,16 @@
-//! Fixed-capacity strings using `heapless` 0.8.
+//! Fixed-capacity strings using `heapless` 0.9.
 //!
-//! Available with the `heapless-08` feature, independently of `alloc` or `std`.
+//! Available with the `heapless-09` feature, independently of `alloc` or `std`.
 //! These functions return [`heapless::String`] values with inline storage and
 //! report insufficient capacity as an error. Capacity counts encoded ASCII
 //! characters: storing `N` input bytes requires at least `2 * N` characters.
 //!
-//! The exposed dependency type is always from `heapless` 0.8. Support for an
-//! incompatible dependency version uses a separate module and feature; enabling
-//! heapless support does not change the allocated string APIs.
-//!
 //! # Examples
 //!
 //! ```
-//! use faster_hex::heapless_08;
+//! use faster_hex::heapless_09;
 //!
-//! let id = heapless_08::hex_string::<8>(&[0x12, 0xab, 0, 0xff])?;
+//! let id = heapless_09::hex_string::<8>(&[0x12, 0xab, 0, 0xff])?;
 //! assert_eq!(id.as_str(), "12ab00ff");
 //! # Ok::<(), faster_hex::Error>(())
 //! ```
@@ -37,7 +33,7 @@ use heapless::{String, Vec};
 /// # Examples
 ///
 /// ```
-/// use faster_hex::{heapless_08::hex_string, Error};
+/// use faster_hex::{heapless_09::hex_string, Error};
 ///
 /// assert_eq!(hex_string::<4>(&[0xab, 1])?.as_str(), "ab01");
 /// assert!(matches!(hex_string::<3>(&[0xab, 1]),
@@ -62,7 +58,7 @@ pub fn hex_string<const N: usize>(src: &[u8]) -> Result<String<N>, Error> {
 /// # Examples
 ///
 /// ```
-/// assert_eq!(faster_hex::heapless_08::hex_string_upper::<4>(&[0xab, 1])?.as_str(),
+/// assert_eq!(faster_hex::heapless_09::hex_string_upper::<4>(&[0xab, 1])?.as_str(),
 ///            "AB01");
 /// # Ok::<(), faster_hex::Error>(())
 /// ```

@@ -30,7 +30,7 @@ path = {json.dumps(str(root / "ci/consumer.rs"))}
 [dependencies]
 faster-hex = {{ path = {json.dumps(str(root))}, default-features = false }}
 serde = {{ version = "1", default-features = false, optional = true }}
-heapless = {{ version = "0.8", default-features = false, optional = true }}
+heapless = {{ version = "=0.9.4", default-features = false, optional = true }}
 defmt = {{ version = "0.3", default-features = false, optional = true }}
 [features]
 ''' + "\n".join(f"{name} = {json.dumps(values)}" for name, values in forwarded.items())

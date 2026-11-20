@@ -29,7 +29,7 @@ default = ["std", "serde"]
 alloc = ["faster-hex/alloc"]
 std = ["alloc", "faster-hex/std"]
 serde = ["alloc", "faster-hex/serde", "dep:serde", "dep:serde_json"]
-heapless-08 = ["faster-hex/heapless-08"]
+heapless-09 = ["faster-hex/heapless-09"]
 
 # Prevent this from interfering with workspaces
 [workspace]

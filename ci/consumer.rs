@@ -48,10 +48,10 @@ pub fn owned_output() {
         faster_hex::hex_decode_vec_with_case(b"FF", CheckCase::Upper).unwrap();
 }
 
-#[cfg(feature = "heapless-08")]
+#[cfg(feature = "heapless-09")]
 pub fn heapless_output() {
-    let _: heapless::String<2> = faster_hex::heapless_08::hex_string(&[0]).unwrap();
-    let _: heapless::String<2> = faster_hex::heapless_08::hex_string_upper(&[255]).unwrap();
+    let _: heapless::String<2> = faster_hex::heapless_09::hex_string(&[0]).unwrap();
+    let _: heapless::String<2> = faster_hex::heapless_09::hex_string_upper(&[255]).unwrap();
 }
 
 #[cfg(feature = "defmt-03")]
@@ -59,6 +59,8 @@ pub fn logging() {
     fn assert_defmt<T: defmt::Format>() {}
     assert_defmt::<Error>();
     assert_defmt::<CheckCase>();
+    #[cfg(feature = "heapless-09")]
+    assert_defmt::<heapless::String<2>>();
 }
 
 #[cfg(feature = "serde")]

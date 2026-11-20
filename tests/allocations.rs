@@ -144,9 +144,9 @@ fn documented_allocation_free_operations_remain_allocation_free() {
         assert_eq!(error, Err(faster_hex::Error::OddLength));
         assert_eq!(count, 0);
     }
-    #[cfg(feature = "heapless-08")]
+    #[cfg(feature = "heapless-09")]
     {
-        let (text, count) = measure(|| faster_hex::heapless_08::hex_string::<1026>(&bytes));
+        let (text, count) = measure(|| faster_hex::heapless_09::hex_string::<1026>(&bytes));
         assert_eq!(text.unwrap().as_str(), expected);
         assert_eq!(count, 0);
     }
