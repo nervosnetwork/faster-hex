@@ -14,7 +14,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # A follow-up push must not discard a manually requested baseline comparison.
+  group: ${{ github.workflow }}-${{ inputs.benchmark_base && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:

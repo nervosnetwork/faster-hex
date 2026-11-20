@@ -125,49 +125,38 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
 /// ```
 #[inline]
 pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
-    let check = digit_checker(check_case);
-    check(src)
-}
-
-// A diagnostic scan uses the same case policy and CPU backend for every block.
-#[inline]
-fn digit_checker(check_case: CheckCase) -> impl Fn(&[u8]) -> bool {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-    let backend = crate::vectorization_support();
-    move |src| {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            match backend {
-                crate::Vectorization::AVX512 => {
-                    // SAFETY: Dispatch checks AVX-512BW and its OS state.
-                    unsafe { x86::hex_check_avx512_with_case(src, check_case) }
-                }
-                crate::Vectorization::AVX2 => {
-                    // SAFETY: Dispatch guarantees AVX2; the checker bounds every load.
-                    unsafe { x86::hex_check_avx2_with_case(src, check_case) }
-                }
-                crate::Vectorization::SSE41 => {
-                    // SAFETY: Dispatch checks SSE4.1; the checker bounds every load.
-                    unsafe { x86::hex_check_sse_with_case(src, check_case) }
-                }
-                crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        match crate::vectorization_support() {
+            crate::Vectorization::AVX512 => {
+                // SAFETY: Dispatch checks AVX-512BW and its OS state.
+                unsafe { x86::hex_check_avx512_with_case(src, check_case) }
             }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            match backend {
-                crate::Vectorization::Neon => {
-                    // SAFETY: Dispatch guarantees NEON; the checker bounds every load.
-                    unsafe { aarch64::hex_check_neon_with_case(src, check_case) }
-                }
-                crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
+            crate::Vectorization::AVX2 => {
+                // SAFETY: Dispatch guarantees AVX2; the checker bounds every load.
+                unsafe { x86::hex_check_avx2_with_case(src, check_case) }
             }
+            crate::Vectorization::SSE41 => {
+                // SAFETY: Dispatch checks SSE4.1; the checker bounds every load.
+                unsafe { x86::hex_check_sse_with_case(src, check_case) }
+            }
+            crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
         }
-
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        hex_check_fallback_with_case(src, check_case)
     }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        match crate::vectorization_support() {
+            crate::Vectorization::Neon => {
+                // SAFETY: Dispatch guarantees NEON; the checker bounds every load.
+                unsafe { aarch64::hex_check_neon_with_case(src, check_case) }
+            }
+            crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
+        }
+    }
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    hex_check_fallback_with_case(src, check_case)
 }
 
 /// Check if the input is valid hex bytes slice with case check
@@ -210,16 +199,6 @@ pub enum CheckCase {
     Lower,
     /// Accept digits and uppercase `A` through `F` only.
     Upper,
-}
-
-impl CheckCase {
-    fn decode_table(self) -> &'static [u8; 256] {
-        match self {
-            Self::None => &UNHEX,
-            Self::Lower => &UNHEX_LOWER,
-            Self::Upper => &UNHEX_UPPER,
-        }
-    }
 }
 
 /// Decodes all of `src` into `dst` without allocation, accepting either letter case.
@@ -622,7 +601,11 @@ pub(crate) fn hex_decode_short_scalar(
     dst: &mut [u8],
     case: CheckCase,
 ) -> Result<(), ()> {
-    let table = case.decode_table();
+    let table = match case {
+        CheckCase::None => &UNHEX,
+        CheckCase::Lower => &UNHEX_LOWER,
+        CheckCase::Upper => &UNHEX_UPPER,
+    };
     let mut decoded = 0u64;
     for pair in src.as_chunks::<2>().0 {
         let high = table[usize::from(pair[0])];
@@ -652,19 +635,18 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
 
 #[inline(always)]
 fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
-    let table = case.decode_table();
+    let table = match case {
+        CheckCase::None => &UNHEX,
+        CheckCase::Lower => &UNHEX_LOWER,
+        CheckCase::Upper => &UNHEX_UPPER,
+    };
+    // Skip valid blocks so locating a late error retains SIMD throughput.
+    // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
-        // Long inputs keep a single scan in 64-byte blocks.
-        valid_block_prefix::<64>(src, case)
-    } else if src.len() >= 16 {
-        // A hash needs at most four 16-byte probes. An invalid first pair
-        // can be reported before any of them.
-        for (index, &byte) in src[..2].iter().enumerate() {
-            if table[usize::from(byte)] == NIL {
-                return Err(Error::InvalidChar { index, byte });
-            }
-        }
-        valid_block_prefix::<16>(src, case)
+        src.chunks_exact(64)
+            .take_while(|chunk| hex_check_with_case(chunk, case))
+            .count()
+            * 64
     } else {
         0
     };
@@ -675,13 +657,6 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         }
     }
     Ok(())
-}
-
-// Decoding and validation share one copy of each diagnostic scan.
-#[inline(never)]
-fn valid_block_prefix<const N: usize>(src: &[u8], case: CheckCase) -> usize {
-    let check = digit_checker(case);
-    src.chunks_exact(N).take_while(|chunk| check(chunk)).count() * N
 }
 
 // Internal conversion only. Even if miscalled with short input, never pass an

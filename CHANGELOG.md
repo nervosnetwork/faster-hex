@@ -6,8 +6,8 @@
   its contents and length on errors.
 - Add `Hex::leading_digits` for abbreviated identifiers and `hex_validate`
   to check complete byte pairs with byte-position diagnostics.
-- Encode 16–32 byte inputs with one or two NEON vectors and narrow the search for the
-  first invalid digit after a failed decode. See [native measurements](OPTIMIZATION.md).
+- Encode 16–32 byte inputs with one or two NEON vectors.
+  See [native measurements](OPTIMIZATION.md).
 
 ## 2.0.0
 
