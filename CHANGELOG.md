@@ -7,9 +7,9 @@
 - Add `Hex::leading_digits` for abbreviated identifiers. Format the view or
   call `encode_to` to write exactly the selected lowercase digits into a buffer.
 - Add `hex_validate` to check complete byte pairs with byte-position diagnostics.
-- Encode short inputs directly from byte pairs and use up to two NEON vectors
-  for 16–32 bytes on AArch64. Short scalar decodes combine nibble validity
-  into one check before writing the result.
+- On AArch64, encode 16–32 bytes with at most two NEON vectors and send longer
+  inputs directly to the bulk loop. On invalid hex, check the first pair early
+  and locate the offending byte within a rejected block.
   See [native measurements](OPTIMIZATION.md).
 
 ## 2.0.0

@@ -26,13 +26,14 @@
 //! | Decode into a byte buffer | [`hex_decode`], [`hex_decode_with_case`] |
 //! | Decode an exact-length array | [`hex_decode_array`], [`hex_decode_array_with_case`] |
 //! | Format borrowed bytes into text | [`Hex`] with [`Display`](core::fmt::Display), [`LowerHex`](core::fmt::LowerHex) or [`UpperHex`](core::fmt::UpperHex) |
+//! | Format the first few hex digits or write them into a buffer | [`Hex::leading_digits`], [`LeadingDigits::encode_to`] |
 //! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
 //! | Validate complete byte pairs with error positions | [`hex_validate`] |
 //!
-//! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
-//! `hex_append` and `hex_append_upper` reuse a string's capacity, and
-//! `hex_decode_append` appends to an existing byte vector;
-//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors.
+//! With `alloc`, `hex_string` and `hex_string_upper` create owned strings.
+//! `hex_append` and `hex_append_upper` reuse a string's capacity.
+//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors,
+//! and `hex_decode_append` appends to an existing one.
 //! The `heapless-09` feature provides fixed-capacity strings in `heapless_09`.
 //!
 //! # Conversion contracts
