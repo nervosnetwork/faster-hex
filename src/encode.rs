@@ -112,26 +112,25 @@ pub(crate) fn encode<'a>(
         return Err(Error::OutputTooSmall { required: len });
     }
     let dst = &mut dst[..len];
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        match crate::vectorization_support() {
-            crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
-                // SAFETY: Dispatch checked AVX2 and the OS register state.
-                unsafe { hex_encode_avx2(src, dst, upper_case) }
-            }
-            crate::Vectorization::SSE41 => {
-                // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
-                unsafe { hex_encode_sse41(src, dst, upper_case) }
-            }
-            crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
-        }
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        if src.len() < 8 {
+        // Below the smallest vector load, every backend writes the same digit pairs.
+        let min_vector_len = if cfg!(target_arch = "aarch64") { 8 } else { 16 };
+        if src.len() < min_vector_len {
             hex_encode_pairs(src, dst, upper_case);
         } else {
             match crate::vectorization_support() {
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
+                    // SAFETY: Dispatch checked AVX2 and the OS register state.
+                    unsafe { hex_encode_avx2(src, dst, upper_case) }
+                }
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                crate::Vectorization::SSE41 => {
+                    // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
+                    unsafe { hex_encode_sse41(src, dst, upper_case) }
+                }
+                #[cfg(target_arch = "aarch64")]
                 crate::Vectorization::Neon => {
                     // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
                     unsafe { hex_encode_neon(src, dst, upper_case) }
@@ -414,8 +413,8 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
-    if matches!(src.len(), 16 | 32) {
-        // Complete vectors cover these sizes without a tail.
+    if src.len() <= 32 {
+        // First and last vectors cover a short hash. Overlap writes the same digits.
         if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
             encode_neon_16(input, output, table);
         }

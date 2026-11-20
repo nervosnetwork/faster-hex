@@ -23,6 +23,7 @@ CASES = {
     *(f"serde_json/serialize_reuse/{n}" for n in (10, 32, 65, 66, 4096)),
     *(f"serde_json/serialize_text_reuse/{n}" for n in (10, 32, 65, 66, 4096)),
     *(f"serde_json/deserialize/{n}" for n in (32, 4096, 65536)),
+    *(f"serde_postcard/serialize_reuse/{n}" for n in (32, 4096)),
     *(f"git_prefix/{operation}/{size}b_{digits}digits" for operation in ("buffer", "display")
       for size, digits in ((20, 7), (20, 8), (20, 40), (32, 7), (32, 64))),
 }

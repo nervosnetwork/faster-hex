@@ -6,20 +6,22 @@ prefix comparisons also run against the branch before adding `encode_to`.
 
 ## Encoding on AArch64
 
-One or two 16-byte NEON loads cover complete 16- and 32-byte inputs. Other
-lengths use the existing block and tail handling. Reducing the bulk
+One or two 16-byte NEON loads cover a 16–32-byte input. The first and last
+vectors can overlap on a 20-byte SHA-1. Longer inputs use the bulk loop and tail. Reducing the bulk
 loop's batch size in an earlier trial slowed 4 KiB encoding by about 10% on
 the M5 Pro.
 
 On an Apple M5 Pro, rotating through 4,096 different 32-byte hashes took
 about 11% less time than 2.0.0 in both builds. The table averages two
 estimates per revision, in nanoseconds per call.
-[Measured revision](https://github.com/nervosnetwork/faster-hex/commit/62b102b026e74a7db3163d6d0581d01b1533fde7).
+[Measured revision](https://github.com/nervosnetwork/faster-hex/commit/f038db183a0f91edcbac486aa81655d2ed8fa58d).
 
 | Input | Default 2.0.0 | Default candidate | ThinLTO 2.0.0 | ThinLTO candidate |
 |---|---:|---:|---:|---:|
-| 32-byte hash, rotating | 1.86 | 1.66 | 1.88 | 1.68 |
-| 4 KiB, same input | 92.0 | 91.7 | 92.8 | 92.9 |
+| 32-byte hash, rotating | 1.89 | 1.69 | 1.89 | 1.69 |
+| 4 KiB, same input | 94.2 | 96.9 | 93.5 | 94.2 |
+
+The default-build 4 KiB pairs were 93.3 → 98.6 and 95.1 → 95.1 ns.
 
 In a comparison of seven crates on this machine, mixed-case decoding of a
 32-byte hash took 2.29 ns with faster-hex and 2.95 ns with fashex. At 4 KiB,
@@ -155,6 +157,12 @@ control. The workflow flags a regression when the candidate's 95% interval
 is slower in both independent experiments and in both call-site assignments.
 The reports keep timings that depend on the individual build. Hosted runner
 CPU models vary.
+
+For example, an EPYC 9V74 running the same revision in both slots measured
+29.0 and 47.7 ns for an invalid last digit in a 32-byte hash. The second
+assignment measured 41.5 and 28.9 ns. Timing just one assignment would have
+attributed a large difference to identical source.
+[Same-revision control](https://github.com/nervosnetwork/faster-hex/actions/runs/44732274940).
 
 For a local comparison, use two disposable checkouts. The script writes the
 shared benchmark harness and dependency lock to those checkouts.
