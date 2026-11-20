@@ -68,6 +68,27 @@ impl Drop for Guarded {
 }
 
 #[test]
+fn selected_digits_stop_at_the_edge_of_both_slices() {
+    let mut source = Guarded::new();
+    let mut output = Guarded::new();
+    for len in [0usize, 1, 4, 8, 16, 17, 20, 32, 33, 64, 65, 513] {
+        for source_end in [false, true] {
+            let bytes = source.slice_mut(len, source_end);
+            for (i, byte) in bytes.iter_mut().enumerate() {
+                *byte = (i * 31 + 3) as u8;
+            }
+            let expected = hex::encode(&*bytes);
+            let digits = expected.len().saturating_sub(1);
+            for output_end in [false, true] {
+                let dst = output.slice_mut(digits, output_end);
+                let text = crate::Hex::new(bytes).leading_digits(digits).encode_to(dst);
+                assert_eq!(text.unwrap(), &expected[..digits]);
+            }
+        }
+    }
+}
+
+#[test]
 fn independent_decode_lengths_stop_at_guard_pages() {
     // The old unchecked entry could load 64 source bytes solely because dst
     // held 32 bytes. Keep source and destination lengths independent here;

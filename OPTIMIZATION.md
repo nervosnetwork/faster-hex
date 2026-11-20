@@ -11,20 +11,20 @@ lengths use the existing block and tail handling. Reducing the bulk
 loop's batch size in an earlier trial slowed 4 KiB encoding by about 10% on
 the M5 Pro.
 
-With 4,096 different 32-byte hashes in rotation on an Apple M5 Pro, the new
-encoder took 10% less time than 2.0.0 in the default build and 11% less with
-ThinLTO. The table averages two estimates per revision, in nanoseconds per call.
+On an Apple M5 Pro, rotating through 4,096 different 32-byte hashes took
+about 11% less time than 2.0.0 in both builds. The table averages two
+estimates per revision, in nanoseconds per call.
+[Measured revision](https://github.com/nervosnetwork/faster-hex/commit/62b102b026e74a7db3163d6d0581d01b1533fde7).
 
 | Input | Default 2.0.0 | Default candidate | ThinLTO 2.0.0 | ThinLTO candidate |
 |---|---:|---:|---:|---:|
-| 32-byte hash, rotating | 1.78 | 1.60 | 1.83 | 1.63 |
-| 4 KiB, same input | 88.2 | 91.2 | 91.3 | 91.1 |
+| 32-byte hash, rotating | 1.86 | 1.66 | 1.88 | 1.68 |
+| 4 KiB, same input | 92.0 | 91.7 | 92.8 | 92.9 |
 
-The 4 KiB default-build pairs varied from 87.2 → 93.5 ns to 89.2 → 88.9 ns.
-A separate comparison of seven crates on this machine also shows why the
-workload matters. For mixed-case decoding, faster-hex took 2.28 ns at 32
-bytes against 2.81 ns for fashex. At 4 KiB, fashex took 310 ns against
-319 ns for faster-hex.
+In a comparison of seven crates on this machine, mixed-case decoding of a
+32-byte hash took 2.29 ns with faster-hex and 2.95 ns with fashex. At 4 KiB,
+fashex took 314 ns and faster-hex took 323 ns. Run `cargo bench-compare` to
+compare the same inputs on another CPU.
 
 ## Rejected changes on x86
 
@@ -99,11 +99,16 @@ odd-prefix operation.
 [gitoxide's formatter](https://github.com/GitoxideLabs/gitoxide/blob/a7e739482cd6fe357ca8ebdbf82da5f1945e3e38/gix-hash/src/oid.rs#L49-L59)
 and [paired native experiment](https://github.com/nervosnetwork/faster-hex/actions/runs/44721581787).
 
-In the real `gix-hash` crate on an M5 Pro, the seven-digit `Prefix::hex_to_buf`
-call took 4.37–4.56 ns with the previous code and 1.50–1.52 ns using this
-method. Those ranges cover two measurements each of SHA-1 and SHA-256 in both
-profiles. At full length, the same buffer method took 1.39–1.44 ns, down
-from 4.67–4.81 ns for SHA-1 and 3.44–3.65 ns for SHA-256.
+The following ranges include two runs in each build profile on the M5 Pro,
+using the real `gix-hash` types. Only `Prefix::hex_to_buf` changed at the
+call site. Times are in nanoseconds per call.
+
+| Git object ID | Digits | Previous implementation | Selected view written to a slice |
+|---|---:|---:|---:|
+| SHA-1 | 7 | 4.17–4.40 | 1.50 |
+| SHA-256 | 7 | 4.26–4.51 | 1.50 |
+| SHA-1 | 40 | 4.56–4.71 | 1.61–1.62 |
+| SHA-256 | 64 | 3.40–3.66 | 1.61–1.62 |
 
 CKB's `JsonBytes` visitor checks the protocol's `0x` prefix and takes
 ownership of the result. In a local comparison using its real type and the
@@ -116,6 +121,15 @@ through Serde's `collect_str` also added work on small CKB hashes, so the
 serializer still uses a stack buffer through 65 bytes.
 [CKB's JSON visitor](https://github.com/nervosnetwork/ckb/blob/2061bc092a5dd447a741fad03b02628203b35e96/util/jsonrpc-types/src/bytes.rs#L85-L106).
 
+The JSON writer can account for much of the time in a serialization
+benchmark. On a Xeon 6975P-C, independent default builds took 43.7 and
+51.5 ns to serialize a 32-byte field. Writing its pre-encoded text through
+the same Serde payload took 38.7 and 46.6 ns without calling faster-hex.
+In a shared executable the field took 43.4–43.6 and 44.2–44.3 ns, while
+the plain-text control took 38.5–38.6 ns in both modes. The artifact retains
+both experiments and the ThinLTO comparison.
+[Codec and pre-encoded controls](https://github.com/nervosnetwork/faster-hex/actions/runs/44728944990).
+
 ## Reproducing the measurements
 
 From a branch containing the comparison workflow, run
@@ -127,19 +141,20 @@ gh workflow run rust.yml --ref YOUR_BRANCH -f benchmark_base=v2.0.0
 Each runner uses Rust 1.95.0, a shared dependency lock and matching Criterion
 workloads. Both revisions build at the same path to keep Cargo's package
 identity stable. The runner saves each executable and its SHA-256 digest
-before rebuilding the package. Default and ThinLTO builds each run baseline, candidate, candidate,
-baseline on one CPU model. The rotating case cycles through 4,096 distinct
+before rebuilding the package. Both profiles run baseline, candidate,
+candidate, baseline on one CPU model. The rotating case cycles through 4,096 distinct
 hashes. The reports cover raw encoders and decoders, error positions, Git
 prefixes and JSON at both sides of the 65-byte stack-buffer boundary.
 The artifacts include the CPU model, commit IDs, raw samples and sizes of the
 linked benchmark executables. A suspected slowdown triggers longer samples in
 the opposite order. The report retains differences reproduced in independent
 builds. For those cases a third experiment links both revisions into one
-consumer. Its JSON adapter uses a shared payload type and times the same
-writer on pre-encoded text as a control. The workflow fails when the slowdown
-also reproduces in this executable. Each comparison requires separation across
-both replicas' 95% intervals. Raw samples and build-specific differences
-remain in the report. Hosted runner CPU models vary.
+consumer, then rebuilds with their call sites swapped. Its JSON adapter uses
+a shared payload type and times the same writer on pre-encoded text as a
+control. The workflow flags a regression when the candidate's 95% interval
+is slower in both independent experiments and in both call-site assignments.
+The reports keep timings that depend on the individual build. Hosted runner
+CPU models vary.
 
 For a local comparison, use two disposable checkouts. The script writes the
 shared benchmark harness and dependency lock to those checkouts.

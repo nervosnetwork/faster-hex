@@ -1,60 +1,13 @@
-//! Compare identical formatted output using preallocated destination storage.
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use faster_hex::{hex_string, Hex};
-use std::fmt::Write;
-use std::hint::black_box;
+//! Format complete inputs and abbreviated views into reusable storage.
+use criterion::{criterion_group, criterion_main, Criterion};
+use faster_hex::Hex;
+use std::{fmt::Write, hint::black_box};
 
+#[path = "support/format.rs"]
+mod format;
 mod support;
 
-fn formatting(c: &mut Criterion) {
-    let mut group = c.benchmark_group("format");
-    for &len in support::LENGTHS {
-        if len > 4096 {
-            continue;
-        }
-        let input = support::bytes(len);
-        let expected = hex::encode(&input);
-        let mut output = String::with_capacity(len * 2 + 32);
-        assert_eq!(format!("{}", Hex::new(&input)), expected);
-        group.throughput(Throughput::Bytes(len as u64));
-        group.bench_function(BenchmarkId::new("borrowed", len), |b| {
-            b.iter(|| {
-                output.clear();
-                write!(output, "{}", Hex::new(black_box(&input))).unwrap();
-                black_box(output.as_bytes());
-            });
-            assert_eq!(output, expected);
-        });
-        group.bench_function(BenchmarkId::new("allocated_string", len), |b| {
-            b.iter(|| {
-                output.clear();
-                write!(output, "{}", hex_string(black_box(&input))).unwrap();
-                black_box(output.as_bytes());
-            });
-            assert_eq!(output, expected);
-        });
-        group.bench_function(BenchmarkId::new("per_byte", len), |b| {
-            b.iter(|| {
-                output.clear();
-                for byte in black_box(&input) {
-                    write!(output, "{byte:02x}").unwrap();
-                }
-                black_box(output.as_bytes());
-            });
-            assert_eq!(output, expected);
-        });
-        let padded = format!("+0x00000000{}", expected.to_ascii_uppercase());
-        let width = padded.len();
-        group.bench_function(BenchmarkId::new("padded_upper", len), |b| {
-            b.iter(|| {
-                output.clear();
-                write!(output, "{:+#0width$X}", Hex::new(black_box(&input))).unwrap();
-                black_box(output.as_bytes());
-            });
-            assert_eq!(output, padded);
-        });
-    }
-    group.finish();
+fn leading_digits(c: &mut Criterion) {
     let hash = support::bytes(32);
     let mut output = String::with_capacity(64);
     c.bench_function("format/leading_digits/7", |b| {
@@ -72,5 +25,5 @@ fn formatting(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, formatting);
+criterion_group!(benches, format::formatting, leading_digits);
 criterion_main!(benches);

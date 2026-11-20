@@ -14,9 +14,9 @@ static HEAD: LazyLock<bool> =
 
 pub fn serialize<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
     if *HEAD {
-        codec_head::serialize(&bytes, serializer)
+        codec_head::serialize(bytes, serializer)
     } else {
-        codec_base::serialize(&bytes, serializer)
+        codec_base::serialize(bytes, serializer)
     }
 }
 

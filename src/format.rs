@@ -116,37 +116,34 @@ impl<'a> Hex<'a> {
 impl Hex<'_> {
     #[inline]
     fn format<const OMIT_LOW: bool>(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
-        // The usual hash/logging format has no field width. It needs neither
-        // encoded-length arithmetic nor alignment/padding calculations.
+        let prefix = match (f.sign_plus(), f.alternate()) {
+            (false, false) => "",
+            (false, true) => "0x",
+            (true, false) => "+",
+            (true, true) => "+0x",
+        };
         if let Some(width) = f.width() {
-            return self.format_padded(f, upper, width, OMIT_LOW);
+            return self.format_padded::<OMIT_LOW>(f, upper, prefix, width);
         }
-        if f.sign_plus() {
-            f.write_str("+")?;
+        if !prefix.is_empty() {
+            f.write_str(prefix)?;
         }
-        if f.alternate() {
-            f.write_str("0x")?;
-        }
-        self.write_hex(f, upper, OMIT_LOW)
+        self.write_hex::<OMIT_LOW>(f, upper)
     }
 
     // Padding needs more live state; keep it out of the usual hash/logging path.
     #[inline(never)]
-    fn format_padded(
+    fn format_padded<const OMIT_LOW: bool>(
         &self,
         f: &mut fmt::Formatter<'_>,
         upper: bool,
+        prefix: &str,
         width: usize,
-        omit_low: bool,
     ) -> fmt::Result {
-        let prefix = if f.alternate() { "0x" } else { "" };
-        let sign = if f.sign_plus() { "+" } else { "" };
         // Saturation is sufficient for width comparison: if the complete output
         // exceeds usize::MAX characters, no representable width adds padding.
-        let digits = self.bytes.len().saturating_mul(2) - usize::from(omit_low);
-        let len = digits
-            .saturating_add(prefix.len())
-            .saturating_add(sign.len());
+        let digits = self.bytes.len().saturating_mul(2) - usize::from(OMIT_LOW);
+        let len = digits.saturating_add(prefix.len());
         let padding = width.saturating_sub(len);
         let zero_pad = f.sign_aware_zero_pad();
         let (left, right) = if zero_pad {
@@ -160,9 +157,6 @@ impl Hex<'_> {
         };
         let fill = f.fill();
         write_fill(f, fill, left)?;
-        if !sign.is_empty() {
-            f.write_str(sign)?;
-        }
         if !prefix.is_empty() {
             f.write_str(prefix)?;
         }
@@ -170,12 +164,16 @@ impl Hex<'_> {
             write_fill(f, '0', padding)?;
         }
 
-        self.write_hex(f, upper, omit_low)?;
+        self.write_hex::<OMIT_LOW>(f, upper)?;
         write_fill(f, fill, right)
     }
 
     #[inline]
-    fn write_hex(&self, f: &mut fmt::Formatter<'_>, upper: bool, omit_low: bool) -> fmt::Result {
+    fn write_hex<const OMIT_LOW: bool>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        upper: bool,
+    ) -> fmt::Result {
         if self.bytes.is_empty() {
             return Ok(());
         }
@@ -184,9 +182,13 @@ impl Hex<'_> {
             let mut buffer = [MaybeUninit::uninit(); 256];
             let text = encode(self.bytes, &mut buffer, upper)
                 .expect("short input fits the fixed encoding buffer");
-            return f.write_str(&text[..text.len() - usize::from(omit_low)]);
+            return f.write_str(if OMIT_LOW {
+                &text[..text.len() - 1]
+            } else {
+                text
+            });
         }
-        self.write_long(f, upper, omit_low)
+        self.write_long(f, upper, OMIT_LOW)
     }
 
     // Keep the larger scratch space and streaming loop out of short hash calls.

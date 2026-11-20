@@ -14,10 +14,11 @@ import tempfile
 from bench_linked import build_linked
 
 CASES = {
-    *(f"encode/faster_hex/{n}" for n in (2, 4, 8, 20, 32, 64, 65, 256, 4096)),
+    *(f"encode/faster_hex/{n}" for n in (2, 4, 8, 16, 20, 32, 64, 65, 256, 4096)),
     *(f"decode/faster_hex_mixed/{n}" for n in (2, 4, 20, 32, 4096)),
     *(f"rotating_encode/faster_hex/{n}" for n in (8, 32, 64)),
-    "rotating_decode/faster_hex/32", "decode_array/faster_hex/32", "format/borrowed/32",
+    "rotating_decode/faster_hex/32", "decode_array/faster_hex/32",
+    "format/borrowed/32", "format/borrowed/4096", "format/alternate/32", "format/padded_upper/32",
     *(f"invalid/decode/{position}/{n}" for position in ("first", "last") for n in (1, 32, 4096)),
     *(f"serde_json/serialize_reuse/{n}" for n in (10, 32, 65, 66, 4096)),
     *(f"serde_json/serialize_text_reuse/{n}" for n in (10, 32, 65, 66, 4096)),
@@ -36,8 +37,14 @@ def prepare_checkouts(baseline, candidate):
         shutil.copy(candidate / "ci/bench_prefix_v2.rs", old / "support/prefix.rs")
         with (baseline / "Cargo.toml").open("a") as manifest:
             manifest.write('\n[[bench]]\nname = "prefix"\nharness = false\nrequired-features = ["std"]\n')
-    for name in ("prefix.rs", "serde.rs", "support/mod.rs"):
+    for name in ("prefix.rs", "serde.rs", "support/mod.rs", "support/format.rs"):
         shutil.copy(new / name, old / name)
+    # The released crate can run all common formatting workloads. The
+    # leading_digits benchmark in the development driver requires the new API.
+    (old / "format.rs").write_text(
+        'mod support;\n#[path = "support/format.rs"] mod format;\n'
+        'criterion::criterion_group!(benches, format::formatting);\n'
+        'criterion::criterion_main!(benches);\n')
     shutil.copytree(old, new, dirs_exist_ok=True, ignore=shutil.ignore_patterns("prefix.rs"))
     if not (baseline / "Cargo.lock").exists():
         subprocess.run(["cargo", "generate-lockfile"], cwd=baseline, check=True)
@@ -72,10 +79,9 @@ def build(checkout, work, role, env, sizes, cases):
     source = work / "source"
     shutil.copytree(checkout, source, copy_function=shutil.copy,
                     ignore=shutil.ignore_patterns(".git", "target", "__pycache__"))
-    if role == "head":
-        subprocess.run(["cargo", "clean", "--package", "faster-hex", "--profile", "bench"],
-                       cwd=source, env=env, check=True)
-    args = ["cargo", "bench", "--locked", "--no-run", "--message-format=json"]
+    subprocess.run(["cargo", "clean", "--package", "faster-hex", "--profile", "bench"],
+                   cwd=source, env=env, check=True)
+    args = ["cargo", "bench", "--locked", "--no-run", "--message-format=json-render-diagnostics"]
     for name in ("hex", "check", "format", "serde", "prefix"):
         args.extend(["--bench", name])
     built = subprocess.check_output(args, cwd=source, env=env, text=True)
@@ -114,8 +120,9 @@ def compare(baseline, candidate, results, work):
     linux = platform.system() == "Linux"
     cpu = ["lscpu"] if linux else ["sysctl", "-n", "machdep.cpu.brand_string"]
     metadata = [subprocess.check_output(cpu, text=True), subprocess.check_output(["rustc", "-vV"], text=True)]
-    for checkout in (baseline, candidate):
-        metadata.append(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=checkout, text=True))
+    revisions = [subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=checkout, text=True)
+                 for checkout in (baseline, candidate)]
+    metadata.extend(revisions)
     (results / "host.txt").write_text("\n".join(metadata))
     print("".join(metadata), flush=True)
 
@@ -125,12 +132,14 @@ def compare(baseline, candidate, results, work):
         base_bins, base_hashes = build(baseline, work, "base", env, sizes, cases)
         head_bins, head_hashes = build(candidate, work, "head", env, sizes, cases)
 
-    def measure(order, cases, seconds, count, linked_bins=None):
+    def measure(order, cases, seconds, count, linked=None):
         runs = {}
         for label in order:
             role = "base" if label.startswith("base") else "head"
-            binaries = linked_bins or (base_bins if role == "base" else head_bins)
-            args = ["--bench", case_filter(cases), "--warm-up-time", "1" if linked_bins else "0.2", "--measurement-time", str(seconds),
+            binaries = base_bins if role == "base" else head_bins
+            if linked:
+                binaries, role = linked[label]
+            args = ["--bench", case_filter(cases), "--warm-up-time", "1" if linked else "0.2", "--measurement-time", str(seconds),
                     "--sample-size", str(count), "--noplot", "--save-baseline", label]
             for exe in binaries:
                 subprocess.run(pin + [exe] + args, cwd=work,
@@ -151,11 +160,19 @@ def compare(baseline, candidate, results, work):
     independent = repeated - same_binary
     linked_cases = independent | {case.replace("/serialize_reuse/", "/serialize_text_reuse/")
                                   for case in independent if case.startswith("serde_json/serialize_reuse/")}
+    if revisions[0] == revisions[1]:
+        linked_cases.update(cases)
     if linked_cases:
-        targets = {base_hashes[case][0] for case in independent}
-        linked_bins = build_linked({"base": baseline, "head": candidate}, work, env, sorted(targets))
-        runs.update(measure(("base5", "head5", "head6", "base6"), linked_cases, 3, 50, linked_bins))
-    confirmed = {case for case in independent if regressed(case, 5, 6)}
+        targets = sorted({base_hashes[case][0] for case in linked_cases if case in base_hashes})
+        forward = build_linked({"base": baseline, "head": candidate}, work / "linked", work / "forward", env, targets)
+        reverse = build_linked({"base": candidate, "head": baseline}, work / "linked", work / "reverse", env, targets)
+        # Swap the library occupying each call site as well as the time order.
+        # A branch or a code address that favors one slot then favors each revision once.
+        slots = {"base5": (forward, "base"), "head5": (forward, "head"),
+                 "head6": (reverse, "base"), "base6": (reverse, "head")}
+        runs.update(measure(tuple(slots), linked_cases, 3, 50, slots))
+    confirmed = {case for case in independent if all(
+        slower([runs[f"base{n}"][case]], [runs[f"head{n}"][case]]) for n in (5, 6))}
 
     rows = [f"### Bench LTO {os.environ.get('CARGO_PROFILE_BENCH_LTO', 'default')}", "",
             "| Case (ns) | Base 1 | Head 1 | Base 2 | Head 2 | Result |",
@@ -171,7 +188,7 @@ def compare(baseline, candidate, results, work):
             status = "slower in independent builds only"
         rows.append(f"| {case} | " + " | ".join(f"{v:.3f}" for v in values) + f" | {status} |")
     if linked_cases:
-        rows.extend(["", "Both revisions share one executable. Serde uses the same payload type and JSON writer.", "",
+        rows.extend(["", "Each pair shares an executable. The second pair swaps library slots. Serde shares the payload type and JSON writer.", "",
                      "| Case (ns) | Base 5 | Head 5 | Base 6 | Head 6 |", "|---|---:|---:|---:|---:|"])
         for case in sorted(linked_cases):
             values = [runs[label][case]["point_estimate"] for label in ("base5", "head5", "base6", "head6")]

@@ -6,8 +6,7 @@ import shutil
 import subprocess
 
 
-def build_linked(checkouts, work, env, targets):
-    root = work / "linked"
+def build_linked(checkouts, root, output, env, targets):
     benches = root / "benches"
     benches.mkdir(parents=True)
     manifest = (checkouts["head"] / "Cargo.toml").read_text()
@@ -63,11 +62,19 @@ def build_linked(checkouts, work, env, targets):
     pinned = registry_checksums()
     # Cargo adds the two local package identities. Registry dependencies still
     # have to match the versions and checksums from the independent builds.
-    command = ["cargo", "bench", "--no-run", "--message-format=json"]
+    # Each local package keeps its name and source path as its revision changes.
+    # Discard its artifacts before swapping slots, including compiled consumers.
+    subprocess.run(["cargo", "clean", "--profile", "bench", "-p", "faster-hex-base",
+                    "-p", "faster-hex-head", "-p", "codec-comparison"], cwd=root, env=env, check=True)
+    command = ["cargo", "bench", "--no-run", "--message-format=json-render-diagnostics"]
     for target in targets:
         command.extend(["--bench", target])
     built = subprocess.check_output(command, cwd=root, env=env, text=True)
     if not pinned or registry_checksums() - pinned:
         raise ValueError("linked consumer changed the registry dependency lock")
-    return sorted(artifact["executable"] for artifact in map(json.loads, built.splitlines())
-                  if artifact.get("executable") and "bench" in artifact["target"]["kind"])
+    output.mkdir()
+    binaries = sorted(shutil.copy2(artifact["executable"], output / artifact["target"]["name"])
+                      for artifact in map(json.loads, built.splitlines())
+                      if artifact.get("executable") and "bench" in artifact["target"]["kind"])
+    shutil.rmtree(root)
+    return binaries
