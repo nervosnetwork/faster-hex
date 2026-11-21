@@ -363,16 +363,11 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    if !src.len().is_multiple_of(2) {
+    let (pairs, tail) = src.as_chunks::<2>();
+    if !tail.is_empty() {
         return Err(Error::OddLength);
     }
-    let actual = src.len() / 2;
-    if actual != N {
-        return Err(Error::LengthMismatch {
-            expected: N,
-            actual,
-        });
-    }
+    let pairs = ArrayPairs::<N>::new(pairs)?;
     let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
     if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
@@ -385,8 +380,7 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    pairs.write(&mut bytes, check_case)?;
     Ok(bytes)
 }
 
@@ -740,10 +734,8 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
 
 // The number of input pairs and the output array share N. Keep the input as
 // a slice so even an array too large to encode can still report a length error.
-#[cfg(feature = "serde")]
 pub(crate) struct ArrayPairs<'a, const N: usize>(&'a [[u8; 2]]);
 
-#[cfg(feature = "serde")]
 impl<'a, const N: usize> ArrayPairs<'a, N> {
     #[inline(always)]
     pub(crate) fn new(pairs: &'a [[u8; 2]]) -> Result<Self, Error> {
@@ -757,6 +749,13 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
         Ok(Self(pairs))
     }
 
+    #[inline(always)]
+    fn write(self, bytes: &mut [u8; N], case: CheckCase) -> Result<(), Error> {
+        // SAFETY: The constructor verified one input pair per output byte.
+        unsafe { decode_owned(self.0.as_flattened(), bytes, case) }
+    }
+
+    #[cfg(feature = "serde")]
     #[inline(always)]
     pub(crate) fn decode_into(
         self,
@@ -789,8 +788,7 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
             }
             return Ok(bytes);
         }
-        // SAFETY: Each of the N output bytes has exactly one input pair.
-        unsafe { decode_owned(src, bytes, check_case) }?;
+        self.write(bytes, check_case)?;
         Ok(bytes)
     }
 }
