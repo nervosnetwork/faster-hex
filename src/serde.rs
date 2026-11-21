@@ -74,7 +74,6 @@ mod internal {
         }
     }
 
-    #[cfg_attr(target_arch = "aarch64", inline(always))]
     pub(crate) fn serialize<S, T>(
         data: T,
         serializer: S,
@@ -192,13 +191,8 @@ mod internal {
         fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
             let pairs =
                 ArrayPairs::<N>::new(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
-            // Keep storage for a large valid value off the error path.
-            array_result::<N, _>(|| {
-                pairs
-                    .decode_into(&mut MaybeUninit::uninit(), Self::CASE)
-                    .copied()
-                    .map_err(E::custom)
-            })
+            // Keep the large return value off the length-error path.
+            array_result::<N, _>(|| pairs.decode(Self::CASE).map_err(E::custom))
         }
     }
 

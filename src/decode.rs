@@ -758,11 +758,29 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
     }
 
     #[inline(always)]
-    pub(crate) fn decode_into<'out>(
+    pub(crate) fn decode(self, case: CheckCase) -> Result<[u8; N], Error> {
+        if N < 8 {
+            return self
+                .decode_into(&mut core::mem::MaybeUninit::uninit(), case)
+                .copied();
+        }
+        let mut bytes = [0; N];
+        self.fill_bytes(&mut bytes, case)?;
+        Ok(bytes)
+    }
+
+    #[inline(always)]
+    fn fill_bytes(self, bytes: &mut [u8; N], case: CheckCase) -> Result<(), Error> {
+        // SAFETY: new matched one input pair to each of the N output bytes.
+        unsafe { decode_owned(self.0.as_flattened(), bytes, case) }
+    }
+
+    #[inline(always)]
+    pub(crate) fn decode_into(
         self,
-        storage: &'out mut core::mem::MaybeUninit<[u8; N]>,
+        storage: &mut core::mem::MaybeUninit<[u8; N]>,
         check_case: CheckCase,
-    ) -> Result<&'out [u8; N], Error> {
+    ) -> Result<&[u8; N], Error> {
         let pairs = self.0;
         let src = pairs.as_flattened();
         #[cfg(target_arch = "aarch64")]
@@ -789,8 +807,7 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
             }
             return Ok(bytes);
         }
-        // SAFETY: Each of the N output bytes has exactly one input pair.
-        unsafe { decode_owned(src, bytes, check_case) }?;
+        self.fill_bytes(bytes, check_case)?;
         Ok(bytes)
     }
 }
