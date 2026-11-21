@@ -41,6 +41,9 @@ if variant:=os.environ.get("ARRAY_VARIANT"):
  for n in [20,32,256,4095,4097,8192]:
   key=f"field{n}";cases[key]=[n]
   ops[key]=(ops["field4096"][0],ops["field4096"][1].replace("4096",str(n)))
+ if os.environ.get("FOCUSED_FIELDS"):
+  covered={"option32","option4096","field4096","field4095","json32","json4096","transient32","transient4096"}
+  cases={k:v for k,v in cases.items() if k in covered}
  ops={k:v for k,v in ops.items() if k in cases}
  shutil.rmtree(bins);bins.mkdir()
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
