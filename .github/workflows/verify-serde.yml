@@ -15,26 +15,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: kernel, mode: mixed_profile, os: ubuntu-22.04, lto: "thin"}
-          - {family: kernel, mode: mixed_profile, os: ubuntu-24.04, lto: "thin"}
-          - {family: kernel, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: kernel, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: kernel, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: field, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: field, mode: mixed, os: ubuntu-24.04, lto: "thin"}
-          - {family: field, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: field, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: field, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: safe, mode: mixed_profile, os: ubuntu-22.04, lto: "thin"}
-          - {family: safe, mode: mixed_profile, os: ubuntu-24.04, lto: "thin"}
-          - {family: safe, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: safe, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: safe, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: safe, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: safe, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: safe, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: field, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: kernel, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: classic, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: classic, mode: mixed, os: ubuntu-24.04, lto: "thin"}
+          - {family: classic, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: classic, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: classic, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: ordinary, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: ordinary, mode: mixed, os: ubuntu-24.04, lto: "thin"}
+          - {family: ordinary, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: ordinary, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: ordinary, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: adaptive, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: adaptive, mode: mixed, os: ubuntu-24.04, lto: "thin"}
+          - {family: adaptive, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: adaptive, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: adaptive, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: ordinary, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: ordinary, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: ordinary, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: ordinary, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: ordinary, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: anchored, mode: placement, os: ubuntu-22.04, lto: "thin"}
+          - {family: anchored, mode: placement, os: ubuntu-24.04, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -47,9 +49,10 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            kernel) PRODUCT_REV=054b3e96fc1340b99b2f49e359bd6d7d0a9e4191 ;;
-            field) PRODUCT_REV=4c07689f1dab13a811fb0b02a6cbe6a8fc948466 ;;
-            safe) PRODUCT_REV=5a9f8fa98d45e3a45d386ba536298c993789a056 ;;
+            classic) PRODUCT_REV=55e128489ae09b15f6813c50aaf7d94af4d50562 ;;
+            ordinary) PRODUCT_REV=48adb304808d2373a18d676debf5ab8f85812c38 ;;
+            adaptive) PRODUCT_REV=e70842f2d4010697ca60e4f8924257bfc7fbbd0b ;;
+            anchored) PRODUCT_REV=548feab70af28992ce99a17c93ffbf37375143ce ;;
           esac
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = fields ]; then
@@ -60,6 +63,9 @@ jobs:
             python3 verify/writer_layout.py
           elif [ "${{ matrix.mode }}" = owned ]; then
             OWNED_WRITER=1 python3 verify/shared_writer.py
+          elif [ "${{ matrix.mode }}" = placement ]; then
+            MIXED_CALLER=1 python3 verify/consumer.py
+            python3 verify/measure_placement.py
           elif [ "${{ matrix.mode }}" = mixed_profile ]; then
             MIXED_CALLER=1 python3 verify/consumer.py
             python3 verify/profile_caller.py
@@ -75,6 +81,7 @@ jobs:
         with:
           name: study-${{ matrix.family }}-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
           path: |
+            results/placement.json
             results/profile.json
             results/writer-layout.json
             results/shared-writer.json
