@@ -61,8 +61,8 @@ static UNHEX4: [u8; 256] = init_unhex4_array(CheckCase::None);
 /// character-only check: empty and odd-length inputs can pass. It does not
 /// allocate or modify the input.
 ///
-/// Use [`hex_decode`] to also require complete byte pairs. There is no need to
-/// call this function before a checked decoder: decoding already validates input.
+/// Use [`hex_validate`] to check complete byte pairs without an output buffer.
+/// [`hex_decode`] validates the input as part of decoding.
 ///
 /// # Examples
 ///
@@ -394,8 +394,8 @@ pub fn hex_decode_array_with_case<const N: usize>(
 ///
 /// Available with `alloc`. The result owns exactly `src.len() / 2` decoded bytes,
 /// independently of the input. Empty input produces an empty vector. The same
-/// strict ASCII grammar as [`hex_decode`] applies: no prefixes, whitespace or
-/// separators. Use [`hex_decode_vec_with_case`] to restrict letter case.
+/// ASCII grammar as [`hex_decode`] applies. Use [`hex_decode_vec_with_case`] to
+/// restrict letter case or [`hex_decode_append`] to extend an existing vector.
 ///
 /// # Errors
 ///
