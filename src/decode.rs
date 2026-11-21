@@ -363,26 +363,16 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    let (pairs, tail) = src.as_chunks::<2>();
-    if !tail.is_empty() {
+    if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
-    decode_array_pairs(pairs, check_case)
-}
-
-#[inline(always)]
-pub(crate) fn decode_array_pairs<const N: usize>(
-    pairs: &[[u8; 2]],
-    check_case: CheckCase,
-) -> Result<[u8; N], Error> {
-    let actual = pairs.len();
+    let actual = src.len() / 2;
     if actual != N {
         return Err(Error::LengthMismatch {
             expected: N,
             actual,
         });
     }
-    let src = pairs.as_flattened();
     let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
     if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
