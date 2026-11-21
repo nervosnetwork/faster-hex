@@ -201,17 +201,6 @@ pub enum CheckCase {
     Upper,
 }
 
-impl CheckCase {
-    #[inline]
-    fn digit_table(self) -> &'static [u8; 256] {
-        match self {
-            Self::None => &UNHEX,
-            Self::Lower => &UNHEX_LOWER,
-            Self::Upper => &UNHEX_UPPER,
-        }
-    }
-}
-
 /// Decodes all of `src` into `dst` without allocation, accepting either letter case.
 ///
 /// `src` must contain an even number of ASCII hex digits, without a prefix,
@@ -374,55 +363,66 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    let mut storage = core::mem::MaybeUninit::uninit();
-    decode_array_into(src, &mut storage, check_case).copied()
-}
-
-// Validate the length before initializing the array. Its bytes stay private
-// until all digits have been checked, including on the block-at-a-time path.
-#[inline(always)]
-pub(crate) fn decode_array_into<'out, const N: usize>(
-    src: &[u8],
-    storage: &'out mut core::mem::MaybeUninit<[u8; N]>,
-    check_case: CheckCase,
-) -> Result<&'out [u8; N], Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
-    }
-    let actual = src.len() / 2;
-    if actual != N {
-        return Err(Error::LengthMismatch {
-            expected: N,
-            actual,
-        });
-    }
-    let bytes = storage.write([0; N]);
+    array_pairs::<N>(src)?;
+    let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
     if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
         // A fixed short array can inline the existing NEON block by padding
         // with valid digits, without reading beyond the source slice.
         let mut input = [b'0'; 16];
-        input[..8].copy_from_slice(src);
+        input[..src.len()].copy_from_slice(src);
         let mut output = [0; 8];
         hex_decode_with_case(&input, &mut output, check_case)?;
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
+    // SAFETY: The length check above matched the number of input pairs to N.
+    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    Ok(bytes)
+}
+
+#[inline(always)]
+fn array_pairs<const N: usize>(src: &[u8]) -> Result<&[[u8; 2]; N], Error> {
+    use core::convert::TryInto;
+    let (pairs, tail) = src.as_chunks::<2>();
+    if !tail.is_empty() {
+        return Err(Error::OddLength);
+    }
+    pairs.try_into().map_err(|_| Error::LengthMismatch {
+        expected: N,
+        actual: pairs.len(),
+    })
+}
+
+// A Serde visitor can initialize its field before the input text expires.
+#[cfg(feature = "serde")]
+#[inline(always)]
+pub(crate) fn decode_array_into<'a, const N: usize>(
+    src: &[u8],
+    storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
+    check_case: CheckCase,
+) -> Result<&'a [u8; N], Error> {
+    let pairs = array_pairs::<N>(src)?;
+    let bytes = storage.write([0; N]);
     if N < 8 {
-        let digits = check_case.digit_table();
+        let digits = match check_case {
+            CheckCase::None => &UNHEX,
+            CheckCase::Lower => &UNHEX_LOWER,
+            CheckCase::Upper => &UNHEX_UPPER,
+        };
         let mut invalid = 0;
-        for (slot, &[high, low]) in bytes.iter_mut().zip(src.as_chunks::<2>().0) {
-            let high = digits[usize::from(high)];
-            let low = digits[usize::from(low)];
-            invalid |= high | low;
-            *slot = (high << 4) | low;
+        for (out, &[high, low]) in bytes.iter_mut().zip(pairs) {
+            let hi = digits[usize::from(high)];
+            let lo = digits[usize::from(low)];
+            invalid |= hi | lo;
+            *out = (hi << 4) | lo;
         }
         if invalid == NIL {
-            decode_diagnosed(src, bytes, check_case)?;
+            diagnose_invalid(src, check_case)?;
         }
         return Ok(bytes);
     }
-    // SAFETY: The length check above matched the number of input pairs to N.
+    // SAFETY: Each of the N output bytes has exactly one input pair.
     unsafe { decode_owned(src, bytes, check_case) }?;
     Ok(bytes)
 }
@@ -653,7 +653,11 @@ pub(crate) fn hex_decode_short_scalar(
     dst: &mut [u8],
     case: CheckCase,
 ) -> Result<(), ()> {
-    let table = case.digit_table();
+    let table = match case {
+        CheckCase::None => &UNHEX,
+        CheckCase::Lower => &UNHEX_LOWER,
+        CheckCase::Upper => &UNHEX_UPPER,
+    };
     let mut decoded = 0u64;
     for pair in src.as_chunks::<2>().0 {
         let high = table[usize::from(pair[0])];
@@ -683,7 +687,11 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
 
 #[inline(always)]
 fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
-    let table = case.digit_table();
+    let table = match case {
+        CheckCase::None => &UNHEX,
+        CheckCase::Lower => &UNHEX_LOWER,
+        CheckCase::Upper => &UNHEX_UPPER,
+    };
     // Report a malformed first pair before scanning any SIMD blocks.
     for (index, &byte) in src.iter().take(2).enumerate() {
         if table[usize::from(byte)] == NIL {
