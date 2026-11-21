@@ -54,39 +54,27 @@ mod internal {
         }
     }
 
-    impl Text<'_, &str> {
-        fn as_str(&self) -> &str {
-            match *self {
-                Self::Borrowed(s) => s,
-                Self::Transient(s) => s,
-            }
-        }
-    }
-
     struct TextVisitor<F>(F);
-    impl<'de, F, T> Visitor<'de> for TextVisitor<F>
-    where
-        F: for<'s> FnOnce(Text<'de, &'s str>) -> T,
-    {
-        type Value = T;
+    impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for TextVisitor<F> {
+        type Value = Text<'de, T>;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
         #[inline(always)]
-        fn visit_str<E: Error>(self, text: &str) -> Result<T, E> {
-            Ok((self.0)(Text::Transient(text)))
+        fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
+            Ok(Text::Transient((self.0)(text)))
         }
         #[inline(always)]
-        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<T, E> {
-            Ok((self.0)(Text::Borrowed(text)))
+        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
+            Ok(Text::Borrowed(text))
         }
-        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<T, E> {
+        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
             match core::str::from_utf8(bytes) {
                 Ok(s) => self.visit_str(s),
                 Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
             }
         }
-        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<T, E> {
+        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
             match core::str::from_utf8(bytes) {
                 Ok(s) => self.visit_borrowed_str(s),
                 Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
@@ -155,9 +143,12 @@ mod internal {
     #[inline]
     pub(super) fn read<'de, D: Deserializer<'de>, T>(
         d: D,
-        decode: impl FnOnce(&str) -> T,
+        decode: impl Fn(&str) -> T,
     ) -> Result<T, D::Error> {
-        d.deserialize_string(TextVisitor(|input: Text<'de, &str>| decode(input.as_str())))
+        match d.deserialize_string(TextVisitor(&decode))? {
+            Text::Borrowed(text) => Ok(decode(text)),
+            Text::Transient(field) => Ok(field),
+        }
     }
 
     #[inline]
@@ -219,33 +210,12 @@ mod internal {
         finish: impl FnOnce(Text<'de, Field<&[u8; N]>>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
-        let mut transient = MaybeUninit::uninit();
-        let storage = &mut storage;
-        let transient = &mut transient;
-        let input = d.deserialize_string(TextVisitor(move |text: Text<'de, &str>| {
-            let storage = storage;
-            let transient = transient;
-            match text {
-                Text::Borrowed(s) => Text::Borrowed(s),
-                Text::Transient(s) => Text::Transient(&*transient.write(P::fill::<N>(s, storage))),
-            }
+        let slot = &mut storage;
+        let input = d.deserialize_string(TextVisitor(move |s: &str| {
+            let slot = slot;
+            P::fill::<N>(s, slot)
         }))?;
-        finish(input.map(|outcome| *outcome))
-    }
-
-    fn bulk_borrowed<E: Error, const N: usize>(
-        text: &str,
-        prefix: bool,
-        case: CheckCase,
-    ) -> Result<[u8; N], E> {
-        let src = payload(text, prefix, E::custom)?;
-        let actual = src.len() / 2;
-        if actual != N {
-            return Err(E::custom(format_args!(
-                "expected {N} decoded bytes, got {actual}"
-            )));
-        }
-        hex_decode_array_with_case(src.as_bytes(), case).map_err(E::custom)
+        finish(input)
     }
 
     #[inline(always)]
@@ -263,26 +233,33 @@ mod internal {
             }
         }
     }
-    #[inline(never)]
-    fn decode_large<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+    #[inline(always)]
+    fn read_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
         with_array::<D, P, _, N>(d, |input| match input {
-            Text::Borrowed(s) => bulk_borrowed(s, P::PREFIX, P::CASE),
-            Text::Transient(result) => result.copied().map_err(D::Error::custom),
+            Text::Borrowed(text) => P::decode(text),
+            Text::Transient(field) => field.copied().map_err(D::Error::custom),
         })
     }
+
+    // An out-of-line return keeps the format from copying large array results in pieces.
+    #[inline(never)]
+    fn read_large_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+        d: D,
+    ) -> Result<[u8; N], D::Error> {
+        read_array::<D, P, N>(d)
+    }
+
     #[inline(always)]
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
         if N > 1024 {
-            return decode_large::<D, P, N>(d);
+            read_large_array::<D, P, N>(d)
+        } else {
+            read_array::<D, P, N>(d)
         }
-        with_array::<D, P, _, N>(d, |input| match input {
-            Text::Borrowed(text) => P::decode(text),
-            Text::Transient(field) => field.copied().map_err(D::Error::custom),
-        })
     }
 
     pub(crate) fn serialize_option<S, T>(
@@ -506,11 +483,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
             pub(super) fn read_bytes<'de, const MAX: usize, D: serde::Deserializer<'de>>(
                 d: D,
             ) -> Result<internal::Field<alloc::vec::Vec<u8>>, D::Error> {
-                let mut bytes = Ok(alloc::vec::Vec::new());
-                internal::read(d, |text| {
-                    bytes = internal::decode_bytes(text, $with_pfx, $check_case, MAX);
-                })?;
-                Ok(bytes)
+                internal::read(d, |text| internal::decode_bytes(text, $with_pfx, $check_case, MAX))
             }
 
             /// Serializes a byte view using this module's prefix and case policy.
