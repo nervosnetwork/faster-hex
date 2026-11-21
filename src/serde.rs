@@ -94,23 +94,22 @@ mod internal {
     {
         let src = data.as_ref();
         let prefix: &[u8] = if with_prefix { b"0x" } else { b"" };
-        const STACK: usize = 132;
+        let len = src
+            .len()
+            .checked_mul(2)
+            .and_then(|len| len.checked_add(prefix.len()))
+            .ok_or_else(|| serde::ser::Error::custom(crate::Error::Overflow))?;
+        // Fixed values through 65 bytes (including H520) fit with the prefix.
+        // Initialize only the storage selected for this call.
         let mut stack;
         let mut heap;
-        let dst = if src.len() <= (STACK - prefix.len()) / 2 {
-            let len = 2 * src.len() + prefix.len();
-            stack = [MaybeUninit::uninit(); STACK];
+        let dst = if len <= 132 {
+            stack = [MaybeUninit::uninit(); 132];
             &mut stack[..len]
         } else {
-            let len = src
-                .len()
-                .checked_mul(2)
-                .and_then(|n| n.checked_add(prefix.len()))
-                .ok_or_else(|| serde::ser::Error::custom(crate::Error::Overflow))?;
-            heap = Vec::<u8>::with_capacity(len);
-            &mut heap.spare_capacity_mut()[..len]
+            heap = alloc::boxed::Box::<[u8]>::new_uninit_slice(len);
+            &mut heap[..]
         };
-        let len = dst.len();
         for (slot, &byte) in dst.iter_mut().zip(prefix) {
             slot.write(byte);
         }
