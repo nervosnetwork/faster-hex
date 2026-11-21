@@ -4,7 +4,7 @@ use core::iter::FromIterator;
 
 mod internal {
     use crate::{
-        decode::{ArrayDigits, CheckCase},
+        decode::{hex_decode_vec_with_case, ArrayPairs, CheckCase},
         encode::encode,
     };
     use alloc::vec::Vec;
@@ -44,21 +44,28 @@ mod internal {
         Transient(T),
     }
 
-    struct TextVisitor<F>(F);
+    struct TextVisitor<B, T> {
+        borrowed: B,
+        transient: T,
+    }
 
-    impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for TextVisitor<F> {
-        type Value = Text<'de, T>;
+    impl<'de, R, B, T> Visitor<'de> for TextVisitor<B, T>
+    where
+        B: FnOnce(&'de str) -> R,
+        T: FnOnce(&str) -> R,
+    {
+        type Value = R;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
         #[inline(always)]
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            Ok(Text::Transient((self.0)(text)))
+            Ok((self.transient)(text))
         }
         #[inline(always)]
         fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(Text::Borrowed(text))
+            Ok((self.borrowed)(text))
         }
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
             match core::str::from_utf8(bytes) {
@@ -138,10 +145,10 @@ mod internal {
         d: D,
         decode: impl Fn(&str) -> T,
     ) -> Result<T, D::Error> {
-        match d.deserialize_string(TextVisitor(&decode))? {
-            Text::Borrowed(text) => Ok(decode(text)),
-            Text::Transient(field) => Ok(field),
-        }
+        d.deserialize_string(TextVisitor {
+            borrowed: &decode,
+            transient: &decode,
+        })
     }
 
     #[inline]
@@ -157,14 +164,18 @@ mod internal {
             return Err(FieldError::Limit { max, actual });
         }
         let src = pairs.as_flattened();
-        #[expect(
-            clippy::slow_vector_initialization,
-            reason = "a single ordinary allocation is cheaper for short-lived fields"
-        )]
-        let mut bytes = Vec::with_capacity(actual);
-        bytes.resize(actual, 0);
-        crate::hex_decode_with_case(src, &mut bytes, case).map_err(FieldError::Hex)?;
-        Ok(bytes)
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        if actual <= 256 {
+            #[expect(
+                clippy::slow_vector_initialization,
+                reason = "glibc handles small ordinary allocations faster than calloc"
+            )]
+            let mut bytes = Vec::with_capacity(actual);
+            bytes.resize(actual, 0);
+            crate::hex_decode_with_case(src, &mut bytes, case).map_err(FieldError::Hex)?;
+            return Ok(bytes);
+        }
+        hex_decode_vec_with_case(src, case).map_err(FieldError::Hex)
     }
 
     pub(super) trait Policy {
@@ -177,7 +188,7 @@ mod internal {
             storage: &'a mut MaybeUninit<[u8; N]>,
         ) -> Field<&'a [u8; N]> {
             let pairs = payload(text, Self::PREFIX, FieldError::Text)?;
-            let pairs = ArrayDigits::<N>::new(pairs.as_flattened()).map_err(FieldError::Hex)?;
+            let pairs = ArrayPairs::<N>::new(pairs).map_err(FieldError::Hex)?;
             pairs
                 .decode_into(storage, Self::CASE)
                 .map_err(FieldError::Hex)
@@ -186,8 +197,7 @@ mod internal {
         #[inline(always)]
         fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
             let pairs =
-                ArrayDigits::<N>::new(payload(text, Self::PREFIX, E::custom)?.as_flattened())
-                    .map_err(E::custom)?;
+                ArrayPairs::<N>::new(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
             // Keep the large return value off the length-error path.
             array_result::<N, _>(|| {
                 pairs
@@ -205,11 +215,13 @@ mod internal {
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
         let slot = &mut storage;
-        let input = d.deserialize_string(TextVisitor(move |s: &str| {
-            // Move this reference out of the one-shot visitor so the field can outlive the visit.
-            let storage = slot;
-            P::fill::<N>(s, storage)
-        }))?;
+        let input = d.deserialize_string(TextVisitor {
+            borrowed: Text::Borrowed,
+            transient: move |s: &str| {
+                let storage = slot;
+                Text::Transient(P::fill::<N>(s, storage))
+            },
+        })?;
         finish(input)
     }
 
