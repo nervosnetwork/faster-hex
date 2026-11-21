@@ -257,12 +257,35 @@ mod internal {
             }
         }
     }
+    fn large_array<'de, D: Deserializer<'de>, const N: usize>(
+        d: D,
+        prefix: bool,
+        case: CheckCase,
+    ) -> Result<[u8; N], D::Error> {
+        let mut transient = None;
+        let borrowed = d.deserialize_string(TextVisitor(|input: Text<'de, &str>| match input {
+            Text::Borrowed(text) => text,
+            Text::Transient(text) => {
+                transient = Some(bulk_borrowed(text, prefix, case));
+                ""
+            }
+        }))?;
+        if borrowed.is_empty() {
+            if let Some(value) = transient {
+                return value;
+            }
+        }
+        bulk_borrowed(borrowed, prefix, case)
+    }
+
     #[inline(always)]
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
+        if N > 1024 {
+            return large_array(d, P::PREFIX, P::CASE);
+        }
         with_array::<D, P, _, N>(d, |input| match input {
-            Text::Borrowed(text) if N > 1024 => bulk_borrowed(text, P::PREFIX, P::CASE),
             Text::Borrowed(text) => P::decode(text),
             Text::Transient(field) => field.copied().map_err(D::Error::custom),
         })
