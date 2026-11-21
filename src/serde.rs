@@ -74,30 +74,17 @@ mod internal {
         }
     }
 
-    pub(crate) fn serialize<S: Serializer, T: AsRef<[u8]>>(
+    pub(crate) fn serialize<S, T>(
         data: T,
         serializer: S,
         with_prefix: bool,
         case: CheckCase,
-    ) -> Result<S::Ok, S::Error> {
-        write_encoded(data.as_ref(), serializer, with_prefix, case)
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    pub(crate) fn serialize_policy<S: Serializer, T: AsRef<[u8]>, P: Policy>(
-        data: T,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        write_encoded(data.as_ref(), serializer, P::PREFIX, P::CASE)
-    }
-
-    #[inline(always)]
-    fn write_encoded<S: Serializer>(
-        src: &[u8],
-        serializer: S,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Result<S::Ok, S::Error> {
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: AsRef<[u8]>,
+    {
+        let src = data.as_ref();
         let prefix: &[u8] = if with_prefix { b"0x" } else { b"" };
         let len = src
             .len()
@@ -115,22 +102,11 @@ mod internal {
             heap = Vec::<u8>::with_capacity(len);
             &mut heap.spare_capacity_mut()[..len]
         };
-        #[cfg(target_arch = "aarch64")]
-        let output = {
-            let (prefix_bytes, body) = dst.split_at_mut(prefix.len());
-            for (slot, &byte) in prefix_bytes.iter_mut().zip(prefix) {
-                slot.write(byte);
-            }
-            body
-        };
-        #[cfg(not(target_arch = "aarch64"))]
-        let output = {
-            for (slot, &byte) in dst.iter_mut().zip(prefix) {
-                slot.write(byte);
-            }
-            &mut dst[prefix.len()..]
-        };
-        encode(src, output, case == CheckCase::Upper).map_err(serde::ser::Error::custom)?;
+        for (slot, &byte) in dst.iter_mut().zip(prefix) {
+            slot.write(byte);
+        }
+        encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
+            .map_err(serde::ser::Error::custom)?;
         // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
         // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
         // backing stack buffer or allocation stays live throughout serialization.
@@ -216,7 +192,12 @@ mod internal {
             let pairs =
                 ArrayPairs::<N>::new(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
             // Keep the large return value off the length-error path.
-            array_result::<N, _>(|| pairs.decode(Self::CASE).map_err(E::custom))
+            array_result::<N, _>(|| {
+                pairs
+                    .decode_into(&mut MaybeUninit::uninit(), Self::CASE)
+                    .copied()
+                    .map_err(E::custom)
+            })
         }
     }
 
@@ -523,14 +504,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                #[cfg(target_arch = "aarch64")]
-                {
-                    internal::serialize_policy::<_, _, Format>(data, serializer)
-                }
-                #[cfg(not(target_arch = "aarch64"))]
-                {
-                    internal::serialize(data, serializer, $with_pfx, $check_case)
-                }
+                internal::serialize(data, serializer, $with_pfx, $check_case)
             }
 
             /// Deserializes a hex string using this module's prefix and case policy.

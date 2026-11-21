@@ -758,24 +758,6 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
     }
 
     #[inline(always)]
-    pub(crate) fn decode(self, case: CheckCase) -> Result<[u8; N], Error> {
-        if N < 8 {
-            return self
-                .decode_into(&mut core::mem::MaybeUninit::uninit(), case)
-                .copied();
-        }
-        let mut bytes = [0; N];
-        self.fill_bytes(&mut bytes, case)?;
-        Ok(bytes)
-    }
-
-    #[inline(always)]
-    fn fill_bytes(self, bytes: &mut [u8; N], case: CheckCase) -> Result<(), Error> {
-        // SAFETY: new matched one input pair to each of the N output bytes.
-        unsafe { decode_owned(self.0.as_flattened(), bytes, case) }
-    }
-
-    #[inline(always)]
     pub(crate) fn decode_into(
         self,
         storage: &mut core::mem::MaybeUninit<[u8; N]>,
@@ -807,7 +789,8 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
             }
             return Ok(bytes);
         }
-        self.fill_bytes(bytes, check_case)?;
+        // SAFETY: Each of the N output bytes has exactly one input pair.
+        unsafe { decode_owned(src, bytes, check_case) }?;
         Ok(bytes)
     }
 }
