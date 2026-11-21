@@ -96,29 +96,26 @@ pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bo
     if src.len() < 32 {
         return hex_check_sse_with_case(src, case);
     }
-    // The high nibble selects the required class. The low nibble permits
-    // digits at 0..=9 and letters at 1..=6. No low nibble permits INVALID.
+    // Each high nibble selects one class. Low nibbles 1..=6 can belong to
+    // either letter class or digits; 0 and 7..=9 can only belong to digits.
     const DIGIT: i8 = 1;
-    const LETTER: i8 = 2;
-    const BOTH: i8 = DIGIT | LETTER;
-    const INVALID: i8 = 4;
-    let upper = if case == CheckCase::Lower {
-        INVALID
-    } else {
-        LETTER
-    };
-    let lower = if case == CheckCase::Upper {
-        INVALID
-    } else {
-        LETTER
-    };
+    const UPPER: i8 = 2;
+    const LOWER: i8 = 4;
+    const ALL: i8 = DIGIT | UPPER | LOWER;
+    const INVALID: i8 = 8;
     let required = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-        INVALID, INVALID, INVALID, DIGIT, upper, INVALID, lower, INVALID, INVALID, INVALID,
+        INVALID, INVALID, INVALID, DIGIT, UPPER, INVALID, LOWER, INVALID, INVALID, INVALID,
         INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
     ));
-    let permitted = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-        DIGIT, BOTH, BOTH, BOTH, BOTH, BOTH, BOTH, DIGIT, DIGIT, DIGIT, 0, 0, 0, 0, 0, 0,
-    ));
+    let allowed = match case {
+        CheckCase::None => ALL,
+        CheckCase::Lower => DIGIT | LOWER,
+        CheckCase::Upper => DIGIT | UPPER,
+    };
+    let low_classes = _mm_setr_epi8(
+        DIGIT, ALL, ALL, ALL, ALL, ALL, ALL, DIGIT, DIGIT, DIGIT, 0, 0, 0, 0, 0, 0,
+    );
+    let permitted = _mm256_broadcastsi128_si256(_mm_and_si128(low_classes, _mm_set1_epi8(allowed)));
     let rejected = |block: &[u8; 32]| {
         let bytes = _mm256_loadu_si256(block.as_ptr().cast());
         let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), _mm256_set1_epi8(15));
