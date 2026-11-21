@@ -630,7 +630,7 @@ pub(crate) fn hex_decode_short_scalar<'src>(
         let high = table[usize::from(pair[0])];
         let low = table[usize::from(pair[1])];
         if high | low == NIL {
-            return Err(if high == NIL { &pair[0] } else { &pair[1] });
+            return Err(&pair[0]);
         }
         decoded = decoded << 8 | u64::from(high << 4 | low);
     }
@@ -654,15 +654,17 @@ fn decode_diagnosed(src: &[u8], first: &u8, dst: &mut [u8], case: CheckCase) -> 
 #[inline(always)]
 fn diagnose_invalid(src: &[u8], first: &u8, case: CheckCase) -> Result<(), Error> {
     let table = digit_table(case);
-    let skipped = src.element_offset(first).unwrap_or(0);
-    for (offset, &byte) in src[skipped..].iter().take(2).enumerate() {
+    for (index, &byte) in src.iter().take(2).enumerate() {
         if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar {
-                index: skipped + offset,
-                byte,
-            });
+            return Err(Error::InvalidChar { index, byte });
         }
     }
+    // A single bounded group has no earlier blocks to skip.
+    let skipped = if src.len() > 64 {
+        src.element_offset(first).unwrap_or(0)
+    } else {
+        0
+    };
     // Four independent lookups skip valid digits before the exact byte scan.
     // A rejected digit sets all bits. Valid entries use only the low nibble.
     let groups = src[skipped..].as_chunks::<4>().0;
