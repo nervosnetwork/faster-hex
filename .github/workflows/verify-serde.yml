@@ -15,39 +15,43 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: release_typed, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_typed, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: release_typed, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_typed, mode: fields, os: macos-15-intel, lto: "thin"}
-          - {family: release_field, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_field, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: release_field, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_field, mode: fields, os: macos-15-intel, lto: "thin"}
-          - {family: release_outer, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_outer, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: release_outer, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_outer, mode: fields, os: macos-15-intel, lto: "thin"}
-          - {family: release_typed, mode: regress, os: ubuntu-22.04, lto: "false"}
-          - {family: release_typed, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_typed, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_typed, mode: regress, os: macos-15-intel, lto: "false"}
-          - {family: release_typed, mode: regress, os: macos-15-intel, lto: "thin"}
-          - {family: release_typed, mode: existing, os: macos-15-intel, lto: "thin"}
-          - {family: release_typed, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
-          - {family: release_typed, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_typed, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_field, mode: regress, os: ubuntu-22.04, lto: "false"}
-          - {family: release_field, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_field, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_field, mode: regress, os: macos-15-intel, lto: "false"}
-          - {family: release_field, mode: regress, os: macos-15-intel, lto: "thin"}
-          - {family: release_field, mode: existing, os: macos-15-intel, lto: "thin"}
-          - {family: release_field, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
-          - {family: release_field, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_field, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_typed, mode: edge, os: ubuntu-22.04, lto: "thin"}
-          - {family: release_typed, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: release_typed, mode: edge, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_policy, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_policy, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: balanced_policy, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_policy, mode: fields, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_inline, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_inline, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: balanced_inline, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_inline, mode: fields, os: macos-15-intel, lto: "thin"}
+          - {family: native_inline, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: native_inline, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: native_inline, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: native_inline, mode: fields, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_policy, mode: regress, os: ubuntu-22.04, lto: "false"}
+          - {family: balanced_policy, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_policy, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_policy, mode: regress, os: macos-15-intel, lto: "false"}
+          - {family: balanced_policy, mode: regress, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_policy, mode: existing, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_policy, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: balanced_policy, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_policy, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_inline, mode: regress, os: ubuntu-22.04, lto: "false"}
+          - {family: balanced_inline, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_inline, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_inline, mode: regress, os: macos-15-intel, lto: "false"}
+          - {family: balanced_inline, mode: regress, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_inline, mode: existing, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_inline, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: balanced_inline, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_inline, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_policy, mode: edge, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_policy, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_policy, mode: edge, os: macos-15-intel, lto: "thin"}
+          - {family: balanced_policy, mode: shared, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_policy, mode: shared, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: balanced_inline, mode: shared, os: ubuntu-22.04, lto: "thin"}
+          - {family: balanced_inline, mode: shared, os: ubuntu-24.04-arm, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -60,9 +64,9 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            release_typed) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
-            release_field) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
-            release_outer) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
+            balanced_policy) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
+            balanced_inline) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
+            native_inline) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
           esac
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = fields ]; then
@@ -71,6 +75,8 @@ jobs:
             ESCAPED_ARRAYS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
           elif [ "${{ matrix.mode }}" = existing ]; then
             EXISTING_CONTROLS=1 python3 verify/consumer.py
+          elif [ "${{ matrix.mode }}" = shared ]; then
+            python3 verify/shared_writer.py
           else
             python3 verify/regress.py
           fi
@@ -79,6 +85,7 @@ jobs:
         with:
           name: study-${{ matrix.family }}-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
           path: |
+            results/shared-writer.json
             results/host.txt
             results/sections.json
             results/independent-summary.json
