@@ -692,6 +692,27 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     Ok(())
 }
 
+// The collector can observe every value it receives, so validate the complete
+// input before constructing it. Its own storage then receives the decoded
+// bytes without an intermediate vector.
+#[cfg(feature = "serde")]
+#[inline]
+pub(crate) fn collect_validated_pairs<T: core::iter::FromIterator<u8>>(
+    pairs: &[[u8; 2]],
+    case: CheckCase,
+) -> Result<T, Error> {
+    let src = pairs.as_flattened();
+    if !hex_check_with_case(src, case) {
+        diagnose_invalid(src, case)?;
+    }
+    // Valid ASCII letters have bit 6 set and need nine added to the low nibble.
+    let nibble = |byte: u8| byte.wrapping_add((byte >> 6) * 9) & 15;
+    Ok(pairs
+        .iter()
+        .map(|&[hi, lo]| nibble(hi) << 4 | nibble(lo))
+        .collect())
+}
+
 // Internal conversion only. Even if miscalled with short input, never pass an
 // undersized source to a SIMD kernel. Public callers must use checked decode.
 #[cfg(any(test, not(any(target_arch = "x86", target_arch = "x86_64"))))]

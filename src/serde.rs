@@ -145,14 +145,10 @@ mod internal {
         }
 
         #[inline]
-        fn decode<R>(
-            text: &str,
-            ready: impl FnOnce(T::Value) -> R,
-            invalid: impl FnOnce(FieldError) -> R,
-        ) -> R {
+        fn pairs(text: &str) -> Result<&[[u8; 2]], FieldError> {
             let digits = if P::PREFIX {
                 let Some(digits) = text.strip_prefix("0x") else {
-                    return invalid(FieldError::Prefix);
+                    return Err(FieldError::Prefix);
                 };
                 digits
             } else {
@@ -160,18 +156,29 @@ mod internal {
             };
             let (pairs, tail) = digits.as_bytes().as_chunks::<2>();
             if !tail.is_empty() {
-                return invalid(FieldError::Odd);
+                return Err(FieldError::Odd);
             }
             let actual = pairs.len();
             if actual > T::MAX {
-                return invalid(FieldError::Limit {
+                return Err(FieldError::Limit {
                     max: T::MAX,
                     actual,
                 });
             }
-            match T::decode(pairs, P::CASE) {
+            Ok(pairs)
+        }
+
+        #[inline]
+        fn decode<R>(
+            text: &str,
+            ready: impl FnOnce(T::Value) -> R,
+            invalid: impl FnOnce(FieldError) -> R,
+        ) -> R {
+            match Self::pairs(text)
+                .and_then(|pairs| T::decode(pairs, P::CASE).map_err(FieldError::Hex))
+            {
                 Ok(value) => ready(value),
-                Err(error) => invalid(FieldError::Hex(error)),
+                Err(error) => invalid(error),
             }
         }
 
@@ -195,6 +202,34 @@ mod internal {
                 Some(Self::Decoded(value)) => Ok(Some(value)),
                 Some(Self::Invalid(error)) => Err(error.into_format()),
             }
+        }
+    }
+
+    impl<'de, P: Format, const MAX: usize> Field<'de, P, Bytes<MAX>> {
+        fn collect<T: core::iter::FromIterator<u8>, E: Error>(&mut self) -> Result<T, E> {
+            match self {
+                Self::Borrowed(text, _) => {
+                    let pairs = Self::pairs(text).map_err(FieldError::into_format)?;
+                    crate::decode::collect_validated_pairs(pairs, P::CASE).map_err(E::custom)
+                }
+                Self::Decoded(bytes) => Ok(core::mem::take(bytes).into_iter().collect()),
+                Self::Invalid(error) => Err(error.into_format()),
+            }
+        }
+
+        pub(super) fn read_collection<D: Deserializer<'de>, T: core::iter::FromIterator<u8>>(
+            d: D,
+        ) -> Result<T, D::Error> {
+            let mut field = None;
+            Self::input(d, &mut field)?.collect()
+        }
+
+        pub(super) fn optional_collection<D: Deserializer<'de>, T: core::iter::FromIterator<u8>>(
+            d: D,
+        ) -> Result<Option<T>, D::Error> {
+            Option::<Self>::deserialize(d)?
+                .map(|mut field| field.collect())
+                .transpose()
         }
     }
 
@@ -502,7 +537,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::Field::<Policy, internal::Bytes<{ usize::MAX }>>::read(deserializer).map(|bytes| bytes.into_iter().collect())
+                internal::Field::<Policy, internal::Bytes<{ usize::MAX }>>::read_collection(deserializer)
             }
 
             /// Deserializes at most `MAX` decoded bytes using this module's policy.
@@ -530,7 +565,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::Field::<Policy, internal::Bytes<MAX>>::read(deserializer).map(|bytes| bytes.into_iter().collect())
+                internal::Field::<Policy, internal::Bytes<MAX>>::read_collection(deserializer)
             }
 
             /// Exact-length arrays using the parent module's prefix and case policy.
@@ -668,7 +703,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::Field::<Policy, internal::Bytes<{ usize::MAX }>>::optional(deserializer).map(|value| value.map(|bytes| bytes.into_iter().collect()))
+                internal::Field::<Policy, internal::Bytes<{ usize::MAX }>>::optional_collection(deserializer)
             }
 
             /// Deserializes an optional collection of at most `MAX` decoded bytes.
@@ -696,7 +731,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::Field::<Policy, internal::Bytes<MAX>>::optional(deserializer).map(|value| value.map(|bytes| bytes.into_iter().collect()))
+                internal::Field::<Policy, internal::Bytes<MAX>>::optional_collection(deserializer)
             }
 
             /// Optional fixed-length arrays using this module's prefix and case policy.
