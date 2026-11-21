@@ -596,7 +596,14 @@ pub(super) unsafe fn hex_decode_avx2(src: &[u8], dst: &mut [u8]) {
         _mm256_storeu_si256(output.as_mut_ptr().cast(), decode_avx2_block(a, b));
     };
     let (blocks, tail) = src.as_chunks::<64>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
+    let (pairs, last) = blocks.as_chunks::<2>();
+    let (outputs, rest) = dst.as_chunks_mut::<32>().0.as_chunks_mut::<2>();
+    for (inputs, outputs) in pairs.iter().zip(outputs) {
+        for (input, output) in inputs.iter().zip(outputs) {
+            convert(input, output);
+        }
+    }
+    if let ([input], [output]) = (last, rest) {
         convert(input, output);
     }
     if !tail.is_empty() {
