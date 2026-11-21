@@ -80,6 +80,22 @@ impl<'de,D:serde::Deserializer<'de>> serde::Deserializer<'de> for Present<D>{
      ops[name]=('',f'black_box(faster_hex::hex_decode_array::<{n}>(black_box(&hex)).unwrap());')
     else:
      ops[name]=('',ops['field4096'][1].replace('4096',str(n)))
+ if os.environ.get("RELEASE_FIELDS"):
+  # Cover owned and borrowed forms in the same runner as the large optional field.
+  for n in range(1,9):
+   for op in ['array','field']:
+    key=op+str(n); cases[key]=[n]
+    ops[key]=('',f'black_box(faster_hex::hex_decode_array::<{n}>(black_box(&hex)).unwrap());') if op=='array' else ('',ops['field4096'][1].replace('4096',str(n)))
+  setup='''struct Present<D>(D);
+impl<'de,D:serde::Deserializer<'de>> serde::Deserializer<'de> for Present<D>{
+ type Error=D::Error;
+ fn deserialize_any<V:serde::de::Visitor<'de>>(self,v:V)->Result<V::Value,D::Error>{v.visit_some(self.0)}
+ serde::forward_to_deserialize_any!{bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map struct enum identifier ignored_any}
+}'''
+  cases["rawoption4096"]=[4096]
+  ops["rawoption4096"]=(setup,'black_box(faster_hex::option_withpfx_ignorecase::array::deserialize::<_,4096>(Present(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(black_box(&field)))).unwrap().unwrap());')
+  cases["escapedoption4096"]=[4096]
+  ops["escapedoption4096"]=('#[derive(serde::Deserialize)] struct Value(#[serde(with="faster_hex::option_withpfx_ignorecase::array")] Option<[u8;4096]>);','black_box(serde_json::from_str::<Value>(black_box(&optional_json)).unwrap().0);')
  ops={k:v for k,v in ops.items() if k in cases}
  shutil.rmtree(bins);bins.mkdir()
 elif os.environ.get('EXISTING_CONTROLS'):

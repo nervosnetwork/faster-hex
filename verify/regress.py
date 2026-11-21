@@ -96,6 +96,20 @@ def linked(refs, names, label):
     shutil.rmtree(root)
     return built
 
+def section(exe):
+    if sys.platform == "darwin":
+        header=subprocess.check_output(["otool","-l",exe],text=True)
+        part=next(x for x in header.split("Section\n") if re.match(r"\s*sectname __text\s+segname __TEXT",x))
+        address,size,offset=[int(re.search(r"\b"+n+r"\s+(\S+)",part)[1],0) for n in ["addr","size","offset"]]
+        data=exe.read_bytes()[offset:offset+size]
+    else:
+        part=work/"machine-code.bin"
+        run(["objcopy","--dump-section",".text="+str(part),exe],work)
+        header=subprocess.check_output(["objdump","-h",exe],text=True)
+        address=int(next(l.split()[3] for l in header.splitlines() if re.search(r"^\s*\d+\s+\.text\s",l)),16)
+        data=part.read_bytes()
+    return {"address":address,"bytes":len(data),"sha256":hashlib.sha256(data).hexdigest()}
+
 def estimate(path):
     obj=json.loads(path.read_text())
     est=obj["slope"] or obj["mean"]
@@ -141,6 +155,7 @@ def regress():
         # The bare JSON writer receives pre-encoded text and never calls the hex crate.
         # Retain its same-executable timings for each candidate, including the reversed-link trials.
     bins={r: standalone(r,ref) for r,ref in [("base",base),("head",head)]}
+    save("sections.json",{role:{name:section(exe) for name,exe in executables.items()} for role,executables in bins.items()})
     times={}
     for label in ["base1","head1","head2","base2"]:
         role=label[:-1]
