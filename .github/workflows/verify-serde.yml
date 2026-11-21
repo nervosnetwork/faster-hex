@@ -17,7 +17,7 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04-arm]
         lto: ["false", "thin"]
         mode: [fields, mixed]
-        family: [field-input]
+        family: [shared-field-decoder]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -30,11 +30,12 @@ jobs:
           toolchain: 1.95.0
       - name: Compare downstream callers with the PR baseline
         env:
-          PRODUCT_REV: e2cfb2e9d8e5c73cb4f547806a97af64abdad81c
+          PRODUCT_REV: 13522faed4fdc130d7841058213c272fb021b82f
           MODE: ${{ matrix.mode }}
         run: |
           if [ "$MODE" = mixed ]; then
             MIXED_CALLER=1 python3 verify/consumer.py
+            python3 verify/profile_caller.py
           else
             RELEASE_FIELDS=1 ARRAY_VARIANT=frozen OWNED_VECTORS=1 FIELD_ASSEMBLY=1 python3 verify/consumer.py
           fi
@@ -44,6 +45,7 @@ jobs:
           name: study-${{ matrix.family }}-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
           path: |
             results/host.txt
+            results/profile.json
             results/sections.json
             results/independent-summary.json
             results/*.asm
