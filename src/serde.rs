@@ -227,7 +227,6 @@ mod internal {
         finish(input)
     }
 
-    #[inline(never)]
     fn bulk_borrowed<E: Error, const N: usize>(
         text: &str,
         prefix: bool,
@@ -258,33 +257,21 @@ mod internal {
             }
         }
     }
-    fn large_array<'de, D: Deserializer<'de>, const N: usize>(
+    #[inline(never)]
+    fn decode_large<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
-        prefix: bool,
-        case: CheckCase,
     ) -> Result<[u8; N], D::Error> {
-        let mut transient = None;
-        let borrowed = d.deserialize_string(TextVisitor(|input: Text<'de, &str>| match input {
-            Text::Borrowed(text) => text,
-            Text::Transient(text) => {
-                transient = Some(bulk_borrowed(text, prefix, case));
-                ""
-            }
-        }))?;
-        if borrowed.is_empty() {
-            if let Some(value) = transient {
-                return value;
-            }
-        }
-        bulk_borrowed(borrowed, prefix, case)
+        with_array::<D, P, _, N>(d, |input| match input {
+            Text::Borrowed(s) => bulk_borrowed(s, P::PREFIX, P::CASE),
+            Text::Transient(result) => result.copied().map_err(D::Error::custom),
+        })
     }
-
     #[inline(always)]
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
         if N > 1024 {
-            return large_array(d, P::PREFIX, P::CASE);
+            return decode_large::<D, P, N>(d);
         }
         with_array::<D, P, _, N>(d, |input| match input {
             Text::Borrowed(text) => P::decode(text),
