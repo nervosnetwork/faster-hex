@@ -14,17 +14,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        family: [shared_kernel, bulk, reference, serde_only]
-        os: [ubuntu-22.04, ubuntu-24.04-arm]
+        family: [text_bulk, large_place, large_place_outline]
+        os: [ubuntu-22.04, ubuntu-24.04]
         mode: [consumer]
         lto: [thin]
         include:
-          - {family: shared_kernel, mode: consumer, os: ubuntu-24.04, lto: thin}
-          - {family: serde_only, mode: consumer, os: ubuntu-24.04, lto: thin}
-          - {family: shared_kernel, mode: consumer, os: macos-15-intel, lto: thin}
-          - {family: bulk, mode: consumer, os: ubuntu-24.04, lto: thin}
-          - {family: shared_kernel, mode: regress, os: ubuntu-24.04-arm, lto: thin}
-          - {family: shared_kernel, mode: regress, os: ubuntu-22.04, lto: thin}
+          - {family: text_bulk, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
+          - {family: text_bulk, mode: consumer, os: macos-15-intel, lto: thin}
+          - {family: text_bulk, mode: regress, os: ubuntu-22.04, lto: thin}
+          - {family: text_bulk, mode: regress, os: ubuntu-24.04-arm, lto: thin}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -37,10 +35,9 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            shared_kernel) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
-            bulk) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
-            reference) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
-            serde_only) PRODUCT_REV=$(sed -n '4p' verify/targets) ;;
+            text_bulk) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
+            large_place) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
+            large_place_outline) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
           esac
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = consumer ]; then
