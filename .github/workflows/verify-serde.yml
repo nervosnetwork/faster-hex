@@ -15,16 +15,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: visitor, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: visitor, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: visitor, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: visitor, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: visitor, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: visitor, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: visitor, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: visitor, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: visitor, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: visitor, mode: mixed, os: ubuntu-24.04, lto: "thin"}
+          - {family: storage, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: storage, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: storage, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: storage, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: storage, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: storage, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: storage, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: storage, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: storage, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: storage, mode: mixed, os: ubuntu-24.04, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -36,7 +36,7 @@ jobs:
         with:
           toolchain: 1.95.0
       - run: |
-          PRODUCT_REV=42e7e7a0837965312c5da40ab10ab2d343d26526
+          PRODUCT_REV=cb4bc9a455a9575ecb5e3f3429c0db2fa124ce1d
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = fields ]; then
             RELEASE_FIELDS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
