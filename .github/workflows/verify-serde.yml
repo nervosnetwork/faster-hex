@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   profile:
-    name: Profile standalone JSON calls / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: Isolate JSON string writer placement / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -28,18 +28,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Make a user-space profiler available for the standalone executables
+      - name: Time the ordinary independently compiled programs and retain their original link objects
         run: |
-          if ! command -v valgrind >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends valgrind
-          fi
-      - name: Measure separately built complete calls
-        run: FIELD_OBJECTS=1 MIXED_CALLER=1 PAIR_STUDY=matched RESULTS=results/paired python3 verify/consumer.py
-      - name: Profile the same executables with their original release code
-        run: python3 verify/standalone_profile.py
+          PATH="$PWD/verify/link-driver:$PATH" JSON_PLACEMENT=1 FIELD_OBJECTS=1 MIXED_CALLER=1 PAIR_STUDY=matched RESULTS=results/paired python3 verify/consumer.py
+      - name: Measure four placements of the same JSON writer within each independent program
+        run: python3 verify/placement.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: isolated-profile-${{ matrix.os }}-${{ matrix.lto }}
+          name: json-placement-${{ matrix.os }}-${{ matrix.lto }}
           path: results

@@ -282,6 +282,8 @@ for role,rev in [('base',base),('head',head)]:
  run(['tar','-xf',tar],cwd=source)
  select(source,role,os.environ)
  if (work/'target').exists(): run(['cargo','clean','--release','-p','faster-hex','-p','consumer-timing'],cwd=driver)
+ if os.environ.get('JSON_PLACEMENT'):
+  env['JSON_LINK_OUTPUT']=str(work/('link-'+role))
  run(['cargo','build','--release','--bins'],cwd=driver)
  dest=work/role;dest.mkdir(exist_ok=True)
  for k in cases:

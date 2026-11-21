@@ -1,0 +1,32 @@
+#!/usr/bin/python3
+"""Relink the same Rust object files with one serde_json routine in a fixed-size section."""
+from pathlib import Path
+import os, re, subprocess, sys
+
+args = sys.argv[1:]
+cc = "/usr/bin/cc"
+result = subprocess.run([cc, *args])
+if result.returncode or "-o" not in args or not os.getenv("JSON_LINK_OUTPUT"):
+    sys.exit(result.returncode)
+output_index = args.index("-o") + 1
+name = Path(args[output_index]).name
+match = re.fullmatch(r"(mixed|escapedmixed)-[a-f0-9]+", name)
+if match:
+    out = Path(os.environ["JSON_LINK_OUTPUT"])
+    out.mkdir(parents=True, exist_ok=True)
+    case = match.group(1)
+    for offset in (0, 16, 32, 48):
+        script = out / f"{case}-{offset}.ld"
+        script.write_text(f"""SECTIONS {{
+ .jsonbench_text ALIGN(64) : {{
+  HIDDEN(__jsonbench_start = .);
+  . += {offset};
+  *(.text*format_escaped_str*)
+  . = __jsonbench_start + 4096;
+ }}
+}}
+INSERT BEFORE .text;
+""")
+        clone = list(args)
+        clone[output_index] = str(out / f"{case}-{offset}")
+        subprocess.run([cc, *clone, "-Wl,-T," + str(script)], check=True)
