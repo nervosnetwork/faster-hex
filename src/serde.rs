@@ -121,18 +121,14 @@ mod internal {
         text: &str,
         with_prefix: bool,
         custom: impl Fn(&'static str) -> E,
-    ) -> Result<&str, E> {
+    ) -> Result<&[[u8; 2]], E> {
         let text = if with_prefix {
             text.strip_prefix("0x")
                 .ok_or_else(|| custom("invalid prefix"))?
         } else {
             text
         };
-        if text.len().is_multiple_of(2) {
-            Ok(text)
-        } else {
-            Err(custom("invalid length"))
-        }
+        crate::decode::hex_pairs(text.as_bytes()).map_err(|_| custom("invalid length"))
     }
 
     pub(super) fn read_bytes<'de, D: Deserializer<'de>, E>(
@@ -159,15 +155,14 @@ mod internal {
         max: usize,
         error: impl Fn(FieldError) -> E,
     ) -> Result<Vec<u8>, E> {
-        let text = payload(text, with_prefix, |message| {
+        let pairs = payload(text, with_prefix, |message| {
             error(FieldError::Text(message))
         })?;
-        let actual = text.len() / 2;
+        let actual = pairs.len();
         if actual > max {
             return Err(error(FieldError::Limit { max, actual }));
         }
-        crate::hex_decode_vec_with_case(text.as_bytes(), case)
-            .map_err(|e| error(FieldError::Hex(e)))
+        crate::decode::decode_vec_pairs(pairs, case).map_err(|e| error(FieldError::Hex(e)))
     }
 
     pub(super) trait Policy {
@@ -178,15 +173,15 @@ mod internal {
             text: &str,
             error: impl Fn(FieldError) -> E,
         ) -> Result<&[u8], E> {
-            let text = payload(text, Self::PREFIX, |s| error(FieldError::Text(s)))?;
-            let actual = text.len() / 2;
+            let pairs = payload(text, Self::PREFIX, |s| error(FieldError::Text(s)))?;
+            let actual = pairs.len();
             if actual != N {
                 return Err(error(FieldError::Hex(crate::Error::LengthMismatch {
                     expected: N,
                     actual,
                 })));
             }
-            Ok(text.as_bytes())
+            Ok(pairs.as_flattened())
         }
 
         #[inline(always)]

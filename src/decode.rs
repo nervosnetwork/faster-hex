@@ -448,11 +448,29 @@ pub fn hex_decode_vec_with_case(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<alloc::vec::Vec<u8>, Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
+    decode_vec_pairs(hex_pairs(src)?, check_case)
+}
+
+#[cfg(feature = "alloc")]
+#[inline]
+pub(crate) fn hex_pairs(src: &[u8]) -> Result<&[[u8; 2]], Error> {
+    let (pairs, tail) = src.as_chunks::<2>();
+    if tail.is_empty() {
+        Ok(pairs)
+    } else {
+        Err(Error::OddLength)
     }
-    let mut bytes = alloc::vec![0; src.len() / 2];
-    decode_owned_exact(src, &mut bytes, check_case)?;
+}
+
+#[cfg(feature = "alloc")]
+#[inline]
+pub(crate) fn decode_vec_pairs(
+    pairs: &[[u8; 2]],
+    case: CheckCase,
+) -> Result<alloc::vec::Vec<u8>, Error> {
+    let mut bytes = alloc::vec![0; pairs.len()];
+    // SAFETY: Each input pair supplies exactly one output byte.
+    unsafe { decode_owned(pairs.as_flattened(), &mut bytes, case) }?;
     Ok(bytes)
 }
 
