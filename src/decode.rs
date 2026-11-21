@@ -448,49 +448,13 @@ pub fn hex_decode_vec_with_case(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<alloc::vec::Vec<u8>, Error> {
-    decode_vec_pairs(hex_pairs(src)?, check_case)
-}
-
-#[cfg(feature = "alloc")]
-#[inline]
-pub(crate) fn hex_pairs(src: &[u8]) -> Result<&[[u8; 2]], Error> {
-    let (pairs, tail) = src.as_chunks::<2>();
-    if tail.is_empty() {
-        Ok(pairs)
-    } else {
-        Err(Error::OddLength)
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
     }
-}
-
-#[cfg(feature = "alloc")]
-#[inline]
-pub(crate) fn decode_vec_pairs(
-    pairs: &[[u8; 2]],
-    case: CheckCase,
-) -> Result<alloc::vec::Vec<u8>, Error> {
-    let mut bytes = alloc::vec![0; pairs.len()];
-    decode_owned_exact(pairs, &mut bytes, case)?;
+    let mut bytes = alloc::vec![0; src.len() / 2];
+    // SAFETY: The vector has one byte for each pair of the even input.
+    unsafe { decode_owned(src, &mut bytes, check_case) }?;
     Ok(bytes)
-}
-
-// Only private output can commit a checked block before validating the next.
-// The caller discards the destination if a later pair fails.
-#[cfg(feature = "alloc")]
-#[inline(always)]
-pub(crate) fn decode_owned_exact(
-    pairs: &[[u8; 2]],
-    dst: &mut [u8],
-    case: CheckCase,
-) -> Result<(), Error> {
-    let actual = pairs.len();
-    if actual != dst.len() {
-        return Err(Error::LengthMismatch {
-            expected: dst.len(),
-            actual,
-        });
-    }
-    // SAFETY: Each destination byte has exactly one two-byte input pair.
-    unsafe { decode_owned(pairs.as_flattened(), dst, case) }
 }
 
 /// Appends decoded bytes to `dst` and returns just the new suffix.

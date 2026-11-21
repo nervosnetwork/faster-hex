@@ -8,17 +8,17 @@ env:
   RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
   release:
-    name: Codec and Serde / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: AVX2 character classes / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 48
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04-arm]
+        os: [macos-15-intel, ubuntu-22.04]
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: e3f4d10eee40358c7b0488eff909ab6df07ec42b
+      PRODUCT_REV: b98282ebb38ef88d8738d303874e1466a89345ae
       REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -28,12 +28,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Check temporary field allocations and format errors
-        run: cargo test --release --all-features --test allocations --test serde_protocol
-      - name: Compare independent complete JSON calls
-        run: MIXED_CALLER=1 RESULTS=results/roundtrip python3 verify/consumer.py
-      - name: Compare array fields, option framing and vector decoding
-        run: RELEASE_FIELDS=1 ARRAY_VARIANT=frozen OWNED_VECTORS=1 RESULTS=results/fields python3 verify/consumer.py
+      - name: Check every input byte at vector boundaries
+        run: |
+          cp verify/core-inputs.rs tests/native_inputs.rs
+          cargo test --release --all-features --lib --test native_inputs --test public_api --test owned_decode
+      - name: Compare with the PR on intact downstream calls
+        run: KERNEL_CASES=mask RESULTS=results/pr python3 verify/consumer.py
+      - name: Compare with the released decoder and checker
+        env:
+          REFERENCE_REV: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
+        run: KERNEL_CASES=mask KERNEL_FOCUS=1 RESULTS=results/release python3 verify/consumer.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
