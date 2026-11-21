@@ -197,6 +197,8 @@ fn main() {
  elif k.startswith('escaped'):
   code=code.replace('let start=Instant::now();','let q=char::from(34); let slash=char::from(92); let optional_json=format!("{q}{slash}u0030{}{q}", &field[1..]); let start=Instant::now();')
  (bins/(k+'.rs')).write_text(code)
+if os.environ.get("GENERATE_ONLY"):
+ sys.exit(0)
 def text_segment(exe):
  if sys.platform=="darwin":
   part=next(x for x in output(["otool","-l",exe]).split("Section\n") if re.match(r"\s*sectname __text\s+segname __TEXT",x))

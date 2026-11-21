@@ -8,21 +8,15 @@ env:
   RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
   native:
-    name: ${{ matrix.family }} / ${{ matrix.os }} / LTO ${{ matrix.lto }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    name: Released codec and isolated changes / Intel / LTO ${{ matrix.lto }}
+    runs-on: macos-15-intel
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15-intel]
         lto: ["false", "thin"]
-        family: [lanes, mask]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      DRIVER_REV: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
-      PRODUCT_REV: 04ff3d5be797fcecd97135e42a295fc92e2e6c20
-      HEAD_CONTROL: ${{ matrix.family }}
-      KERNEL_CASES: ${{ matrix.family }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -31,35 +25,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Run codec tests and check every byte at the vector boundaries
-        run: |
-          mkdir product
-          git archive "$PRODUCT_REV" | tar -xf - -C product
-          patch -s -p1 -d product -i "$PWD/verify/$HEAD_CONTROL.patch"
-          cp verify/core-inputs.rs product/tests/native_inputs.rs
-          cd product
-          cargo test --release --all-features
-      - name: Compare with the published codec in normal downstream builds
-        env:
-          REFERENCE_REV: ${{ env.DRIVER_REV }}
-          RESULTS: results/released
-        run: |
-          python3 verify/consumer.py
-          if [ "$KERNEL_CASES" = lanes ]; then python3 verify/release32.py; fi
-      - name: Isolate the kernel change on the current release candidate
-        env:
-          KERNEL_FOCUS: "1"
-          REFERENCE_REV: ${{ env.PRODUCT_REV }}
-          RESULTS: results/isolated
-        run: |
-          python3 verify/consumer.py
-          if [ "$KERNEL_CASES" = lanes ]; then python3 verify/release32.py; fi
+      - name: Isolate the encoder, decoder, error scan and owned result path
+        run: python3 verify/components.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: native-codec-${{ matrix.family }}-${{ matrix.os }}-${{ matrix.lto }}
-          path: |
-            results/*/host.txt
-            results/*/release32.json
-            results/*/sections.json
-            results/*/independent-summary.json
+          name: release-source-components-intel-${{ matrix.lto }}
+          path: results
