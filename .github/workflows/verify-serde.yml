@@ -15,45 +15,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: original_writer, mode: regress, os: ubuntu-22.04, lto: "false"}
-          - {family: original_writer, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: original_writer, mode: owned, os: ubuntu-22.04, lto: "thin"}
+          - {family: anchor, mode: regress, os: ubuntu-22.04, lto: "false"}
+          - {family: anchor, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: anchor, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: anchor, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: anchor, mode: regress, os: macos-15-intel, lto: "false"}
+          - {family: anchor, mode: regress, os: macos-15-intel, lto: "thin"}
+          - {family: anchor, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: anchor, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: shared, mode: regress, os: ubuntu-22.04, lto: "false"}
+          - {family: shared, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: shared, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: shared, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: shared, mode: regress, os: macos-15-intel, lto: "false"}
+          - {family: shared, mode: regress, os: macos-15-intel, lto: "thin"}
+          - {family: shared, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: shared, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: shared, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: shared, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: shared, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: shared, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: shared, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: shared, mode: layout, os: ubuntu-22.04, lto: "thin"}
+          - {family: shared, mode: layout, os: ubuntu-24.04-arm, lto: "thin"}
           - {family: original_writer, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: original_writer, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: original_writer, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
-          - {family: original_writer, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: original_writer, mode: owned, os: ubuntu-24.04-arm, lto: "thin"}
           - {family: original_writer, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: original_writer, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: original_writer, mode: regress, os: macos-15-intel, lto: "false"}
-          - {family: original_writer, mode: regress, os: macos-15-intel, lto: "thin"}
-          - {family: original_writer, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: original_writer, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: original_writer, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: chosen_writer, mode: regress, os: ubuntu-22.04, lto: "false"}
-          - {family: chosen_writer, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: chosen_writer, mode: owned, os: ubuntu-22.04, lto: "thin"}
-          - {family: chosen_writer, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: chosen_writer, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: chosen_writer, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
-          - {family: chosen_writer, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: chosen_writer, mode: owned, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: chosen_writer, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: chosen_writer, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: chosen_writer, mode: regress, os: macos-15-intel, lto: "false"}
-          - {family: chosen_writer, mode: regress, os: macos-15-intel, lto: "thin"}
-          - {family: chosen_writer, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: chosen_writer, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: chosen_writer, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: original_writer, mode: isolated, os: ubuntu-22.04, lto: "thin"}
-          - {family: chosen_split, mode: owned, os: ubuntu-22.04, lto: "thin"}
-          - {family: chosen_split, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: anchor, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: original_writer, mode: isolated, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: chosen_split, mode: owned, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: chosen_split, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: anchor, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: anchor, mode: fields, os: ubuntu-24.04, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -69,6 +55,7 @@ jobs:
             original_writer) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
             chosen_writer) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
             chosen_split) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
+            shared) PRODUCT_REV=$(sed -n '5p' verify/targets) ;;
             anchor) PRODUCT_REV=$(sed -n '4p' verify/targets) ;;
           esac
           export PRODUCT_REV
@@ -76,6 +63,8 @@ jobs:
             RELEASE_FIELDS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
           elif [ "${{ matrix.mode }}" = existing ]; then
             EXISTING_CONTROLS=1 python3 verify/consumer.py
+          elif [ "${{ matrix.mode }}" = layout ]; then
+            python3 verify/writer_layout.py
           elif [ "${{ matrix.mode }}" = owned ]; then
             OWNED_WRITER=1 python3 verify/shared_writer.py
           elif [ "${{ matrix.mode }}" = mixed ]; then
@@ -90,6 +79,7 @@ jobs:
         with:
           name: study-${{ matrix.family }}-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
           path: |
+            results/writer-layout.json
             results/shared-writer.json
             results/host.txt
             results/sections.json

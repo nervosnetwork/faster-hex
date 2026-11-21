@@ -4,7 +4,7 @@ here=Path.cwd(); lab=Path(os.environ.get('STUDY_WORK','writer-work')).resolve();
 out=Path(os.environ.get('RESULTS','results')).resolve();out.mkdir(parents=True,exist_ok=True)
 src=lab/'src';src.mkdir(exist_ok=True)
 shutil.copy(here/'verify'/('owned-writer.rs' if os.environ.get('OWNED_WRITER') else 'shared-writer.rs'),src/'main.rs')
-roles=[('a','25cfd8eb6a4cd8257a96fabaf73771cabcced4b4'),('b',os.environ['PRODUCT_REV'])]
+roles=[('a',os.environ.get('WRITER_BASE','25cfd8eb6a4cd8257a96fabaf73771cabcced4b4')),('b',os.environ['PRODUCT_REV'])]
 if os.environ.get('REVERSE_WRITER'):roles=[('a',roles[1][1]),('b',roles[0][1])]
 for slot,ref in roles:
     codec=lab/slot;codec.mkdir(exist_ok=True)
@@ -15,7 +15,10 @@ for slot,ref in roles:
     manifest.write_text(manifest.read_text().replace('name = "faster-hex"',f'name = "codec-{slot}"',1))
 (lab/'Cargo.toml').write_text('[package]\nname="shared-field-writer"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nserde={version="1",features=["derive"]}\nserde_json="1"\ncodec-a={path="a"}\ncodec-b={path="b"}\n[workspace]\n')
 env=dict(os.environ,CARGO_TARGET_DIR=str(lab/'target'),CARGO_PROFILE_RELEASE_LTO=os.environ.get('CARGO_PROFILE_BENCH_LTO','thin'))
+if os.environ.get('WRITER_LAYOUT') and (lab/'target/release/shared-field-writer').exists():
+    sp.run(['cargo','clean','--release','-p','codec-a','-p','codec-b','-p','shared-field-writer'],cwd=lab,env=env,check=True)
 sp.run(['cargo','build','--release'],cwd=lab,env=env,check=True,stdout=sp.DEVNULL)
+if os.environ.get('WRITER_BUILD_ONLY'):sys.exit(0)
 pin=['taskset','-c',str(min(os.sched_getaffinity(0)))] if sys.platform=='linux' else []
 with (out/'shared-writer.csv').open('w') as f:
     timed=sp.run(pin+[str(lab/'target/release/shared-field-writer')],cwd=lab,stdout=f,stderr=sp.PIPE,text=True,check=True)

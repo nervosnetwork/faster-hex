@@ -106,9 +106,9 @@ elif os.environ.get('EXISTING_CONTROLS'):
   if stale.stem not in ops: stale.unlink()
 if os.environ.get("MIXED_CALLER"):
  cases={"mixed":[10,32,65,256,4096],"escapedmixed":[10,32,65,256,4096],"serialize":[10,32,65,256,4096]}
- source='#[derive(serde::Serialize,serde::Deserialize)] struct Payload { #[serde(with="faster_hex")] bytes: Vec<u8> }'
+ payload_type='#[derive(serde::Serialize,serde::Deserialize)] struct Payload { #[serde(with="faster_hex")] bytes: Vec<u8> }'
  operation='let value=serde_json::from_str::<Payload>(black_box(&json)).unwrap(); dst.clear();serde_json::to_writer(&mut dst,&value).unwrap();black_box(dst.as_slice());'
- ops={k:(source,operation) if k!="serialize" else ops[k] for k in cases}
+ ops={k:(payload_type,operation) if k!="serialize" else ops[k] for k in cases}
  for f in bins.glob('*.rs'):
   if f.stem not in cases:f.unlink()
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
@@ -139,7 +139,7 @@ fn main() {
 }
 '''.replace("OPTIONAL",'let optional_json=format!("{field:?}");' if k.startswith(("option","json")) else "").replace("DEFS",defs).replace("KIND",k).replace("PREPARE",prepare).replace("OP",op)
  if k=="escapedmixed":
-  code=code.replace('let start=Instant::now();','let json=json.replace(char::from(97u8),&format!("{}u0061",char::from(92))); let start=Instant::now();')
+  code=code.replace('let start=Instant::now();','let json=json.replace("0x",&format!("{}u0030x",char::from(92))); let start=Instant::now();')
  elif k.startswith('escaped'):
   code=code.replace('let start=Instant::now();','let q=char::from(34); let slash=char::from(92); let optional_json=format!("{q}{slash}u0030{}{q}", &field[1..]); let start=Instant::now();')
  (bins/(k+'.rs')).write_text(code)
