@@ -157,12 +157,20 @@ mod internal {
             return Err(FieldError::Limit { max, actual });
         }
         let src = pairs.as_flattened();
-        #[expect(
-            clippy::slow_vector_initialization,
-            reason = "a single ordinary allocation is cheaper for short-lived fields"
-        )]
-        let mut bytes = Vec::with_capacity(actual);
-        bytes.resize(actual, 0);
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        let mut bytes = if actual <= 256 {
+            #[expect(
+                clippy::slow_vector_initialization,
+                reason = "glibc handles small ordinary allocations faster than calloc"
+            )]
+            let mut bytes = Vec::with_capacity(actual);
+            bytes.resize(actual, 0);
+            bytes
+        } else {
+            alloc::vec![0; actual]
+        };
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        let mut bytes = alloc::vec![0; actual];
         crate::hex_decode_with_case(src, &mut bytes, case).map_err(FieldError::Hex)?;
         Ok(bytes)
     }
