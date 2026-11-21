@@ -1,5 +1,6 @@
 """Independent downstream executables; one operation per binary and the same source path for both revisions."""
 from pathlib import Path
+from build_variant import select
 import gzip,hashlib,json,math,os,platform,random,re,shutil,statistics,subprocess,sys
 root=Path.cwd()
 work=Path(os.environ.get("STUDY_WORK","consumer-work")).absolute()
@@ -116,6 +117,11 @@ if os.environ.get("RELEASE_COMMON"):
  ops={k:v for k,v in ops.items() if k in cases}
  for f in bins.glob('*.rs'):
   if f.stem not in cases:f.unlink()
+if os.environ.get("RELEASE_FOCUS"):
+ cases={"encode":[16,20,32,65], "decode":[32,256,4096]}
+ ops={k:v for k,v in ops.items() if k in cases}
+ for file in bins.glob('*.rs'):
+  if file.stem not in cases:file.unlink()
 if os.environ.get("FIELD_COST"):
  original=ops["field4096"][1]
  borrowed=original.split("black_box(",1)[1].rsplit(");",1)[0]
@@ -180,6 +186,7 @@ for role,rev in [('base',base),('head',head)]:
  tar=work/'codec.tar'
  run(['git','archive','-o',str(tar),rev],cwd=root)
  run(['tar','-xf',tar],cwd=source)
+ select(source,role,os.environ)
  if (work/'target').exists(): run(['cargo','clean','--release','-p','faster-hex','-p','consumer-timing'],cwd=driver)
  run(['cargo','build','--release','--bins'],cwd=driver)
  dest=work/role;dest.mkdir(exist_ok=True)

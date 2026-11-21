@@ -1,8 +1,9 @@
 """Repeat the released 32-byte Criterion driver with ordinary separate builds."""
 from pathlib import Path
+from build_variant import select
 import json, os, shutil, statistics, subprocess as sp, sys
-repo=Path.cwd(); work=repo/'release32-work'; result=repo/'results'
-work.mkdir(exist_ok=True);result.mkdir(exist_ok=True)
+repo=Path.cwd(); work=repo/'release32-work'; result=Path(os.environ.get('RESULTS','results')).resolve()
+work.mkdir(exist_ok=True);result.mkdir(exist_ok=True,parents=True)
 source=work/'codec'; target=work/'target'; samples=work/'samples'
 env=dict(os.environ,CARGO_TARGET_DIR=str(target),CRITERION_HOME=str(samples))
 def run(args,at,**options):
@@ -18,13 +19,17 @@ for label,rev in [('base',base),('head',head)]:
     run(['git','archive','-o',archive,rev],repo)
     run(['tar','-xf',archive],source)
     run(['tar','-xf',driver],source)
+    select(source,label,os.environ)
+    version=next(l.split(' = ')[1] for l in (source/'Cargo.toml').read_text().splitlines() if l.startswith('version = '))
     if label=='base':
         run(['cargo','generate-lockfile'],source)
         locked=(source/'Cargo.lock').read_text()
+        base_version=version
     else:
-        entry='name = "faster-hex"\nversion = "2.0.0"'
+        entry='name = "faster-hex"\nversion = '+base_version
         assert locked.count(entry)==1
-        (source/'Cargo.lock').write_text(locked.replace(entry,entry.replace('2.0.0','2.1.0')))
+        (source/'Cargo.lock').write_text(locked.replace(entry,entry.replace(base_version,version)))
+    if target.exists():
         run(['cargo','clean','--profile','bench','-p','faster-hex'],source)
     built=run(['cargo','bench','--locked','--no-run','--bench','hex','--message-format=json-render-diagnostics'],source,stdout=sp.PIPE,text=True)
     executable=next(j['executable'] for line in built.stdout.splitlines() if (j:=json.loads(line)).get('executable') and 'bench' in j['target']['kind'])
