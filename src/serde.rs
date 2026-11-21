@@ -203,11 +203,6 @@ mod internal {
                     "expected {N} decoded bytes, got {actual}"
                 )));
             }
-            #[cfg(target_arch = "aarch64")]
-            if N == 4 {
-                return crate::hex_decode_array_with_case(payload.as_bytes(), Self::CASE)
-                    .map_err(E::custom);
-            }
             if N > 1024 {
                 decode_payload(payload.as_bytes(), Self::CASE)
             } else {

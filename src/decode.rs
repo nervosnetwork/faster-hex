@@ -363,7 +363,16 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    array_pairs::<N>(src)?;
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let actual = src.len() / 2;
+    if actual != N {
+        return Err(Error::LengthMismatch {
+            expected: N,
+            actual,
+        });
+    }
     let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
     if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
@@ -381,19 +390,6 @@ pub fn hex_decode_array_with_case<const N: usize>(
     Ok(bytes)
 }
 
-#[inline(always)]
-fn array_pairs<const N: usize>(src: &[u8]) -> Result<&[[u8; 2]; N], Error> {
-    use core::convert::TryInto;
-    let (pairs, tail) = src.as_chunks::<2>();
-    if !tail.is_empty() {
-        return Err(Error::OddLength);
-    }
-    pairs.try_into().map_err(|_| Error::LengthMismatch {
-        expected: N,
-        actual: pairs.len(),
-    })
-}
-
 // A Serde visitor can initialize its field before the input text expires.
 #[cfg(feature = "serde")]
 #[inline(always)]
@@ -402,7 +398,17 @@ pub(crate) fn decode_array_into<'a, const N: usize>(
     storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
     check_case: CheckCase,
 ) -> Result<&'a [u8; N], Error> {
-    let pairs = array_pairs::<N>(src)?;
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let actual = src.len() / 2;
+    if actual != N {
+        return Err(Error::LengthMismatch {
+            expected: N,
+            actual,
+        });
+    }
+    let pairs = src.as_chunks::<2>().0;
     let bytes = storage.write([0; N]);
     if N < 8 {
         let digits = match check_case {
