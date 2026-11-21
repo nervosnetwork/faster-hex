@@ -3,11 +3,8 @@
 use core::iter::FromIterator;
 
 mod internal {
-    use crate::{
-        decode::{ArrayDigits, CheckCase},
-        encode::encode,
-    };
-    use alloc::vec::Vec;
+    use crate::{decode::CheckCase, encode::encode};
+    use alloc::{borrow::Cow, string::String, vec::Vec};
     use core::{fmt, mem::MaybeUninit};
     use serde::{
         de::{Error, Unexpected, Visitor},
@@ -40,7 +37,7 @@ mod internal {
     // The format determines how long each string lives. Short-lived values
     // must be consumed before their visit returns.
     enum Text<'de, T> {
-        Borrowed(&'de str),
+        Available(Cow<'de, str>),
         Transient(T),
     }
 
@@ -58,7 +55,16 @@ mod internal {
         }
         #[inline(always)]
         fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(Text::Borrowed(text))
+            Ok(Text::Available(Cow::Borrowed(text)))
+        }
+        fn visit_string<E: Error>(self, text: String) -> Result<Self::Value, E> {
+            Ok(Text::Available(Cow::Owned(text)))
+        }
+        fn visit_byte_buf<E: Error>(self, bytes: Vec<u8>) -> Result<Self::Value, E> {
+            match String::from_utf8(bytes) {
+                Ok(text) => self.visit_string(text),
+                Err(error) => Err(E::invalid_value(Unexpected::Bytes(error.as_bytes()), &self)),
+            }
         }
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
             match core::str::from_utf8(bytes) {
@@ -118,32 +124,28 @@ mod internal {
         text: &str,
         with_prefix: bool,
         custom: impl Fn(&'static str) -> E,
-    ) -> Result<&[[u8; 2]], E> {
+    ) -> Result<&str, E> {
         let text = if with_prefix {
             text.strip_prefix("0x")
                 .ok_or_else(|| custom("invalid prefix"))?
         } else {
             text
         };
-        let (pairs, tail) = text.as_bytes().as_chunks::<2>();
-        if tail.is_empty() {
-            Ok(pairs)
+        if text.len().is_multiple_of(2) {
+            Ok(text)
         } else {
             Err(custom("invalid length"))
         }
     }
 
     #[inline]
-    pub(super) fn read<'de, D: Deserializer<'de>>(
+    pub(super) fn read<'de, D: Deserializer<'de>, T>(
         d: D,
-        decode: impl Fn(&str) -> Field<Vec<u8>>,
-    ) -> Result<Field<Vec<u8>>, D::Error> {
-        // The format returns a borrowed string or a tag. The decoded vector
-        // stays here when the format can only lend its text for one visit.
-        let mut field = Ok(Vec::new());
-        match d.deserialize_string(TextVisitor(|text: &str| field = decode(text)))? {
-            Text::Borrowed(text) => Ok(decode(text)),
-            Text::Transient(()) => Ok(field),
+        decode: impl Fn(&str) -> T,
+    ) -> Result<T, D::Error> {
+        match d.deserialize_string(TextVisitor(&decode))? {
+            Text::Available(text) => Ok(decode(&text)),
+            Text::Transient(field) => Ok(field),
         }
     }
 
@@ -154,27 +156,13 @@ mod internal {
         case: CheckCase,
         max: usize,
     ) -> Field<Vec<u8>> {
-        let pairs = payload(text, with_prefix, FieldError::Text)?;
-        let actual = pairs.len();
+        let text = payload(text, with_prefix, FieldError::Text)?;
+        let actual = text.len() / 2;
         if actual > max {
             return Err(FieldError::Limit { max, actual });
         }
-        let src = pairs.as_flattened();
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        let mut bytes = if actual <= 256 {
-            #[expect(
-                clippy::slow_vector_initialization,
-                reason = "glibc handles small ordinary allocations faster than calloc"
-            )]
-            let mut bytes = Vec::with_capacity(actual);
-            bytes.resize(actual, 0);
-            bytes
-        } else {
-            alloc::vec![0; actual]
-        };
-        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
         let mut bytes = alloc::vec![0; actual];
-        crate::hex_decode_with_case(src, &mut bytes, case).map_err(FieldError::Hex)?;
+        crate::hex_decode_with_case(text.as_bytes(), &mut bytes, case).map_err(FieldError::Hex)?;
         Ok(bytes)
     }
 
@@ -183,65 +171,41 @@ mod internal {
         const CASE: CheckCase;
 
         #[inline(always)]
-        fn fill<'a, const N: usize>(
-            text: &str,
-            storage: &'a mut MaybeUninit<[u8; N]>,
-        ) -> Field<&'a [u8; N]> {
-            let pairs = payload(text, Self::PREFIX, FieldError::Text)?;
-            let pairs = ArrayDigits::<N>::new(pairs.as_flattened()).map_err(FieldError::Hex)?;
-            pairs
-                .decode_into(storage, Self::CASE)
-                .map_err(FieldError::Hex)
+        fn decode<const N: usize>(text: &str) -> Field<[u8; N]> {
+            let text = payload(text, Self::PREFIX, FieldError::Text)?;
+            crate::hex_decode_array_with_case(text.as_bytes(), Self::CASE).map_err(FieldError::Hex)
         }
-
-        #[inline(always)]
-        fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
-            let pairs =
-                ArrayDigits::<N>::new(payload(text, Self::PREFIX, E::custom)?.as_flattened())
-                    .map_err(E::custom)?;
-            // Keep the large return value off the length-error path.
-            array_result::<N, _>(|| {
-                pairs
-                    .decode_into(&mut MaybeUninit::uninit(), Self::CASE)
-                    .copied()
-                    .map_err(E::custom)
-            })
-        }
-    }
-
-    #[inline(always)]
-    fn with_array<'de, D: Deserializer<'de>, P: Policy, R, const N: usize>(
-        d: D,
-        finish: impl FnOnce(Text<'de, Field<&[u8; N]>>) -> Result<R, D::Error>,
-    ) -> Result<R, D::Error> {
-        let mut storage = MaybeUninit::uninit();
-        let slot = &mut storage;
-        let input = d.deserialize_string(TextVisitor(move |s: &str| {
-            // Move this reference out of the one-shot visitor so the field can outlive the visit.
-            let storage = slot;
-            P::fill::<N>(s, storage)
-        }))?;
-        finish(input)
     }
 
     #[inline(always)]
     pub(super) fn array_field<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<Field<[u8; N]>, D::Error> {
-        with_array::<D, P, _, N>(d, |input| {
-            Ok(match input {
-                Text::Borrowed(text) => P::fill(text, &mut MaybeUninit::uninit()).copied(),
-                Text::Transient(field) => field.copied(),
-            })
-        })
-    }
-    #[inline(always)]
-    fn read_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
-        d: D,
-    ) -> Result<[u8; N], D::Error> {
-        with_array::<D, P, _, N>(d, |input| match input {
-            Text::Borrowed(text) => P::decode(text),
-            Text::Transient(field) => field.copied().map_err(D::Error::custom),
+        let mut field = MaybeUninit::uninit();
+        let slot = &mut field;
+        let input = d.deserialize_string(TextVisitor(move |text: &str| {
+            // Small arrays can be returned in registers. For larger fields, decode
+            // into caller-owned storage so the format only has to return a reference.
+            let slot = slot;
+            if N < 8 {
+                return Ok(&*slot.write(P::decode(text)?));
+            }
+            let text = payload(text, P::PREFIX, FieldError::Text)?;
+            let actual = text.len() / 2;
+            if actual != N {
+                return Err(FieldError::Hex(crate::Error::LengthMismatch {
+                    expected: N,
+                    actual,
+                }));
+            }
+            let bytes = slot.write([0; N]);
+            crate::hex_decode_with_case(text.as_bytes(), bytes, P::CASE)
+                .map_err(FieldError::Hex)?;
+            Ok(&*bytes)
+        }))?;
+        Ok(match input {
+            Text::Available(text) => P::decode(&text),
+            Text::Transient(result) => result.copied(),
         })
     }
 
@@ -264,7 +228,7 @@ mod internal {
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
-        array_result::<N, _>(|| read_array::<D, P, N>(d))
+        array_result::<N, _>(|| array_field::<D, P, N>(d)?.map_err(D::Error::custom))
     }
 
     pub(crate) fn serialize_option<S, T>(
