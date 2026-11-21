@@ -45,7 +45,7 @@ mod internal {
 
     struct TextVisitor<'error, F> {
         decode: F,
-        rejection: &'error mut Option<FieldError>,
+        rejection: &'error mut MaybeUninit<FieldError>,
     }
 
     impl<'de, 'error, F, T> Visitor<'de> for TextVisitor<'error, F>
@@ -62,7 +62,7 @@ mod internal {
         fn visit_str<E: Error>(self, s: &str) -> Result<Self::Value, E> {
             Ok(match (self.decode)(s) {
                 Ok(bytes) => Input::Decoded(bytes),
-                Err(error) => Input::Invalid(self.rejection.insert(error)),
+                Err(error) => Input::Invalid(self.rejection.write(error)),
             })
         }
 
@@ -151,7 +151,7 @@ mod internal {
         max: usize,
         error: impl Fn(FieldError) -> E,
     ) -> Result<Result<Vec<u8>, E>, D::Error> {
-        let mut rejection = None;
+        let mut rejection = MaybeUninit::uninit();
         let input = d.deserialize_string(TextVisitor {
             decode: |s: &str| decode_bytes(s, with_prefix, case, max, core::convert::identity),
             rejection: &mut rejection,
@@ -177,40 +177,37 @@ mod internal {
         if actual > max {
             return Err(error(FieldError::Limit { max, actual }));
         }
-        let mut bytes = alloc::vec![0; actual];
-        crate::hex_decode_with_case(text.as_bytes(), &mut bytes, case)
-            .map_err(|e| error(FieldError::Hex(e)))?;
-        Ok(bytes)
+        crate::hex_decode_vec_with_case(text.as_bytes(), case)
+            .map_err(|e| error(FieldError::Hex(e)))
     }
 
     pub(super) trait Policy {
         const PREFIX: bool;
         const CASE: CheckCase;
 
+        fn array_payload<const N: usize, E>(
+            text: &str,
+            error: impl Fn(FieldError) -> E,
+        ) -> Result<&[u8], E> {
+            let text = payload(text, Self::PREFIX, |s| error(FieldError::Text(s)))?;
+            let actual = text.len() / 2;
+            if actual != N {
+                return Err(error(FieldError::Hex(crate::Error::LengthMismatch {
+                    expected: N,
+                    actual,
+                })));
+            }
+            Ok(text.as_bytes())
+        }
+
         #[inline(always)]
         fn decode<const N: usize, E>(
             text: &str,
             error: impl Fn(FieldError) -> E,
         ) -> Result<[u8; N], E> {
-            let text = payload(text, Self::PREFIX, |s| error(FieldError::Text(s)))?;
-            if N <= 1024 {
-                return crate::hex_decode_array_with_case(text.as_bytes(), Self::CASE)
-                    .map_err(|e| error(FieldError::Hex(e)));
-            }
-            let actual = text.len() / 2;
-            let mut field = if actual == N {
-                Ok([0; N])
-            } else {
-                Err(error(FieldError::Hex(crate::Error::LengthMismatch {
-                    expected: N,
-                    actual,
-                })))
-            };
-            if let Ok(bytes) = &mut field {
-                crate::decode::decode_owned_exact(text.as_bytes(), bytes, Self::CASE)
-                    .map_err(|e| error(FieldError::Hex(e)))?;
-            }
-            field
+            let src = Self::array_payload::<N, _>(text, &error)?;
+            crate::hex_decode_array_with_case(src, Self::CASE)
+                .map_err(|e| error(FieldError::Hex(e)))
         }
 
         #[inline(always)]
@@ -218,26 +215,15 @@ mod internal {
             text: &str,
             storage: &'out mut MaybeUninit<[u8; N]>,
         ) -> Field<&'out [u8; N]> {
+            let src = Self::array_payload::<N, _>(text, core::convert::identity)?;
             if N < 8 {
-                return Ok(&*storage.write(Self::decode(text, core::convert::identity)?));
-            }
-            let text = payload(text, Self::PREFIX, FieldError::Text)?;
-            let actual = text.len() / 2;
-            if actual != N {
-                return Err(FieldError::Hex(crate::Error::LengthMismatch {
-                    expected: N,
-                    actual,
-                }));
+                let bytes =
+                    crate::hex_decode_array_with_case(src, Self::CASE).map_err(FieldError::Hex)?;
+                return Ok(storage.write(bytes));
             }
             let bytes = storage.write([0; N]);
-            if N > 1024 {
-                crate::decode::decode_owned_exact(text.as_bytes(), bytes, Self::CASE)
-                    .map_err(FieldError::Hex)?;
-            } else {
-                crate::hex_decode_with_case(text.as_bytes(), bytes, Self::CASE)
-                    .map_err(FieldError::Hex)?;
-            }
-            Ok(&*bytes)
+            crate::decode::decode_owned_exact(src, bytes, Self::CASE).map_err(FieldError::Hex)?;
+            Ok(bytes)
         }
     }
 
@@ -248,7 +234,7 @@ mod internal {
     ) -> Result<R, D::Error> {
         let mut output = MaybeUninit::uninit();
         let slot = &mut output;
-        let mut rejection = None;
+        let mut rejection = MaybeUninit::uninit();
         let input = d.deserialize_string(TextVisitor {
             decode: move |s: &str| {
                 let slot = slot;
@@ -291,10 +277,12 @@ mod internal {
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
-        with_array::<D, P, N, _>(d, |input| match input {
-            Input::Borrowed(text) => P::decode(text, FieldError::into_format),
-            Input::Decoded(bytes) => Ok(*bytes),
-            Input::Invalid(error) => Err(error.into_format()),
+        array_result::<N, _>(|| {
+            with_array::<D, P, N, _>(d, |input| match input {
+                Input::Borrowed(text) => P::decode(text, FieldError::into_format),
+                Input::Decoded(bytes) => Ok(*bytes),
+                Input::Invalid(error) => Err(error.into_format()),
+            })
         })
     }
 
