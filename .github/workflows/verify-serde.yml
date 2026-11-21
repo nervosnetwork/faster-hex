@@ -15,14 +15,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: value, mode: consumer, os: ubuntu-22.04, lto: thin}
-          - {family: value, mode: consumer, os: ubuntu-24.04, lto: thin}
-          - {family: value, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
-          - {family: value, mode: consumer, os: macos-15-intel, lto: thin}
-          - {family: reference, mode: consumer, os: ubuntu-22.04, lto: thin}
-          - {family: reference, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
-          - {family: value, mode: regress, os: ubuntu-22.04, lto: thin}
-          - {family: value, mode: regress, os: ubuntu-24.04-arm, lto: thin}
+          - {family: policy, mode: consumer, os: ubuntu-22.04, lto: thin}
+          - {family: policy, mode: consumer, os: ubuntu-24.04, lto: thin}
+          - {family: policy, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
+          - {family: policy, mode: consumer, os: macos-15-intel, lto: thin}
+          - {family: optional, mode: consumer, os: ubuntu-22.04, lto: thin}
+          - {family: optional, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
+          - {family: policy, mode: regress, os: ubuntu-22.04, lto: thin}
+          - {family: policy, mode: regress, os: ubuntu-24.04-arm, lto: thin}
+          - {family: policy, mode: regress, os: ubuntu-24.04, lto: "false"}
+          - {family: policy, mode: regress, os: macos-15-intel, lto: thin}
+          - {family: optional, mode: consumer, os: macos-15-intel, lto: thin}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -35,9 +38,10 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            value) export PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
-            reference) export PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
+            policy) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
+            optional) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
           esac
+          export PRODUCT_REV
           if [ "${{ matrix.mode }}" = consumer ]; then
             if [ "$(uname -s)" = Linux ]; then
               mkdir -p results
