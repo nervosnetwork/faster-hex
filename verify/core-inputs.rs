@@ -84,7 +84,7 @@ fn adjacent_blocks_and_the_final_window_keep_the_suffix_untouched() {
 fn case_errors_in_either_region_leave_the_full_destination_untouched() {
     use faster_hex::{hex_decode_with_case, Error};
 
-    for n in 95..=257 {
+    for n in 32..=257 {
         let mut text = vec![b'0'; n * 2];
         let sentinel = vec![0xa5; n + 3];
         let mut out = sentinel.clone();

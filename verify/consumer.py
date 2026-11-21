@@ -186,6 +186,14 @@ study=os.environ.get("PAIR_STUDY")
 if study:
  if study=="blocks":
   cases={"decode":[32,96,97,127,128,129,255,256,257,4096]}
+ elif study=="windows":
+  cases={"decode":[16,32,33,40,48,63,64,65,80,95,96,97,112,127,128,129,160,192,193,255,256,257,1024,4096]}
+  for direction in ("Lower","Upper"):
+   key="decode_"+direction.lower()
+   cases[key]=[33,64,96,112,128,129,4096]
+   ops[key]=("",f"faster_hex::hex_decode_with_case(black_box(&hex),black_box(&mut dst[..n]),faster_hex::CheckCase::{direction}).unwrap();black_box(&dst);")
+ elif study=="matched":
+  cases={"mixed":[32,4096],"escapedmixed":[32,4096]}
  elif study=="fixed":
   cases={k:cases[k] for k in ["array8","array32","field4","field20","json32","option32","json4096","option4096","transient4096","escapedoption4096"]}
  elif study=="json":
@@ -195,8 +203,15 @@ if study:
  for file in bins.glob("*.rs"):
   if file.stem not in cases:file.unlink()
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
+if study=="matched":
+ manifest=driver/"Cargo.toml"
+ content=manifest.read_text().replace('serde={version="1",','serde={version="=1.0.229",').replace('serde_json="1"','serde_json="=1.0.154"')
+ assert '=1.0.229' in content and '=1.0.154' in content
+ manifest.write_text(content)
 for k,(defs,op) in ops.items():
  prepare="let payload=Payload{bytes:bytes.clone()};" if k=="serialize" else ""
+ if k in ("decode_lower","decode_upper"):
+  prepare=f"let hex=hex.to_ascii_{'lowercase' if k=='decode_lower' else 'uppercase'}();"
  if k in ("hash_slice","hash_reader"):
   prepare='let expected:Option<StateRoot>=serde_json::from_slice(optional_json.as_bytes()).unwrap();assert_eq!(expected.as_ref().unwrap().0,bytes);assert_eq!(serde_json::to_string(&expected).unwrap(),optional_json);'
  if kernel=="lanes":

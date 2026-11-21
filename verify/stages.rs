@@ -121,7 +121,7 @@ fn main() {
     assert_eq!(serde_json::to_vec(&new).unwrap(), expected);
     assert_eq!(old_read(&input), bytes);
     assert_eq!(new_read(&input), bytes);
-    let mut dst = Vec::with_capacity(expected.len());
+    let mut dst = vec![0; len * 2 + 32];
     for mode in 0..12 {
         sample(mode, &input, (count / 8).max(1), &mut dst, &old, &new);
         if mode != 8 && mode != 9 {
