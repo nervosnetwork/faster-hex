@@ -207,8 +207,7 @@ mod internal {
             }
             let bytes = storage.write([0; N]);
             if N > 1024 {
-                let (pairs, _) = text.as_bytes().as_chunks::<2>();
-                crate::decode::decode_owned_pairs(pairs, bytes, Self::CASE)
+                crate::decode::decode_owned_exact(text.as_bytes(), bytes, Self::CASE)
                     .map_err(FieldError::Hex)?;
             } else {
                 crate::hex_decode_with_case(text.as_bytes(), bytes, Self::CASE)
