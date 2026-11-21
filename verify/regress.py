@@ -134,6 +134,8 @@ def regress():
         *(f"string/{op}/{n}" for op in ["faster_hex_alloc", "faster_hex_reuse"] for n in [32,4096]),
         *(f"field/borrowed_array/{n}" for n in [4,20,65,256,4096]),
     }
+    if os.environ.get('FOCUS_REGRESS'):
+        cases={n for n in cases if n in {'field/borrowed_array/4','field/borrowed_array/32','field/wrong_length_field/4096','decode/faster_hex_mixed/4','decode_array/faster_hex/4','serde_json/serialize_reuse/10','serde_json/serialize_reuse/32','serde_json/serialize_reuse/65','serde_json/deserialize/65'}}
     bins={r: standalone(r,ref) for r,ref in [("base",base),("head",head)]}
     times={}
     for label in ["base1","head1","head2","base2"]:
