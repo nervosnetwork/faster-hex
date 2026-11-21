@@ -363,34 +363,10 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
-    }
-    let actual = src.len() / 2;
-    if actual != N {
-        return Err(Error::LengthMismatch {
-            expected: N,
-            actual,
-        });
-    }
-    let mut bytes = [0; N];
-    #[cfg(target_arch = "aarch64")]
-    if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
-        // A fixed short array can inline the existing NEON block by padding
-        // with valid digits, without reading beyond the source slice.
-        let mut input = [b'0'; 16];
-        input[..src.len()].copy_from_slice(src);
-        let mut output = [0; 8];
-        hex_decode_with_case(&input, &mut output, check_case)?;
-        bytes.copy_from_slice(&output[..N]);
-        return Ok(bytes);
-    }
-    // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
-    Ok(bytes)
+    let mut storage = core::mem::MaybeUninit::uninit();
+    decode_array_into(src, &mut storage, check_case).copied()
 }
 
-#[cfg(feature = "serde")]
 // Validate the length before initializing the array. Its bytes stay private
 // until all digits have been checked, including on the block-at-a-time path.
 #[inline(always)]
