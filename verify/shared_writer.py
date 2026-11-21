@@ -3,7 +3,7 @@ import csv, os, platform, statistics, subprocess as sp, sys, json, shutil, rando
 here=Path.cwd(); lab=Path(os.environ.get('STUDY_WORK','writer-work')).resolve();lab.mkdir(parents=True,exist_ok=True)
 out=Path(os.environ.get('RESULTS','results')).resolve();out.mkdir(parents=True,exist_ok=True)
 src=lab/'src';src.mkdir(exist_ok=True)
-shutil.copy(here/'verify/shared-writer.rs',src/'main.rs')
+shutil.copy(here/'verify'/('owned-writer.rs' if os.environ.get('OWNED_WRITER') else 'shared-writer.rs'),src/'main.rs')
 roles=[('a','25cfd8eb6a4cd8257a96fabaf73771cabcced4b4'),('b',os.environ['PRODUCT_REV'])]
 if os.environ.get('REVERSE_WRITER'):roles=[('a',roles[1][1]),('b',roles[0][1])]
 for slot,ref in roles:

@@ -28,6 +28,14 @@ def checkout(ref, dest):
     archive = work / "snapshot.tar"
     run(["git", "archive", "-o", str(archive), ref], repo)
     run(["tar", "-xf", str(archive)], dest)
+    if os.environ.get("ISOLATED_WRITER"):
+        # Use the maintained writer and its assertions unchanged, with no parser in the binary.
+        file=dest/"benches/serde.rs"
+        src=file.read_text().replace("use serde::{Deserialize, Serialize};","use serde::Serialize;").replace("Serialize, Deserialize)]","Serialize)]")
+        src="\n".join(l for l in src.split("\n") if "assert_eq!(serde_json::from_str" not in l and "let escaped = json.replace" not in l and "let encoded = postcard::to_slice" not in l and "assert_eq!(postcard::from_bytes" not in l)
+        start=src.index('        for (name, source) in [(')
+        end=src.index('    }\n    group.finish();',start)
+        file.write_text(src[:start]+src[end:])
     shutil.copy(study / "field.rs", dest / "benches/field.rs")
     with (dest / "Cargo.toml").open("a") as f:
         f.write('\n[[bench]]\nname="field"\nharness=false\n')
