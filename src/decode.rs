@@ -7,10 +7,6 @@ pub(crate) mod x86;
 
 const NIL: u8 = u8::MAX;
 
-// On failure the backend borrows the start of the first suspect block. Bytes
-// before it are valid. Returning a reference also works across owned chunks.
-type Validation<'src> = Result<(), &'src u8>;
-
 const fn init_unhex_array(check_case: CheckCase) -> [u8; 256] {
     let mut arr = [0; 256];
     let mut i = 0;
@@ -104,7 +100,11 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
-    check(src, CheckCase::None).or_else(|first| diagnose_invalid(src, first, CheckCase::None))
+    if hex_check(src) {
+        Ok(())
+    } else {
+        diagnose_invalid(src, CheckCase::None)
+    }
 }
 
 /// Checks ASCII hex digits against an explicit letter-case policy.
@@ -125,11 +125,6 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
 /// ```
 #[inline]
 pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
-    check(src, check_case).is_ok()
-}
-
-#[inline]
-fn check(src: &[u8], check_case: CheckCase) -> Validation<'_> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
@@ -145,7 +140,7 @@ fn check(src: &[u8], check_case: CheckCase) -> Validation<'_> {
                 // SAFETY: Dispatch checks SSE4.1; the checker bounds every load.
                 unsafe { x86::hex_check_sse_with_case(src, check_case) }
             }
-            crate::Vectorization::None => check_scalar(src, check_case),
+            crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
         }
     }
 
@@ -156,27 +151,20 @@ fn check(src: &[u8], check_case: CheckCase) -> Validation<'_> {
                 // SAFETY: Dispatch guarantees NEON; the checker bounds every load.
                 unsafe { aarch64::hex_check_neon_with_case(src, check_case) }
             }
-            crate::Vectorization::None => check_scalar(src, check_case),
+            crate::Vectorization::None => hex_check_fallback_with_case(src, check_case),
         }
     }
 
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    check_scalar(src, check_case)
+    hex_check_fallback_with_case(src, check_case)
 }
 
-pub(crate) fn check_scalar(src: &[u8], case: CheckCase) -> Validation<'_> {
-    let table = digit_table(case);
-    match src.iter().find(|&&byte| table[usize::from(byte)] == NIL) {
-        Some(byte) => Err(byte),
-        None => Ok(()),
-    }
-}
-
-fn digit_table(case: CheckCase) -> &'static [u8; 256] {
-    match case {
-        CheckCase::None => &UNHEX,
-        CheckCase::Lower => &UNHEX_LOWER,
-        CheckCase::Upper => &UNHEX_UPPER,
+/// Check if the input is valid hex bytes slice with case check
+pub(crate) fn hex_check_fallback_with_case(src: &[u8], check_case: CheckCase) -> bool {
+    match check_case {
+        CheckCase::None => src.iter().all(|&x| UNHEX[x as usize] != NIL),
+        CheckCase::Lower => src.iter().all(|&x| UNHEX_LOWER[x as usize] != NIL),
+        CheckCase::Upper => src.iter().all(|&x| UNHEX_UPPER[x as usize] != NIL),
     }
 }
 
@@ -311,8 +299,8 @@ pub fn hex_decode_with_case<'a>(
         .get_mut(..len)
         .ok_or(Error::OutputTooSmall { required: len })?;
     // SAFETY: The input is even and dst is the exact output prefix checked above.
-    if let Err(first) = unsafe { decode_checked(src, dst, check_case) } {
-        decode_diagnosed(src, first, dst, check_case)?;
+    if unsafe { decode_checked(src, dst, check_case) }.is_err() {
+        decode_diagnosed(src, dst, check_case)?;
     }
     Ok(dst)
 }
@@ -460,13 +448,49 @@ pub fn hex_decode_vec_with_case(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<alloc::vec::Vec<u8>, Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
+    decode_vec_pairs(hex_pairs(src)?, check_case)
+}
+
+#[cfg(feature = "alloc")]
+#[inline]
+pub(crate) fn hex_pairs(src: &[u8]) -> Result<&[[u8; 2]], Error> {
+    let (pairs, tail) = src.as_chunks::<2>();
+    if tail.is_empty() {
+        Ok(pairs)
+    } else {
+        Err(Error::OddLength)
     }
-    let mut bytes = alloc::vec![0; src.len() / 2];
-    // SAFETY: The vector has one byte for each pair of the even input.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+}
+
+#[cfg(feature = "alloc")]
+#[inline]
+pub(crate) fn decode_vec_pairs(
+    pairs: &[[u8; 2]],
+    case: CheckCase,
+) -> Result<alloc::vec::Vec<u8>, Error> {
+    let mut bytes = alloc::vec![0; pairs.len()];
+    decode_owned_exact(pairs, &mut bytes, case)?;
     Ok(bytes)
+}
+
+// Only private output can commit a checked block before validating the next.
+// The caller discards the destination if a later pair fails.
+#[cfg(feature = "alloc")]
+#[inline(always)]
+pub(crate) fn decode_owned_exact(
+    pairs: &[[u8; 2]],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), Error> {
+    let actual = pairs.len();
+    if actual != dst.len() {
+        return Err(Error::LengthMismatch {
+            expected: dst.len(),
+            actual,
+        });
+    }
+    // SAFETY: Each destination byte has exactly one two-byte input pair.
+    unsafe { decode_owned(pairs.as_flattened(), dst, case) }
 }
 
 /// Appends decoded bytes to `dst` and returns just the new suffix.
@@ -546,8 +570,8 @@ unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<()
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     let decoded = decode_checked(src, dst, case);
-    if let Err(first) = decoded {
-        decode_diagnosed(src, first, dst, case)?;
+    if decoded.is_err() {
+        decode_diagnosed(src, dst, case)?;
     }
     Ok(())
 }
@@ -561,11 +585,11 @@ unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<()
 // Inline the boundary and dispatch together so short decodes can keep their
 // result and SIMD constants in the caller instead of a separate stack frame.
 #[inline(always)]
-pub(crate) unsafe fn decode_checked<'src>(
-    src: &'src [u8],
+pub(crate) unsafe fn decode_checked(
+    src: &[u8],
     dst: &mut [u8],
     check_case: CheckCase,
-) -> Validation<'src> {
+) -> Result<(), ()> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     if dst.len() < 8 {
         return hex_decode_short_scalar(src, dst, check_case);
@@ -589,7 +613,9 @@ pub(crate) unsafe fn decode_checked<'src>(
                 unsafe { x86::hex_decode_sse41_checked(src, dst, check_case) }
             }
             crate::Vectorization::None => {
-                check_scalar(src, check_case)?;
+                if !hex_check_fallback_with_case(src, check_case) {
+                    return Err(());
+                }
                 hex_decode_fallback(src, dst);
                 Ok(())
             }
@@ -610,7 +636,9 @@ pub(crate) unsafe fn decode_checked<'src>(
             // SAFETY: Each complete 16-byte load and 8-byte store stays in its slice.
             return unsafe { aarch64::hex_decode_short_neon(src, dst, check_case) };
         }
-        check(src, check_case)?;
+        if !hex_check_with_case(src, check_case) {
+            return Err(());
+        }
         hex_decode_unchecked(src, dst);
         Ok(())
     }
@@ -619,18 +647,22 @@ pub(crate) unsafe fn decode_checked<'src>(
 // Fewer than eight output bytes fit in one word. Decode each pair once
 // and commit only after the complete input has passed validation.
 #[inline]
-pub(crate) fn hex_decode_short_scalar<'src>(
-    src: &'src [u8],
+pub(crate) fn hex_decode_short_scalar(
+    src: &[u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Validation<'src> {
-    let table = digit_table(case);
+) -> Result<(), ()> {
+    let table = match case {
+        CheckCase::None => &UNHEX,
+        CheckCase::Lower => &UNHEX_LOWER,
+        CheckCase::Upper => &UNHEX_UPPER,
+    };
     let mut decoded = 0u64;
     for pair in src.as_chunks::<2>().0 {
         let high = table[usize::from(pair[0])];
         let low = table[usize::from(pair[1])];
         if high | low == NIL {
-            return Err(&pair[0]);
+            return Err(());
         }
         decoded = decoded << 8 | u64::from(high << 4 | low);
     }
@@ -642,26 +674,35 @@ pub(crate) fn hex_decode_short_scalar<'src>(
     Ok(())
 }
 
-// The destination is still private or unchanged after the failed check.
+// Backends report validity; diagnostics belong to the public boundary. The
+// successful SIMD path does not track byte positions or construct an error.
 #[cold]
-fn decode_diagnosed(src: &[u8], first: &u8, dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid(src, first, case)?;
+fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    diagnose_invalid(src, case)?;
     // Recover if a backend rejected valid input; the caller needs initialized bytes.
     hex_decode_fallback(src, dst);
     Ok(())
 }
 
 #[inline(always)]
-fn diagnose_invalid(src: &[u8], first: &u8, case: CheckCase) -> Result<(), Error> {
-    let table = digit_table(case);
+fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
+    let table = match case {
+        CheckCase::None => &UNHEX,
+        CheckCase::Lower => &UNHEX_LOWER,
+        CheckCase::Upper => &UNHEX_UPPER,
+    };
+    // Report a malformed first pair before scanning any SIMD blocks.
     for (index, &byte) in src.iter().take(2).enumerate() {
         if table[usize::from(byte)] == NIL {
             return Err(Error::InvalidChar { index, byte });
         }
     }
-    // A single bounded group has no earlier blocks to skip.
+    // Skip valid blocks so locating a late error retains SIMD throughput.
     let skipped = if src.len() > 64 {
-        src.element_offset(first).unwrap_or(0)
+        src.chunks_exact(64)
+            .take_while(|chunk| hex_check_with_case(chunk, case))
+            .count()
+            * 64
     } else {
         0
     };

@@ -1,4 +1,4 @@
-use crate::decode::{check_scalar, hex_decode_fallback, hex_decode_unchecked};
+use crate::decode::{hex_check_fallback_with_case, hex_decode_fallback, hex_decode_unchecked};
 use crate::encode::hex_encode_fallback;
 use crate::{hex_check_with_case, hex_decode, hex_encode, hex_encode_upper, CheckCase};
 use proptest::prelude::*;
@@ -30,7 +30,7 @@ proptest! {
     #[test]
     fn arbitrary_character_checks_agree(data in prop::collection::vec(any::<u8>(), 0..4097)) {
         for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
-            prop_assert_eq!(hex_check_with_case(&data, case), check_scalar(&data, case).is_ok());
+            prop_assert_eq!(hex_check_with_case(&data, case), hex_check_fallback_with_case(&data, case));
         }
     }
 }
@@ -187,7 +187,7 @@ mod kernels {
                     for byte in 0..=255 {
                         input[position] = byte;
                         for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
-                            let valid = check_scalar(&input, case).is_ok();
+                            let valid = hex_check_fallback_with_case(&input, case);
                             let actual = backend.check(&input, case);
                             assert_eq!(actual, valid, "{name}, {len}/{position}/{byte}/{case:?}");
                             let mut output = vec![0xa5; len / 2];

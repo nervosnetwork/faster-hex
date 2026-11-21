@@ -7,7 +7,7 @@ bench-dev = [
       | decode_array/faster_hex/(4|32) | decode_vec/faster_hex/4096
       | invalid/decode/(first|last)/4096 | check_valid/byte_pairs/32
       | decode_append/(32|4096) | prefix/(buffer|display)/(7|12)
-      | serde_json/serialize_reuse/32
+      | serde_json/serialize_reuse/32 | serde_json/roundtrip(_escaped)?_reuse/(32|4096)
     )$''',
     "--warm-up-time", "0.2", "--measurement-time", "1",
     "--sample-size", "30", "--noplot",

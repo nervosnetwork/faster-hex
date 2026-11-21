@@ -48,9 +48,21 @@ fn serde(c: &mut Criterion) {
             });
             assert_eq!(text_output, json.as_bytes());
         });
-        for (name, source) in [("deserialize", &json), ("deserialize_escaped", &escaped)] {
-            group.bench_with_input(BenchmarkId::new(name, len), source, |b, source| {
+        for (read, roundtrip, source) in [
+            ("deserialize", "roundtrip_reuse", &json),
+            ("deserialize_escaped", "roundtrip_escaped_reuse", &escaped),
+        ] {
+            group.bench_with_input(BenchmarkId::new(read, len), source, |b, source| {
                 b.iter(|| black_box(serde_json::from_str::<Payload>(black_box(source)).unwrap()));
+            });
+            group.bench_with_input(BenchmarkId::new(roundtrip, len), source, |b, source| {
+                b.iter(|| {
+                    let payload: Payload = serde_json::from_str(black_box(source)).unwrap();
+                    output.clear();
+                    serde_json::to_writer(&mut output, &payload).unwrap();
+                    black_box(output.as_slice());
+                });
+                assert_eq!(output, json.as_bytes());
             });
         }
     }

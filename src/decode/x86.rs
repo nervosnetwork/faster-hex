@@ -15,7 +15,7 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use super::{check_scalar, hex_decode_fallback, CheckCase, Validation};
+use super::{hex_check_fallback_with_case, hex_decode_fallback, CheckCase};
 
 // Both AVX widths repeat these 16-entry hash and decode tables in every lane.
 #[inline]
@@ -71,24 +71,23 @@ unsafe fn valid_sse(bytes: __m128i, case: CheckCase) -> __m128i {
 }
 
 #[target_feature(enable = "sse4.1")]
-pub(crate) unsafe fn hex_check_sse_with_case(src: &[u8], case: CheckCase) -> Validation<'_> {
+pub(crate) unsafe fn hex_check_sse_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 16 {
-        return check_scalar(src, case);
+        return hex_check_fallback_with_case(src, case);
     }
     let (blocks, tail) = src.as_chunks::<16>();
     for block in blocks {
         if _mm_movemask_epi8(valid_sse(_mm_loadu_si128(block.as_ptr().cast()), case)) != 0xffff {
-            return Err(&block[0]);
+            return false;
         }
     }
     if !tail.is_empty() {
         if let Some(last) = src.last_chunk::<16>() {
-            if _mm_movemask_epi8(valid_sse(_mm_loadu_si128(last.as_ptr().cast()), case)) != 0xffff {
-                return Err(&last[0]);
-            }
+            return _mm_movemask_epi8(valid_sse(_mm_loadu_si128(last.as_ptr().cast()), case))
+                == 0xffff;
         }
     }
-    Ok(())
+    true
 }
 
 // Add a wrapping bias so the accepted unsigned ASCII interval starts at -128.
@@ -112,7 +111,7 @@ unsafe fn valid_avx2(bytes: __m256i, case: CheckCase) -> __m256i {
 
 #[target_feature(enable = "avx2")]
 #[inline]
-pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> Validation<'_> {
+pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 32 {
         return hex_check_sse_with_case(src, case);
     }
@@ -127,7 +126,7 @@ pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> Va
             );
         }
         if _mm256_movemask_epi8(valid) != -1 {
-            return Err(&batch[0]);
+            return false;
         }
     }
     let (blocks, tail) = rest.as_chunks::<32>();
@@ -146,12 +145,7 @@ pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> Va
             );
         }
     }
-    if _mm256_movemask_epi8(valid) != -1 {
-        if let Some(first) = rest.first() {
-            return Err(first);
-        }
-    }
-    Ok(())
+    _mm256_movemask_epi8(valid) == -1
 }
 
 #[inline]
@@ -173,26 +167,22 @@ unsafe fn valid_avx512(bytes: __m512i, case: CheckCase) -> u64 {
 
 #[target_feature(enable = "avx512f,avx512bw")]
 #[inline]
-pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> Validation<'_> {
+pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 64 {
         return hex_check_avx2_with_case(src, case);
     }
     let (blocks, tail) = src.as_chunks::<64>();
     for block in blocks {
-        let mask = valid_avx512(_mm512_loadu_si512(block.as_ptr().cast()), case);
-        if mask != u64::MAX {
-            return Err(&block[mask.trailing_ones() as usize]);
+        if valid_avx512(_mm512_loadu_si512(block.as_ptr().cast()), case) != u64::MAX {
+            return false;
         }
     }
     if !tail.is_empty() {
         if let Some(last) = src.last_chunk::<64>() {
-            let mask = valid_avx512(_mm512_loadu_si512(last.as_ptr().cast()), case);
-            if mask != u64::MAX {
-                return Err(&last[mask.trailing_ones() as usize]);
-            }
+            return valid_avx512(_mm512_loadu_si512(last.as_ptr().cast()), case) == u64::MAX;
         }
     }
-    Ok(())
+    true
 }
 
 // Map valid ASCII to 0..=15 and every invalid byte to >=16. This is the
@@ -264,17 +254,13 @@ unsafe fn decode_avx512_nibbles(bytes: __m512i, case: CheckCase) -> (__m512i, __
 // 8..=16 output bytes fit in two input registers, possibly overlapping.
 #[inline]
 #[target_feature(enable = "sse4.1")]
-unsafe fn hex_decode_short_sse41<'src>(
-    src: &'src [u8],
-    dst: &mut [u8],
-    case: CheckCase,
-) -> Validation<'src> {
+unsafe fn hex_decode_short_sse41(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
     debug_assert!((16..=32).contains(&src.len()));
     let a = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), case);
     // An eight-byte output fits in this one load; no overlapping tail is needed.
     if src.len() == 16 {
         if _mm_testz_si128(a, _mm_set1_epi8(-16)) == 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm_storel_epi64(dst.as_mut_ptr().cast(), pack_sse41(a, a));
         return Ok(());
@@ -284,7 +270,7 @@ unsafe fn hex_decode_short_sse41<'src>(
         case,
     );
     if _mm_testz_si128(_mm_or_si128(a, b), _mm_set1_epi8(-16)) == 0 {
-        return Err(&src[0]);
+        return Err(());
     }
     let decoded = pack_sse41(a, b);
     _mm_storel_epi64(dst.as_mut_ptr().cast(), decoded);
@@ -296,11 +282,11 @@ unsafe fn hex_decode_short_sse41<'src>(
 }
 
 #[target_feature(enable = "sse4.1")]
-pub(crate) unsafe fn hex_decode_sse41_checked<'src>(
-    src: &'src [u8],
+pub(crate) unsafe fn hex_decode_sse41_checked(
+    src: &[u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Validation<'src> {
+) -> Result<(), ()> {
     debug_assert!(src.len() >= 16);
     if src.len() <= 32 {
         return hex_decode_short_sse41(src, dst, case);
@@ -318,7 +304,7 @@ pub(crate) unsafe fn hex_decode_sse41_checked<'src>(
         );
         let combined = _mm_or_si128(_mm_or_si128(a, b), _mm_or_si128(c, d));
         if _mm_testz_si128(combined, _mm_set1_epi8(-16)) == 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm_storeu_si128(dst.as_mut_ptr().cast(), pack_sse41(a, b));
         _mm_storeu_si128(
@@ -326,7 +312,9 @@ pub(crate) unsafe fn hex_decode_sse41_checked<'src>(
             pack_sse41(c, d),
         );
     } else {
-        hex_check_sse_with_case(src, case)?;
+        if !hex_check_sse_with_case(src, case) {
+            return Err(());
+        }
         hex_decode_sse41(src, dst);
     }
     Ok(())
@@ -334,11 +322,11 @@ pub(crate) unsafe fn hex_decode_sse41_checked<'src>(
 
 #[target_feature(enable = "avx2")]
 #[inline]
-pub(crate) unsafe fn hex_decode_avx2_checked<'src>(
-    src: &'src [u8],
+pub(crate) unsafe fn hex_decode_avx2_checked(
+    src: &[u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Validation<'src> {
+) -> Result<(), ()> {
     debug_assert!(src.len() >= 16);
     // Common fixed sizes use constant offsets and avoid duplicate tail loads.
     // Every branch validates the complete input before its first store.
@@ -347,7 +335,7 @@ pub(crate) unsafe fn hex_decode_avx2_checked<'src>(
         let (b, b_checked) =
             decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
         if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
         return Ok(());
@@ -355,7 +343,7 @@ pub(crate) unsafe fn hex_decode_avx2_checked<'src>(
     if src.len() == 32 {
         let (nibbles, checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
         if _mm256_movemask_epi8(checked) != 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm_storeu_si128(
             dst.as_mut_ptr().cast(),
@@ -373,7 +361,7 @@ pub(crate) unsafe fn hex_decode_avx2_checked<'src>(
             case,
         );
         if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         let packed = pack_avx2(a, b);
         _mm_storeu_si128(dst.as_mut_ptr().cast(), _mm256_castsi256_si128(packed));
@@ -398,7 +386,7 @@ pub(crate) unsafe fn hex_decode_avx2_checked<'src>(
             _mm256_or_si256(c_checked, d_checked),
         );
         if _mm256_movemask_epi8(checked) != 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
         _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(c, d));
@@ -426,13 +414,15 @@ pub(crate) unsafe fn hex_decode_avx2_checked<'src>(
             ),
         );
         if _mm256_movemask_epi8(checked) != 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
         _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx2(c, d));
         _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(e, f));
     } else {
-        hex_check_avx2_with_case(src, case)?;
+        if !hex_check_avx2_with_case(src, case) {
+            return Err(());
+        }
         hex_decode_avx2(src, dst);
     }
     Ok(())
@@ -440,11 +430,11 @@ pub(crate) unsafe fn hex_decode_avx2_checked<'src>(
 
 #[target_feature(enable = "avx512f,avx512bw")]
 #[inline]
-pub(crate) unsafe fn hex_decode_avx512_checked<'src>(
-    src: &'src [u8],
+pub(crate) unsafe fn hex_decode_avx512_checked(
+    src: &[u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Validation<'src> {
+) -> Result<(), ()> {
     debug_assert!(src.len() >= 16);
     if src.len() < 64 {
         return hex_decode_avx2_checked(src, dst, case);
@@ -453,7 +443,7 @@ pub(crate) unsafe fn hex_decode_avx512_checked<'src>(
         let (nibbles, checked) =
             decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
         if _mm512_movepi8_mask(checked) != 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(nibbles));
     } else if src.len() <= 128 {
@@ -463,7 +453,7 @@ pub(crate) unsafe fn hex_decode_avx512_checked<'src>(
             case,
         );
         if _mm512_movepi8_mask(_mm512_or_si512(a_checked, b_checked)) != 0 {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(a));
         _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx512(b));
@@ -480,13 +470,15 @@ pub(crate) unsafe fn hex_decode_avx512_checked<'src>(
             c_checked,
         )) != 0
         {
-            return Err(&src[0]);
+            return Err(());
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(a));
         _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx512(b));
         _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx512(c));
     } else {
-        hex_check_avx512_with_case(src, case)?;
+        if !hex_check_avx512_with_case(src, case) {
+            return Err(());
+        }
         hex_decode_avx512(src, dst);
     }
     Ok(())
@@ -618,11 +610,11 @@ pub(super) unsafe fn hex_decode_avx2(src: &[u8], dst: &mut [u8]) {
 // may be written before a later block fails. The feature boundary surrounds
 // the loop so each constant-size checked kernel can inline into it.
 #[target_feature(enable = "avx2")]
-pub(crate) unsafe fn hex_decode_avx2_owned<'src>(
-    src: &'src [u8],
+pub(crate) unsafe fn hex_decode_avx2_owned(
+    src: &[u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Validation<'src> {
+) -> Result<(), ()> {
     let (blocks, tail) = src.as_chunks::<64>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
@@ -633,11 +625,11 @@ pub(crate) unsafe fn hex_decode_avx2_owned<'src>(
 }
 
 #[target_feature(enable = "avx512f,avx512bw")]
-pub(crate) unsafe fn hex_decode_avx512_owned<'src>(
-    src: &'src [u8],
+pub(crate) unsafe fn hex_decode_avx512_owned(
+    src: &[u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Validation<'src> {
+) -> Result<(), ()> {
     let (blocks, tail) = src.as_chunks::<128>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 64);
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<64>().0) {

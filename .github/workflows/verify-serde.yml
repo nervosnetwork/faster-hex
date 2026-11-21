@@ -18,8 +18,7 @@ jobs:
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      CODEC_REV: ddb04408b3a9a159ae51d8fcf196653ca70ef58d
-      FIELD_REV: 2e693fc996ad486092f1ca3022bef8cc694553c2
+      PRODUCT_REV: e3f4d10eee40358c7b0488eff909ab6df07ec42b
       REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -29,14 +28,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Check array and vector allocations and field framing at the measured revision
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/field-source" "$FIELD_REV"
-          cargo test --manifest-path "$RUNNER_TEMP/field-source/Cargo.toml" --release --all-features --test allocations --test serde_protocol
-      - name: Measure short and bulk diagnostics against the current PR
-        run: PRODUCT_REV="$CODEC_REV" RELEASE_DIAGNOSTICS=1 RESULTS=results/diagnostics python3 verify/consumer.py
-      - name: Measure complete borrowed and escaped JSON round trips against the current PR
-        run: PRODUCT_REV="$FIELD_REV" MIXED_CALLER=1 RESULTS=results/fields python3 verify/consumer.py
+      - name: Check temporary field allocations and format errors
+        run: cargo test --release --all-features --test allocations --test serde_protocol
+      - name: Compare independent complete JSON calls
+        run: MIXED_CALLER=1 RESULTS=results/roundtrip python3 verify/consumer.py
+      - name: Compare array fields, option framing and vector decoding
+        run: RELEASE_FIELDS=1 ARRAY_VARIANT=frozen OWNED_VECTORS=1 RESULTS=results/fields python3 verify/consumer.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
