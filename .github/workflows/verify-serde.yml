@@ -5,53 +5,8 @@ on:
 permissions:
   contents: read
 jobs:
-  codec:
-    name: Separate bounded and bulk AVX2 decoding / ${{ matrix.os }} / LTO ${{ matrix.lto }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 48
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15-intel, ubuntu-22.04]
-        lto: ["false", "thin"]
-    env:
-      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 95d3a053211c8960ca351025e817689412408220
-      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Check every input byte at vector boundaries
-        run: |
-          mkdir codec-verify
-          git archive "$PRODUCT_REV" | tar -xf - -C codec-verify
-          cp verify/core-inputs.rs codec-verify/tests/native_inputs.rs
-          mkdir -p results
-          cat >> codec-verify/src/tests.rs <<'RS'
-          #[test]
-          fn release_backend() {
-              std::println!("Selected native codec: {:?}", crate::vectorization_support());
-          }
-          RS
-          (cd codec-verify && cargo test --release --all-features --lib release_backend -- --nocapture) | tee results/backend.txt
-          cd codec-verify
-          cargo test --release --all-features --lib --test native_inputs --test public_api --test owned_decode
-      - name: Compare public callers with the PR and the 2.0 release
-        run: |
-          PAIR_STUDY=windows RESULTS=results/pr python3 verify/consumer.py
-          REFERENCE_REV=6d84260fe321669e7f93ecfb8aecb4db0f582f14 PAIR_STUDY=windows RESULTS=results/release python3 verify/consumer.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: avx-windows-${{ matrix.os }}-${{ matrix.lto }}
-          path: results
   fields:
-    name: Shared fixed-size raw and Serde array decoder / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: Fixed-array NEON dispatch and complete Serde calls / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 48
     strategy:
@@ -61,7 +16,7 @@ jobs:
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 88d014efa25cc10b898730e801658b852068cecd
+      PRODUCT_REV: 1f368e1e571d9ac046472bad50d58a28e312c9eb
       REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
