@@ -27,6 +27,24 @@ int main(void) {
         printf("spacing %+td, %.2f ns per 4096-byte libc copy\n",
                (ptrdiff_t)out[k] - (ptrdiff_t)in[k], (double)(now()-begin) / iterations);
     }
+    // The layouts below reproduce the two consecutive partial copies emitted
+    // for Result<[u8; 4096], E>, including the read of the preceding store.
+    const size_t width = 4096;
+    for (size_t order = 0; order < 6; ++order) {
+        const unsigned staged = (order % 4 == 1 || order % 4 == 2);
+        uint64_t begin = now();
+        for (size_t i = 0; i < iterations; ++i) {
+            memcpy(buffer + 2*width, buffer + 31, width - 31);
+            if (staged) {
+                memcpy(buffer, buffer + 2*width, width - 31);
+                memcpy(buffer + width + 31, buffer, width - 31);
+            } else {
+                memcpy(buffer + width + 31, buffer + 2*width, width - 31);
+            }
+        }
+        printf("%u successive copies, %.2f ns per group\n",
+               staged ? 3u : 2u, (double)(now()-begin)/iterations);
+    }
     free(buffer);
     return 0;
 }
