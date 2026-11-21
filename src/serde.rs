@@ -74,17 +74,8 @@ mod internal {
         }
     }
 
-    pub(crate) fn serialize<S: Serializer, T: AsRef<[u8]>, P: Policy>(
-        data: T,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        write_hex(data, serializer, P::PREFIX, P::CASE)
-    }
-
-    // ARM benefits from folding the prefix and case into each policy's encoder.
     #[cfg_attr(target_arch = "aarch64", inline(always))]
-    #[cfg_attr(not(target_arch = "aarch64"), inline(never))]
-    fn write_hex<S, T>(
+    pub(crate) fn serialize<S, T>(
         data: T,
         serializer: S,
         with_prefix: bool,
@@ -112,11 +103,11 @@ mod internal {
             heap = Vec::<u8>::with_capacity(len);
             &mut heap.spare_capacity_mut()[..len]
         };
-        let (prefix_dst, body) = dst.split_at_mut(prefix.len());
-        for (slot, &byte) in prefix_dst.iter_mut().zip(prefix) {
+        for (slot, &byte) in dst.iter_mut().zip(prefix) {
             slot.write(byte);
         }
-        encode(src, body, case == CheckCase::Upper).map_err(serde::ser::Error::custom)?;
+        encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
+            .map_err(serde::ser::Error::custom)?;
         // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
         // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
         // backing stack buffer or allocation stays live throughout serialization.
@@ -124,7 +115,6 @@ mod internal {
             core::str::from_utf8_unchecked(core::slice::from_raw_parts(dst.as_ptr().cast(), len))
         })
     }
-
     fn payload<E>(
         text: &str,
         with_prefix: bool,
@@ -265,9 +255,11 @@ mod internal {
         array_result::<N, _>(|| read_array::<D, P, N>(d))
     }
 
-    pub(crate) fn serialize_option<S, T, P: Policy>(
+    pub(crate) fn serialize_option<S, T>(
         data: &Option<T>,
         serializer: S,
+        with_prefix: bool,
+        case: CheckCase,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -275,18 +267,24 @@ mod internal {
     {
         // Some serializers attach an Option tag before serializing its value.
         // Give them a hex representation that implements Serde's value protocol.
-        struct HexValue<'a, P>(&'a [u8], core::marker::PhantomData<P>);
+        struct HexValue<'a> {
+            data: &'a [u8],
+            with_prefix: bool,
+            case: CheckCase,
+        }
 
-        impl<P: Policy> Serialize for HexValue<'_, P> {
+        impl Serialize for HexValue<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serialize::<_, _, P>(self.0, serializer)
+                serialize(self.data, serializer, self.with_prefix, self.case)
             }
         }
 
         match data {
-            Some(data) => {
-                serializer.serialize_some(&HexValue::<P>(data.as_ref(), core::marker::PhantomData))
-            }
+            Some(data) => serializer.serialize_some(&HexValue {
+                data: data.as_ref(),
+                with_prefix,
+                case,
+            }),
             None => serializer.serialize_none(),
         }
     }
@@ -502,7 +500,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                internal::serialize::<_, _, Format>(data, serializer)
+                internal::serialize(data, serializer, $with_pfx, $check_case)
             }
 
             /// Deserializes a hex string using this module's prefix and case policy.
@@ -642,6 +640,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                                 )]
         #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
         pub mod $option_name {
+            use crate::decode::CheckCase;
             use crate::serde::internal;
             use core::iter::FromIterator;
 
@@ -668,7 +667,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                internal::serialize_option::<_, _, super::$mod_name::Format>(data, serializer)
+                internal::serialize_option(data, serializer, $with_pfx, $check_case)
             }
 
             /// Deserializes an optional hex string into a byte collection.
