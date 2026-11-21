@@ -252,6 +252,15 @@ for role,rev in [('base',base),('head',head)]:
   # Keep the ordinary binaries untouched. Inspect the final linked caller.
   for name in ("field4096","transient4096","rawoption4096","raw_vec"):
    (out/(role+"-"+name+".asm")).write_text(output(["objdump","-d","-C","--disassemble=run_sample",dest/name]))
+if os.environ.get("KERNEL_FOCUS")=="cases":
+ tool=["objdump","-dC","--no-show-raw-insn"] if sys.platform=="linux" else ["xcrun","llvm-objdump","--disassemble","--demangle","--no-show-raw-insn"]
+ for role in ("base","head"):
+  for case in ("check_lower","check_mixed","decode"):
+   asm=output(tool+[work/role/case])
+   chunks=re.split(r"(?m)(?=^[0-9a-fA-F]+ <.+>:$)",asm)
+   wanted=[x for x in chunks if any(name in x.splitlines()[0] for name in ("run_sample","hex_check_avx2_with_case","hex_check_avx512_with_case","hex_decode_avx2_checked"))]
+   assert wanted, (role,case)
+   (out/(role+"-"+case+".asm")).write_text("\n".join(wanted))
 (out/'sections.json').write_text(json.dumps(info,indent=2))
 if os.environ.get("CHECK_UNCHANGED") and all(info["base/"+k]==info["head/"+k] for k in cases):
  print(f"All {len(cases)} downstream executables have identical .text address, length and bytes.")

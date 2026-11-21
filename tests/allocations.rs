@@ -117,6 +117,7 @@ fn documented_allocation_free_operations_remain_allocation_free() {
     let (valid, count) = measure(|| hex_validate(expected.as_bytes()));
     assert_eq!(valid, Ok(()));
     assert_eq!(count, 0);
+
     let mut writer = Buffer {
         bytes: [0; 2048],
         len: 0,
@@ -173,36 +174,46 @@ fn documented_allocation_free_operations_remain_allocation_free() {
 
 #[cfg(feature = "serde")]
 #[test]
-fn transient_serde_text_costs_no_extra_allocation() {
-    use serde::de::value::{BorrowedStrDeserializer, Error, StrDeserializer};
+fn a_rejected_borrowed_option_does_not_allocate_its_decoded_bytes() {
+    use serde::de::{
+        value::BorrowedStrDeserializer, value::Error, Deserializer, Error as _, Visitor,
+    };
+
+    struct Framed<'a> {
+        text: &'a str,
+        closed: bool,
+    }
+
+    impl<'de> Deserializer<'de> for Framed<'de> {
+        type Error = Error;
+
+        fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+            let value = visitor.visit_some(BorrowedStrDeserializer::<Error>::new(self.text))?;
+            if self.closed {
+                Ok(value)
+            } else {
+                Err(Error::custom("unclosed option"))
+            }
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes
+            byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map struct
+            enum identifier ignored_any
+        }
+    }
 
     let text = format!("0x{}", "ab".repeat(32));
-    let borrowed = || BorrowedStrDeserializer::<Error>::new(&text);
-    let transient = || StrDeserializer::<Error>::new(&text);
-
-    let array = measure(|| faster_hex::array::deserialize::<_, 32>(transient()).unwrap());
-    assert_eq!(array, ([0xab; 32], 0));
-    assert_eq!(
-        array,
-        measure(|| faster_hex::array::deserialize(borrowed()).unwrap())
-    );
-
-    let bytes = measure(|| faster_hex::deserialize_bounded::<32, _, Vec<u8>>(transient()).unwrap());
-    assert_eq!(bytes, (vec![0xab; 32], 1));
-    assert_eq!(
-        bytes,
-        measure(|| faster_hex::deserialize_bounded::<32, _, Vec<u8>>(borrowed()).unwrap())
-    );
-
-    // The format may allocate its error message. Neither path should copy the input.
-    let rejected =
-        measure(|| faster_hex::deserialize_bounded::<1, _, Vec<u8>>(transient()).unwrap_err());
-    let control =
-        measure(|| faster_hex::deserialize_bounded::<1, _, Vec<u8>>(borrowed()).unwrap_err());
-    assert_eq!(
-        (rejected.0.to_string(), rejected.1),
-        (control.0.to_string(), control.1)
-    );
+    let frame = Framed {
+        text: &text,
+        closed: std::hint::black_box(false),
+    };
+    let (expected, error_allocations) = measure(|| Error::custom("unclosed option"));
+    let (error, allocations) = measure(|| {
+        faster_hex::option_withpfx_ignorecase::deserialize::<_, Vec<u8>>(frame).unwrap_err()
+    });
+    assert_eq!(error.to_string(), expected.to_string());
+    assert_eq!(allocations, error_allocations);
 }
 
 #[cfg(feature = "serde")]

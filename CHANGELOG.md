@@ -7,8 +7,8 @@
 - Add `hex_decode_append` to decode into an existing vector. It returns the
   appended slice and preserves the original bytes and length on error.
 - Add `hex_validate` to check complete hex byte pairs and report the first invalid byte.
-- Decode transient Serde strings directly without allocating a copy of the input.
-- Speed up encoding 16–32-byte inputs on AArch64 and locating invalid hex digits.
+- Specialize AArch64 NEON encoding for 16–32-byte inputs. When locating a decoding
+  error, check the first hex pair before scanning later digits.
 
 ## 2.0.0
 
