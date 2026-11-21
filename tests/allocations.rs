@@ -174,6 +174,50 @@ fn documented_allocation_free_operations_remain_allocation_free() {
 
 #[cfg(feature = "serde")]
 #[test]
+fn a_rejected_borrowed_option_does_not_allocate_its_decoded_bytes() {
+    use serde::de::{
+        value::BorrowedStrDeserializer, value::Error, Deserializer, Error as _, Visitor,
+    };
+
+    struct Framed<'a> {
+        text: &'a str,
+        closed: bool,
+    }
+
+    impl<'de> Deserializer<'de> for Framed<'de> {
+        type Error = Error;
+
+        fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+            let value = visitor.visit_some(BorrowedStrDeserializer::<Error>::new(self.text))?;
+            if self.closed {
+                Ok(value)
+            } else {
+                Err(Error::custom("unclosed option"))
+            }
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes
+            byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map struct
+            enum identifier ignored_any
+        }
+    }
+
+    let text = format!("0x{}", "ab".repeat(32));
+    let frame = Framed {
+        text: &text,
+        closed: std::hint::black_box(false),
+    };
+    let (expected, error_allocations) = measure(|| Error::custom("unclosed option"));
+    let (error, allocations) = measure(|| {
+        faster_hex::option_withpfx_ignorecase::deserialize::<_, Vec<u8>>(frame).unwrap_err()
+    });
+    assert_eq!(error.to_string(), expected.to_string());
+    assert_eq!(allocations, error_allocations);
+}
+
+#[cfg(feature = "serde")]
+#[test]
 fn fixed_size_serde_avoids_temporary_allocations() {
     #[derive(serde::Serialize)]
     struct Payload<'a>(#[serde(with = "faster_hex")] &'a [u8]);
