@@ -82,34 +82,40 @@ mod internal {
         }
     }
 
-    pub(crate) fn serialize<S, T, P: Policy>(data: T, serializer: S) -> Result<S::Ok, S::Error>
+    pub(crate) fn serialize<S, T>(
+        data: T,
+        serializer: S,
+        with_prefix: bool,
+        case: CheckCase,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
         T: AsRef<[u8]>,
     {
         let src = data.as_ref();
-        let prefix: &[u8] = if P::PREFIX { b"0x" } else { b"" };
-        let len = src
-            .len()
-            .checked_mul(2)
-            .and_then(|len| len.checked_add(prefix.len()))
-            .ok_or_else(|| serde::ser::Error::custom(crate::Error::Overflow))?;
-        // Fixed values through 65 bytes (including H520) fit with the prefix.
-        // Initialize only the storage selected for this call.
+        let prefix: &[u8] = if with_prefix { b"0x" } else { b"" };
+        const STACK: usize = 132;
         let mut stack;
         let mut heap;
-        let dst = if len <= 132 {
-            stack = [MaybeUninit::uninit(); 132];
+        let dst = if src.len() <= (STACK - prefix.len()) / 2 {
+            let len = 2 * src.len() + prefix.len();
+            stack = [MaybeUninit::uninit(); STACK];
             &mut stack[..len]
         } else {
+            let len = src
+                .len()
+                .checked_mul(2)
+                .and_then(|n| n.checked_add(prefix.len()))
+                .ok_or_else(|| serde::ser::Error::custom(crate::Error::Overflow))?;
             heap = Vec::<u8>::with_capacity(len);
             &mut heap.spare_capacity_mut()[..len]
         };
-        let (prefix_dst, body) = dst.split_at_mut(prefix.len());
-        for (slot, &byte) in prefix_dst.iter_mut().zip(prefix) {
+        let len = dst.len();
+        for (slot, &byte) in dst.iter_mut().zip(prefix) {
             slot.write(byte);
         }
-        encode(src, body, P::CASE == CheckCase::Upper).map_err(serde::ser::Error::custom)?;
+        encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
+            .map_err(serde::ser::Error::custom)?;
         // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
         // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
         // backing stack buffer or allocation stays live throughout serialization.
@@ -267,9 +273,11 @@ mod internal {
         }
     }
 
-    pub(crate) fn serialize_option<S, T, P: Policy>(
+    pub(crate) fn serialize_option<S, T>(
         data: &Option<T>,
         serializer: S,
+        with_prefix: bool,
+        case: CheckCase,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -277,18 +285,24 @@ mod internal {
     {
         // Some serializers attach an Option tag before serializing its value.
         // Give them a hex representation that implements Serde's value protocol.
-        struct HexValue<'a, P>(&'a [u8], core::marker::PhantomData<P>);
+        struct HexValue<'a> {
+            data: &'a [u8],
+            with_prefix: bool,
+            case: CheckCase,
+        }
 
-        impl<P: Policy> Serialize for HexValue<'_, P> {
+        impl Serialize for HexValue<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serialize::<_, _, P>(self.0, serializer)
+                serialize(self.data, serializer, self.with_prefix, self.case)
             }
         }
 
         match data {
-            Some(data) => {
-                serializer.serialize_some(&HexValue::<P>(data.as_ref(), core::marker::PhantomData))
-            }
+            Some(data) => serializer.serialize_some(&HexValue {
+                data: data.as_ref(),
+                with_prefix,
+                case,
+            }),
             None => serializer.serialize_none(),
         }
     }
@@ -504,7 +518,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                internal::serialize::<_, _, ArrayPolicy>(data, serializer)
+                internal::serialize(data, serializer, $with_pfx, $check_case)
             }
 
             /// Deserializes a hex string using this module's prefix and case policy.
@@ -671,7 +685,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                internal::serialize_option::<_, _, super::$mod_name::ArrayPolicy>(data, serializer)
+                internal::serialize_option(data, serializer, $with_pfx, $check_case)
             }
 
             /// Deserializes an optional hex string into a byte collection.
