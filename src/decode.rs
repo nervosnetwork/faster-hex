@@ -363,14 +363,6 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    decode_array(src, check_case)
-}
-
-#[inline(always)]
-pub(crate) fn decode_array<const N: usize>(
-    src: &[u8],
-    check_case: CheckCase,
-) -> Result<[u8; N], Error> {
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
@@ -395,6 +387,18 @@ pub(crate) fn decode_array<const N: usize>(
     }
     // SAFETY: The length check above matched the number of input pairs to N.
     unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    Ok(bytes)
+}
+
+#[cfg(feature = "serde")]
+#[inline]
+pub(crate) fn decode_array_pairs<const N: usize>(
+    input: &[[u8; 2]; N],
+    case: CheckCase,
+) -> Result<[u8; N], Error> {
+    let mut bytes = [0; N];
+    // SAFETY: The array type supplies exactly one input pair for each private output byte.
+    unsafe { decode_owned(input.as_flattened(), &mut bytes, case) }?;
     Ok(bytes)
 }
 
@@ -698,27 +702,6 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         }
     }
     Ok(())
-}
-
-// The collector can observe every value it receives, so validate the complete
-// input before constructing it. Its own storage then receives the decoded
-// bytes without an intermediate vector.
-#[cfg(feature = "serde")]
-#[inline]
-pub(crate) fn collect_validated_pairs<T: core::iter::FromIterator<u8>>(
-    pairs: &[[u8; 2]],
-    case: CheckCase,
-) -> Result<T, Error> {
-    let src = pairs.as_flattened();
-    if !hex_check_with_case(src, case) {
-        diagnose_invalid(src, case)?;
-    }
-    // Valid ASCII letters have bit 6 set and need nine added to the low nibble.
-    let nibble = |byte: u8| byte.wrapping_add((byte >> 6) * 9) & 15;
-    Ok(pairs
-        .iter()
-        .map(|&[hi, lo]| nibble(hi) << 4 | nibble(lo))
-        .collect())
 }
 
 // Internal conversion only. Even if miscalled with short input, never pass an
