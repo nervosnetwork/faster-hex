@@ -8,18 +8,21 @@ env:
   RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
   native:
-    name: ${{ matrix.family }} / ${{ matrix.mode }} / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: ${{ matrix.family }} / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 42
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15-intel, ubuntu-24.04-arm]
+        os: [ubuntu-22.04, macos-15-intel]
         lto: ["false", "thin"]
-        mode: [existing]
-        family: [release-controls]
+        family: [lanes, mask]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
+      DRIVER_REV: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
+      PRODUCT_REV: 04ff3d5be797fcecd97135e42a295fc92e2e6c20
+      HEAD_CONTROL: ${{ matrix.family }}
+      KERNEL_CASES: ${{ matrix.family }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -28,24 +31,33 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Isolate version metadata, implementation and ARM's 32-byte boundary
-        env:
-          RELEASED: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
-          PROPOSED: 04ff3d5be797fcecd97135e42a295fc92e2e6c20
+      - name: Run codec tests and check every byte at the vector boundaries
         run: |
-          compare() {
-            RESULTS="results/$1" RELEASE_FOCUS=1 python3 verify/consumer.py
-            RESULTS="results/$1" python3 verify/release32.py
-          }
-          REFERENCE_REV="$RELEASED" PRODUCT_REV="$RELEASED" HEAD_CONTROL=version compare version-only
-          REFERENCE_REV="$RELEASED" PRODUCT_REV="$PROPOSED" BASE_CONTROL=version compare same-version
-          if [ "$RUNNER_ARCH" = ARM64 ]; then
-            REFERENCE_REV="$PROPOSED" PRODUCT_REV="$PROPOSED" HEAD_CONTROL=bulk32 compare bulk32
-          fi
+          mkdir product
+          git archive "$PRODUCT_REV" | tar -xf - -C product
+          patch -s -p1 -d product -i "$PWD/verify/$HEAD_CONTROL.patch"
+          cp verify/core-inputs.rs product/tests/native_inputs.rs
+          cd product
+          cargo test --release --all-features
+      - name: Compare with the published codec in normal downstream builds
+        env:
+          REFERENCE_REV: ${{ env.DRIVER_REV }}
+          RESULTS: results/released
+        run: |
+          python3 verify/consumer.py
+          if [ "$KERNEL_CASES" = lanes ]; then python3 verify/release32.py; fi
+      - name: Isolate the kernel change on the current release candidate
+        env:
+          KERNEL_FOCUS: "1"
+          REFERENCE_REV: ${{ env.PRODUCT_REV }}
+          RESULTS: results/isolated
+        run: |
+          python3 verify/consumer.py
+          if [ "$KERNEL_CASES" = lanes ]; then python3 verify/release32.py; fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: study-${{ matrix.family }}-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
+          name: native-codec-${{ matrix.family }}-${{ matrix.os }}-${{ matrix.lto }}
           path: |
             results/*/host.txt
             results/*/release32.json

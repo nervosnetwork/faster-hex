@@ -10,7 +10,7 @@ def run(args,at,**options):
     return sp.run(args,cwd=at,env=env,check=True,**options)
 base=os.environ['REFERENCE_REV'];head=os.environ['PRODUCT_REV']
 driver=work/'reference-driver.tar'
-run(['git','archive','-o',driver,base,'benches'],repo)
+run(['git','archive','-o',driver,os.environ.get('DRIVER_REV',base),'benches'],repo)
 exes={}
 for label,rev in [('base',base),('head',head)]:
     if source.exists():shutil.rmtree(source)

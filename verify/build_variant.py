@@ -1,7 +1,15 @@
 """Apply only the specified control to an isolated source export."""
+from pathlib import Path
+import subprocess
+
+
 def select(source, role, env):
     variant = env.get(role.upper() + "_CONTROL")
     if not variant:
+        return
+    if variant in {"lanes", "mask"}:
+        patch = Path(__file__).resolve().with_name(variant + ".patch")
+        subprocess.run(["patch", "-s", "-p1", "-i", patch], cwd=source, check=True)
         return
     if variant == "version":
         path = source / "Cargo.toml"

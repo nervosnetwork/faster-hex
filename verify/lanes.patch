@@ -1,0 +1,15 @@
+--- a/src/encode.rs
++++ b/src/encode.rs
+@@ -346,0 +347,3 @@
++    // Reorder the eight-byte groups to [0, 2, 1, 3] so the lane-local
++    // unpacks each produce 32 consecutive hex digits.
++    let bytes = _mm256_permute4x64_epi64::<0xd8>(bytes);
+@@ -352,4 +355 @@
+-    _mm256_storeu_si256(
+-        dst.as_mut_ptr().cast(),
+-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x20>(a, b)),
+-    );
++    _mm256_storeu_si256(dst.as_mut_ptr().cast(), _mm256_shuffle_epi8(table, a));
+@@ -358 +358 @@
+-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x31>(a, b)),
++        _mm256_shuffle_epi8(table, b),

@@ -1,0 +1,63 @@
+--- a/src/decode/x86.rs
++++ b/src/decode/x86.rs
+@@ -93,19 +92,0 @@
+-// Add a wrapping bias so the accepted unsigned ASCII interval starts at -128.
+-// A signed comparison then rejects both bytes below the interval and above it.
+-#[inline]
+-#[target_feature(enable = "avx2")]
+-unsafe fn valid_avx2(bytes: __m256i, case: CheckCase) -> __m256i {
+-    let digit = _mm256_cmpgt_epi8(
+-        _mm256_set1_epi8(-118),
+-        _mm256_add_epi8(bytes, _mm256_set1_epi8(80)),
+-    );
+-    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+-    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+-    let letters = _mm256_or_si256(bytes, _mm256_set1_epi8(fold));
+-    let letter = _mm256_cmpgt_epi8(
+-        _mm256_set1_epi8(-122),
+-        _mm256_add_epi8(letters, _mm256_set1_epi8(128u8.wrapping_sub(first) as i8)),
+-    );
+-    _mm256_or_si256(digit, letter)
+-}
+-
+@@ -118 +99,5 @@
+-    // Reduce four vectors together so long inputs need fewer mask tests.
++    // The checked decoder marks each rejected byte in its sign bit.
++    let invalid = |block: &[u8; 32]| {
++        let bytes = _mm256_loadu_si256(block.as_ptr().cast());
++        decode_avx2_nibbles(bytes, case).1
++    };
+@@ -121 +106 @@
+-        let mut valid = _mm256_set1_epi8(-1);
++        let mut rejected = _mm256_setzero_si256();
+@@ -123,6 +108,3 @@
+-            valid = _mm256_and_si256(
+-                valid,
+-                valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case),
+-            );
+-        }
+-        if _mm256_movemask_epi8(valid) != -1 {
++            rejected = _mm256_or_si256(rejected, invalid(block));
++        }
++        if _mm256_movemask_epi8(rejected) != 0 {
+@@ -133 +115 @@
+-    let mut valid = _mm256_set1_epi8(-1);
++    let mut rejected = _mm256_setzero_si256();
+@@ -135,4 +117 @@
+-        valid = _mm256_and_si256(
+-            valid,
+-            valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case),
+-        );
++        rejected = _mm256_or_si256(rejected, invalid(block));
+@@ -142,7 +121,4 @@
+-            valid = _mm256_and_si256(
+-                valid,
+-                valid_avx2(_mm256_loadu_si256(last.as_ptr().cast()), case),
+-            );
+-        }
+-    }
+-    _mm256_movemask_epi8(valid) == -1
++            rejected = _mm256_or_si256(rejected, invalid(last));
++        }
++    }
++    _mm256_movemask_epi8(rejected) == 0

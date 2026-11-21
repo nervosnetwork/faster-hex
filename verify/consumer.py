@@ -134,12 +134,40 @@ if os.environ.get("FIELD_COST"):
  cases={k:[4096] for k in ops}
  for f in bins.glob('*.rs'):
   if f.stem not in cases: f.unlink()
+kernel=os.environ.get("KERNEL_CASES")
+focused=os.environ.get("KERNEL_FOCUS")
+if kernel=="lanes":
+ cases={"encode":[8,20,31,32,33,40,63,64,65,128,256,4096],
+        "encode_upper":[20,31,32,33,64,65,4096]}
+ if focused:cases={"encode":[20,32,33,64,256,4096],"encode_upper":[32,4096]}
+ ops={"encode":ops["encode"],"encode_upper":("",ops["encode"][1].replace("hex_encode(","hex_encode_upper("))}
+if kernel=="mask":
+ sizes=[31,32,63,64,127,128,129,256,4096]
+ cases={"decode":[4,8,20,32,64,96,97,128,256,1024,4096],
+        "check_mixed":sizes,"check_lower":[32,127,128,4096],"check_upper":[32,128,129,4096],
+        "check_first":[32,128,4096],"check_last":[32,127,128,4096]}
+ if focused:cases={"decode":[32,96,97,256,4096],"check_mixed":[32,128,4096],
+                   "check_lower":[128],"check_upper":[128],"check_last":[4096]}
+ ops={"decode":ops["decode"]}
+ for name in cases:
+  if name.startswith("check_"):
+   policy={"check_lower":"Lower","check_upper":"Upper"}.get(name,"None")
+   ops[name]=("",f"black_box(faster_hex::hex_check_with_case(black_box(&checked),faster_hex::CheckCase::{policy}));")
+if kernel:
+ for f in bins.glob("*.rs"):
+  if f.stem not in cases:f.unlink()
 if os.environ.get("OWNED_VECTORS"):
  ops['raw_vec']=('', 'black_box(faster_hex::hex_decode_vec(black_box(&hex)).unwrap());')
  cases['raw_vec']=[0,4,32,256,1024,1025,4096]
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
 for k,(defs,op) in ops.items():
  prepare="let payload=Payload{bytes:bytes.clone()};" if k=="serialize" else ""
+ if kernel=="lanes":
+  cap="upper" if k.endswith("upper") else "lower"
+  prepare=f"let expected=hex.to_ascii_{cap}case(); assert_eq!(faster_hex::hex_encode{'_upper' if cap=='upper' else ''}(&bytes,&mut dst).unwrap().as_bytes(),expected);"
+ if kernel=="mask" and k.startswith("check_"):
+  method={"check_upper":"checked.make_ascii_uppercase();","check_lower":"checked.make_ascii_lowercase();","check_first":"checked[0]=255;","check_last":"checked[n-1]=255;"}.get(k,"")
+  prepare="let mut checked=hex[..n].to_vec();"+method+"assert_eq!("+op.split("black_box(",1)[1].rsplit(");",1)[0]+","+("false" if k in ("check_first","check_last") else "true")+");"
  code='''#![allow(unused_variables,unused_mut,dead_code)]
 use std::{hint::black_box,time::Instant};
 DEFS
