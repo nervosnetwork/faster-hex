@@ -51,6 +51,12 @@ if variant:=os.environ.get("ARRAY_VARIANT"):
   cases={k:v for k,v in cases.items() if k in covered}
  ops={k:v for k,v in ops.items() if k in cases}
  shutil.rmtree(bins);bins.mkdir()
+elif os.environ.get('EXISTING_CONTROLS'):
+ cases.update(encode=[4,8,32,256],decode=[4,32,256],serialize=[10,32,65,256,4096],deserialize=[10,32,256,4096])
+ cases['array4']=[4]
+ ops['array4']=('', 'black_box(faster_hex::hex_decode_array::<4>(black_box(&hex)).unwrap());')
+ for stale in bins.glob('*.rs'):
+  if stale.stem not in ops: stale.unlink()
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
 for k,(defs,op) in ops.items():
  prepare="let payload=Payload{bytes:bytes.clone()};" if k=="serialize" else ""
