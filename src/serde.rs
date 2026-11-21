@@ -157,7 +157,12 @@ mod internal {
             return Err(FieldError::Limit { max, actual });
         }
         let src = pairs.as_flattened();
-        let mut bytes = alloc::vec![0; actual];
+        #[expect(
+            clippy::slow_vector_initialization,
+            reason = "a single ordinary allocation is cheaper for short-lived fields"
+        )]
+        let mut bytes = Vec::with_capacity(actual);
+        bytes.resize(actual, 0);
         crate::hex_decode_with_case(src, &mut bytes, case).map_err(FieldError::Hex)?;
         Ok(bytes)
     }
