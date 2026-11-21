@@ -15,28 +15,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: classic, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: classic, mode: mixed, os: ubuntu-24.04, lto: "thin"}
-          - {family: classic, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: classic, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: classic, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: ordinary, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: ordinary, mode: mixed, os: ubuntu-24.04, lto: "thin"}
-          - {family: ordinary, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: ordinary, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: ordinary, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: adaptive, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: adaptive, mode: mixed, os: ubuntu-24.04, lto: "thin"}
-          - {family: adaptive, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: adaptive, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: adaptive, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: ordinary, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: ordinary, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: ordinary, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: ordinary, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: ordinary, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: anchored, mode: placement, os: ubuntu-22.04, lto: "thin"}
-          - {family: anchored, mode: placement, os: ubuntu-24.04, lto: "thin"}
+          - {family: visitor, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: visitor, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: visitor, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: visitor, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: visitor, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: visitor, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: visitor, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: visitor, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: visitor, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: visitor, mode: mixed, os: ubuntu-24.04, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -48,12 +36,7 @@ jobs:
         with:
           toolchain: 1.95.0
       - run: |
-          case "${{ matrix.family }}" in
-            classic) PRODUCT_REV=55e128489ae09b15f6813c50aaf7d94af4d50562 ;;
-            ordinary) PRODUCT_REV=48adb304808d2373a18d676debf5ab8f85812c38 ;;
-            adaptive) PRODUCT_REV=e70842f2d4010697ca60e4f8924257bfc7fbbd0b ;;
-            anchored) PRODUCT_REV=548feab70af28992ce99a17c93ffbf37375143ce ;;
-          esac
+          PRODUCT_REV=42e7e7a0837965312c5da40ab10ab2d343d26526
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = fields ]; then
             RELEASE_FIELDS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
