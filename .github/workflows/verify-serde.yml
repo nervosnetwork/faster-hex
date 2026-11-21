@@ -15,29 +15,33 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: typed_slices, mode: short, os: ubuntu-22.04, lto: "thin"}
-          - {family: typed_slices, mode: short, os: ubuntu-24.04, lto: "thin"}
-          - {family: typed_slices, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: borrowed_four, mode: short, os: ubuntu-22.04, lto: "thin"}
-          - {family: borrowed_four, mode: short, os: ubuntu-24.04, lto: "thin"}
-          - {family: borrowed_four, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: private_pairs, mode: short, os: ubuntu-22.04, lto: "thin"}
-          - {family: private_pairs, mode: short, os: ubuntu-24.04, lto: "thin"}
-          - {family: private_pairs, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: typed_kernel, mode: short, os: ubuntu-22.04, lto: "thin"}
-          - {family: typed_kernel, mode: short, os: ubuntu-24.04, lto: "thin"}
-          - {family: typed_kernel, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: typed_slices, mode: focused, os: ubuntu-22.04, lto: "false"}
-          - {family: typed_slices, mode: focused, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: borrowed_four, mode: focused, os: ubuntu-22.04, lto: "false"}
-          - {family: borrowed_four, mode: focused, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: private_pairs, mode: focused, os: ubuntu-22.04, lto: "false"}
-          - {family: private_pairs, mode: focused, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: typed_kernel, mode: focused, os: ubuntu-22.04, lto: "false"}
-          - {family: typed_kernel, mode: focused, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: typed_slices, mode: edge, os: ubuntu-22.04, lto: "thin"}
-          - {family: typed_slices, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: typed_slices, mode: edge, os: macos-15-intel, lto: "thin"}
+          - {family: option_early, mode: edge, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_early, mode: edge, os: ubuntu-24.04, lto: "thin"}
+          - {family: option_early, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_outer, mode: edge, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_outer, mode: edge, os: ubuntu-24.04, lto: "thin"}
+          - {family: option_outer, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_field, mode: edge, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_field, mode: edge, os: ubuntu-24.04, lto: "thin"}
+          - {family: option_field, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_nested, mode: edge, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_nested, mode: edge, os: ubuntu-24.04, lto: "thin"}
+          - {family: option_nested, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_early, mode: short, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_early, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_outer, mode: short, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_outer, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_field, mode: short, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_field, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_nested, mode: short, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_nested, mode: short, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_early, mode: focused, os: ubuntu-22.04, lto: "false"}
+          - {family: option_early, mode: focused, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_early, mode: focused, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: option_early, mode: focused, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_early, mode: shared, os: ubuntu-22.04, lto: "thin"}
+          - {family: option_early, mode: shared, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: option_early, mode: shared, os: macos-15-intel, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -50,16 +54,18 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            typed_slices) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
-            borrowed_four) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
-            private_pairs) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
-            typed_kernel) PRODUCT_REV=$(sed -n '4p' verify/targets) ;;
+            option_early) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
+            option_outer) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
+            option_field) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
+            option_nested) PRODUCT_REV=$(sed -n '4p' verify/targets) ;;
           esac
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = short ]; then
             SHORT_FIELDS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
           elif [ "${{ matrix.mode }}" = edge ]; then
             ESCAPED_ARRAYS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
+          elif [ "${{ matrix.mode }}" = shared ]; then
+            python3 verify/shared_writer.py
           else
             FOCUS_REGRESS=1 python3 verify/regress.py
           fi
@@ -68,6 +74,7 @@ jobs:
         with:
           name: study-${{ matrix.family }}-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
           path: |
+            results/shared-writer.json
             results/host.txt
             results/sections.json
             results/independent-summary.json
