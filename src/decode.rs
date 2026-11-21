@@ -738,21 +738,30 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
     }
 }
 
-// A temporary Serde string can initialize its field before the visit returns.
-// Each pair supplies two input bytes for one output byte, including for SIMD.
+// A Serde visitor can initialize its field before the input text expires.
 #[cfg(feature = "serde")]
 #[inline(always)]
 pub(crate) fn decode_array_into<'a, const N: usize>(
-    pairs: &[[u8; 2]; N],
+    src: &[u8],
     storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
     check_case: CheckCase,
 ) -> Result<&'a [u8; N], Error> {
-    let src = pairs.as_flattened();
     #[cfg(target_arch = "aarch64")]
     if N == 4 {
         // The returned-array decoder already has a bounded four-byte NEON kernel.
         return Ok(storage.write(hex_decode_array_with_case(src, check_case)?));
     }
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let actual = src.len() / 2;
+    if actual != N {
+        return Err(Error::LengthMismatch {
+            expected: N,
+            actual,
+        });
+    }
+    let pairs = src.as_chunks::<2>().0;
     let bytes = storage.write([0; N]);
     if N < 8 {
         let digits = match check_case {

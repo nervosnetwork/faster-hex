@@ -114,28 +114,17 @@ mod internal {
         text: &str,
         with_prefix: bool,
         custom: impl Fn(&'static str) -> E,
-    ) -> Result<&[[u8; 2]], E> {
+    ) -> Result<&str, E> {
         let text = if with_prefix {
             text.strip_prefix("0x")
                 .ok_or_else(|| custom("invalid prefix"))?
         } else {
             text
         };
-        let (pairs, tail) = text.as_bytes().as_chunks::<2>();
-        if tail.is_empty() {
-            Ok(pairs)
-        } else {
-            Err(custom("invalid length"))
+        if !text.len().is_multiple_of(2) {
+            return Err(custom("invalid length"));
         }
-    }
-
-    #[inline(always)]
-    fn fixed_pairs<const N: usize>(pairs: &[[u8; 2]]) -> Result<&[[u8; 2]; N], crate::Error> {
-        use core::convert::TryInto;
-        pairs.try_into().map_err(|_| crate::Error::LengthMismatch {
-            expected: N,
-            actual: pairs.len(),
-        })
+        Ok(text)
     }
 
     #[inline]
@@ -156,12 +145,11 @@ mod internal {
         case: CheckCase,
         max: usize,
     ) -> Field<Vec<u8>> {
-        let pairs = payload(text, with_prefix, FieldError::Text)?;
-        let actual = pairs.len();
+        let src = payload(text, with_prefix, FieldError::Text)?.as_bytes();
+        let actual = src.len() / 2;
         if actual > max {
             return Err(FieldError::Limit { max, actual });
         }
-        let src = pairs.as_flattened();
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         if actual <= 256 {
             #[expect(
@@ -176,6 +164,14 @@ mod internal {
         hex_decode_vec_with_case(src, case).map_err(FieldError::Hex)
     }
 
+    // Keep storage for a large valid value off the wrong-length path.
+    #[inline(never)]
+    fn decode_payload<E: Error, const N: usize>(src: &[u8], case: CheckCase) -> Result<[u8; N], E> {
+        crate::decode::decode_array_into(src, &mut MaybeUninit::uninit(), case)
+            .copied()
+            .map_err(E::custom)
+    }
+
     pub(super) trait Policy {
         const PREFIX: bool;
         const CASE: CheckCase;
@@ -185,21 +181,31 @@ mod internal {
             text: &str,
             storage: &'a mut MaybeUninit<[u8; N]>,
         ) -> Field<&'a [u8; N]> {
-            let pairs = payload(text, Self::PREFIX, FieldError::Text)?;
-            let pairs = fixed_pairs::<N>(pairs).map_err(FieldError::Hex)?;
-            crate::decode::decode_array_into(pairs, storage, Self::CASE).map_err(FieldError::Hex)
+            let payload = payload(text, Self::PREFIX, FieldError::Text)?;
+            crate::decode::decode_array_into(payload.as_bytes(), storage, Self::CASE)
+                .map_err(FieldError::Hex)
         }
 
         #[inline(always)]
         fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
-            let pairs =
-                fixed_pairs::<N>(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
-            // Keep storage for a large valid value off the error path.
-            array_result::<N, _>(|| {
-                crate::decode::decode_array_into(pairs, &mut MaybeUninit::uninit(), Self::CASE)
-                    .copied()
-                    .map_err(E::custom)
-            })
+            let payload = payload(text, Self::PREFIX, E::custom)?;
+            let actual = payload.len() / 2;
+            if actual != N {
+                return Err(E::custom(format_args!(
+                    "expected {N} decoded bytes, got {actual}"
+                )));
+            }
+            if N > 1024 {
+                decode_payload(payload.as_bytes(), Self::CASE)
+            } else {
+                crate::decode::decode_array_into(
+                    payload.as_bytes(),
+                    &mut MaybeUninit::uninit(),
+                    Self::CASE,
+                )
+                .copied()
+                .map_err(E::custom)
+            }
         }
     }
 
