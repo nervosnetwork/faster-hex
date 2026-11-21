@@ -50,7 +50,7 @@ mod internal {
             f.write_str("a string")
         }
 
-        // Keep the decoder in the format's visitor so fixed arrays can be written directly.
+        // Let the format call the collection decoder directly.
         #[inline(always)]
         fn visit_str<E: Error>(self, text: &str) -> Result<T, E> {
             Ok((self.0)(text))
@@ -155,95 +155,84 @@ mod internal {
         hex_decode_vec_with_case(src, case).map_err(FieldError::Hex)
     }
 
+    pub(super) trait Policy {
+        const PREFIX: bool;
+        const CASE: CheckCase;
+
+        fn parse<const N: usize>(text: &str) -> Field<[u8; N]> {
+            let payload = payload(text, Self::PREFIX, FieldError::Text)?;
+            hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(FieldError::Hex)
+        }
+
+        #[inline(always)]
+        fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
+            let payload = payload(text, Self::PREFIX, E::custom)?;
+            hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(E::custom)
+        }
+    }
+
     // Keep text that the format lends. Transform transient text before the visitor returns.
     pub(super) enum ArrayInput<'de, T> {
         Borrowed(&'de str),
         Decoded(T),
     }
 
-    struct ArrayReader<F>(F);
-
-    impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for ArrayReader<F> {
-        type Value = ArrayInput<'de, T>;
+    // Borrowed text survives the call. For transient text, save the decoded field
+    // and return an empty string. A genuinely empty borrow leaves the slot empty.
+    struct BorrowText<F>(F);
+    impl<'de, F: FnOnce(&str)> Visitor<'de> for BorrowText<F> {
+        type Value = &'de str;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            Ok(ArrayInput::Decoded((self.0)(text)))
+            (self.0)(text);
+            Ok("")
         }
         fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(ArrayInput::Borrowed(text))
+            Ok(text)
         }
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
-            let text = core::str::from_utf8(bytes)
-                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
-            self.visit_str(text)
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
         }
         fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
-            let text = core::str::from_utf8(bytes)
-                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
-            self.visit_borrowed_str(text)
-        }
-    }
-
-    fn parse_array<const N: usize>(
-        text: &str,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Field<[u8; N]> {
-        let text = payload(text, with_prefix, FieldError::Text)?;
-        hex_decode_array_with_case(text.as_bytes(), case).map_err(FieldError::Hex)
-    }
-
-    fn decode_array<E: Error, const N: usize>(
-        text: &str,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Result<[u8; N], E> {
-        let text = payload(text, with_prefix, E::custom)?;
-        hex_decode_array_with_case(text.as_bytes(), case).map_err(E::custom)
-    }
-
-    pub(super) fn array_input<'de, D: Deserializer<'de>, const N: usize>(
-        d: D,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Result<ArrayInput<'de, Field<[u8; N]>>, D::Error> {
-        d.deserialize_string(ArrayReader(|text: &str| {
-            parse_array(text, with_prefix, case)
-        }))
-    }
-
-    impl<const N: usize> ArrayInput<'_, Field<[u8; N]>> {
-        pub(super) fn finish<E: Error>(
-            self,
-            with_prefix: bool,
-            case: CheckCase,
-        ) -> Result<[u8; N], E> {
-            match self {
-                Self::Borrowed(text) => decode_array(text, with_prefix, case),
-                Self::Decoded(value) => value.map_err(E::custom),
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_borrowed_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
             }
         }
     }
-
-    pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, const N: usize>(
+    #[inline(always)]
+    pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Result<[u8; N], D::Error> {
-        let mut slot = MaybeUninit::uninit();
-        let slot = &mut slot;
-        let input = d.deserialize_string(ArrayReader(move |text: &str| {
-            let slot = slot;
-            slot.write(parse_array::<N>(text, with_prefix, case))
-        }))?;
-        match input {
-            ArrayInput::Borrowed(text) => decode_array(text, with_prefix, case),
-            ArrayInput::Decoded(value) => (*value).map_err(D::Error::custom),
+    ) -> Result<ArrayInput<'de, Field<[u8; N]>>, D::Error> {
+        let mut decoded = None;
+        let text = d.deserialize_string(BorrowText(|s: &str| decoded = Some(P::parse::<N>(s))))?;
+        if text.is_empty() {
+            if let Some(field) = decoded {
+                return Ok(ArrayInput::Decoded(field));
+            }
+        }
+        Ok(ArrayInput::Borrowed(text))
+    }
+    impl<const N: usize> ArrayInput<'_, Field<[u8; N]>> {
+        #[inline(always)]
+        pub(super) fn finish<P: Policy, E: Error>(self) -> Result<[u8; N], E> {
+            match self {
+                Self::Borrowed(s) => P::decode(s),
+                Self::Decoded(field) => field.map_err(E::custom),
+            }
         }
     }
-
+    #[inline(always)]
+    pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+        d: D,
+    ) -> Result<[u8; N], D::Error> {
+        array_input::<D, P, N>(d)?.finish::<P, D::Error>()
+    }
     pub(crate) fn serialize_option<S, T>(
         data: &Option<T>,
         serializer: S,
@@ -455,6 +444,13 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
             use crate::serde::internal;
             use core::iter::FromIterator;
 
+            pub(super) struct ArrayPolicy;
+
+            impl internal::Policy for ArrayPolicy {
+                const PREFIX: bool = $with_pfx;
+                const CASE: CheckCase = $check_case;
+            }
+
             pub(super) fn read_bytes<'de, const MAX: usize, D: serde::Deserializer<'de>>(
                 d: D,
             ) -> Result<internal::Field<alloc::vec::Vec<u8>>, D::Error> {
@@ -568,7 +564,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
 "###
                                     )]
             pub mod array {
-                use super::{internal, CheckCase};
+                use super::internal;
 
                 pub use super::serialize;
 
@@ -585,13 +581,14 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 /// # Examples
                 ///
                 /// See the [module example](self#examples).
+                #[inline(always)]
                 pub fn deserialize<'de, D, const N: usize>(
                     deserializer: D,
                 ) -> Result<[u8; N], D::Error>
                 where
                     D: serde::Deserializer<'de>,
                 {
-                    internal::deserialize_array(deserializer, $with_pfx, $check_case)
+                    internal::deserialize_array::<D, super::ArrayPolicy, N>(deserializer)
                 }
             }
         }
@@ -726,22 +723,26 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
             /// Optional fixed-length arrays using this module's prefix and case policy.
             ///
-            /// Present strings decode directly into `[u8; N]` without an intermediate
-            /// byte vector; input text may still need storage. `None` and `Some([])`
+            /// Present strings decode directly into `[u8; N]`. The format may need
+            /// temporary input storage. `None` and `Some([])`
             /// remain distinct in every format. Add `#[serde(default)]` for missing fields.
             ///
             /// # Examples
             ///
             /// See the [crate example](crate#serde-adapters) for optional array fields.
             pub mod array {
-                use super::{internal, CheckCase};
+                use super::internal;
 
                 pub use super::serialize;
 
-                struct Array<'de, const N: usize>(internal::ArrayInput<'de, internal::Field<[u8;N]>>);
+                use super::super::$mod_name::ArrayPolicy;
+
+                struct Array<'de, const N: usize>(internal::ArrayInput<'de, internal::Field<[u8; N]>>);
+
                 impl<'de, const N: usize> serde::Deserialize<'de> for Array<'de, N> {
-                    fn deserialize<D: serde::Deserializer<'de>>(d:D)->Result<Self,D::Error> {
-                        internal::array_input(d, $with_pfx, $check_case).map(Self)
+                    #[inline(always)]
+                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        internal::array_input::<D, ArrayPolicy, N>(d).map(Self)
                     }
                 }
 
@@ -759,6 +760,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 /// # Examples
                 ///
                 /// See the [crate example](crate#serde-adapters) for optional array fields.
+                #[inline(always)]
                 pub fn deserialize<'de, D, const N: usize>(
                     deserializer: D,
                 ) -> Result<Option<[u8; N]>, D::Error>
@@ -766,8 +768,10 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                     D: serde::Deserializer<'de>,
                 {
                     use serde::Deserialize;
+
                     Option::<Array<'de, N>>::deserialize(deserializer)?
-                        .map(|Array(input)| input.finish($with_pfx, $check_case)).transpose()
+                        .map(|Array(input)| input.finish::<ArrayPolicy, D::Error>())
+                        .transpose()
                 }
             }
         }
