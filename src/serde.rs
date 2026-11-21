@@ -192,7 +192,7 @@ mod internal {
     #[inline(always)]
     fn with_array<'de, D: Deserializer<'de>, P: Policy, const N: usize, R>(
         d: D,
-        finish: impl FnOnce(Text<'de, Field<&[u8; N]>>) -> R,
+        finish: impl FnOnce(Text<'de, Field<&[u8; N]>>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut field = MaybeUninit::uninit();
         let slot = &mut field;
@@ -216,16 +216,18 @@ mod internal {
                 .map_err(FieldError::Hex)?;
             Ok(&*bytes)
         }))?;
-        Ok(finish(input))
+        finish(input)
     }
 
     #[inline(always)]
     pub(super) fn array_field<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<Field<[u8; N]>, D::Error> {
-        with_array::<D, P, N, _>(d, |input| match input {
-            Text::Available(text) => P::decode(&text, core::convert::identity),
-            Text::Transient(result) => result.copied(),
+        with_array::<D, P, N, _>(d, |input| {
+            Ok(match input {
+                Text::Available(text) => P::decode(&text, core::convert::identity),
+                Text::Transient(result) => result.copied(),
+            })
         })
     }
 
@@ -251,7 +253,7 @@ mod internal {
         with_array::<D, P, N, _>(d, |input| match input {
             Text::Available(text) => P::decode(&text, D::Error::custom),
             Text::Transient(result) => result.copied().map_err(D::Error::custom),
-        })?
+        })
     }
 
     pub(crate) fn serialize_option<S, T>(
