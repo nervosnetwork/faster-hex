@@ -363,6 +363,14 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
+    decode_array(src, check_case)
+}
+
+#[inline(always)]
+pub(crate) fn decode_array<const N: usize>(
+    src: &[u8],
+    check_case: CheckCase,
+) -> Result<[u8; N], Error> {
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
