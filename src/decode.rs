@@ -201,6 +201,17 @@ pub enum CheckCase {
     Upper,
 }
 
+impl CheckCase {
+    #[inline]
+    fn digit_table(self) -> &'static [u8; 256] {
+        match self {
+            Self::None => &UNHEX,
+            Self::Lower => &UNHEX_LOWER,
+            Self::Upper => &UNHEX_UPPER,
+        }
+    }
+}
+
 /// Decodes all of `src` into `dst` without allocation, accepting either letter case.
 ///
 /// `src` must contain an even number of ASCII hex digits, without a prefix,
@@ -358,7 +369,7 @@ pub fn hex_decode_array<const N: usize>(src: &[u8]) -> Result<[u8; N], Error> {
 /// assert!(hex_decode_array_with_case::<2>(b"ab01", CheckCase::Upper).is_err());
 /// # Ok::<(), faster_hex::Error>(())
 /// ```
-#[inline(always)]
+#[inline]
 pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
@@ -395,6 +406,20 @@ pub(crate) fn decode_array_into<'out, const N: usize>(
         let mut output = [0; 8];
         hex_decode_with_case(&input, &mut output, check_case)?;
         bytes.copy_from_slice(&output[..N]);
+        return Ok(bytes);
+    }
+    if N < 8 {
+        let digits = check_case.digit_table();
+        let mut invalid = 0;
+        for (slot, &[high, low]) in bytes.iter_mut().zip(src.as_chunks::<2>().0) {
+            let high = digits[usize::from(high)];
+            let low = digits[usize::from(low)];
+            invalid |= high | low;
+            *slot = (high << 4) | low;
+        }
+        if invalid == NIL {
+            decode_diagnosed(src, bytes, check_case)?;
+        }
         return Ok(bytes);
     }
     // SAFETY: The length check above matched the number of input pairs to N.
@@ -628,11 +653,7 @@ pub(crate) fn hex_decode_short_scalar(
     dst: &mut [u8],
     case: CheckCase,
 ) -> Result<(), ()> {
-    let table = match case {
-        CheckCase::None => &UNHEX,
-        CheckCase::Lower => &UNHEX_LOWER,
-        CheckCase::Upper => &UNHEX_UPPER,
-    };
+    let table = case.digit_table();
     let mut decoded = 0u64;
     for pair in src.as_chunks::<2>().0 {
         let high = table[usize::from(pair[0])];
@@ -662,11 +683,7 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
 
 #[inline(always)]
 fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
-    let table = match case {
-        CheckCase::None => &UNHEX,
-        CheckCase::Lower => &UNHEX_LOWER,
-        CheckCase::Upper => &UNHEX_UPPER,
-    };
+    let table = case.digit_table();
     // Report a malformed first pair before scanning any SIMD blocks.
     for (index, &byte) in src.iter().take(2).enumerate() {
         if table[usize::from(byte)] == NIL {

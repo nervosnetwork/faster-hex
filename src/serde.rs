@@ -177,12 +177,10 @@ mod internal {
         hex_decode_vec_with_case(src, case).map_err(FieldError::Hex)
     }
 
-    #[cold]
+    // Keep storage for a large valid value off the wrong-length path.
     #[inline(never)]
-    fn wrong_array_length<E: Error>(expected: usize, actual: usize) -> E {
-        E::custom(format_args!(
-            "expected {expected} decoded bytes, got {actual}"
-        ))
+    fn decode_payload<E: Error, const N: usize>(src: &[u8], case: CheckCase) -> Result<[u8; N], E> {
+        hex_decode_array_with_case(src, case).map_err(E::custom)
     }
 
     pub(super) trait Policy {
@@ -204,9 +202,15 @@ mod internal {
             let payload = payload(text, Self::PREFIX, E::custom)?;
             let actual = payload.len() / 2;
             if actual != N {
-                return Err(wrong_array_length(N, actual));
+                return Err(E::custom(format_args!(
+                    "expected {N} decoded bytes, got {actual}"
+                )));
             }
-            hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(E::custom)
+            if N > 1024 {
+                decode_payload(payload.as_bytes(), Self::CASE)
+            } else {
+                hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(E::custom)
+            }
         }
     }
 
