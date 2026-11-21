@@ -533,14 +533,14 @@ unsafe fn decode_sse41_block(a: __m128i, b: __m128i) -> __m128i {
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn decode_avx2_block(a: __m256i, b: __m256i) -> __m256i {
+    // PSHUFB indexes the low nibble of the ASCII distance from '@'. Both
+    // letter cases give 1 through 6. Digits give 0, then 15 down to 7.
+    let digits = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 10, 11, 12, 13, 14, 15, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+    ));
     let nibble = |bytes| {
-        _mm256_add_epi8(
-            _mm256_and_si256(bytes, _mm256_set1_epi8(15)),
-            _mm256_and_si256(
-                _mm256_cmpgt_epi8(bytes, _mm256_set1_epi8(b'9' as i8)),
-                _mm256_set1_epi8(9),
-            ),
-        )
+        let distance = _mm256_abs_epi8(_mm256_sub_epi8(bytes, _mm256_set1_epi8(b'@' as i8)));
+        _mm256_shuffle_epi8(digits, distance)
     };
     pack_avx2(nibble(a), nibble(b))
 }
