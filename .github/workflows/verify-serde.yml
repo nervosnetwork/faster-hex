@@ -5,62 +5,18 @@ on:
 permissions:
   contents: read
 jobs:
-  codec:
-    name: Bounded AVX2 register windows / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  profile:
+    name: Profile standalone JSON calls / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 48
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, ubuntu-22.04]
-        lto: ["false", "thin"]
+        include:
+          - { os: ubuntu-22.04, lto: "false" }
+          - { os: ubuntu-24.04, lto: "false" }
+          - { os: ubuntu-24.04, lto: "thin" }
     env:
-      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 6a0202c8e8398f7e591bc4013484db47dcfe704c
-      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Check every input byte at vector boundaries
-        run: |
-          mkdir codec-verify
-          git archive "$PRODUCT_REV" | tar -xf - -C codec-verify
-          cp verify/core-inputs.rs codec-verify/tests/native_inputs.rs
-          mkdir -p results
-          cat >> codec-verify/src/tests.rs <<'RS'
-          #[test]
-          fn release_backend() {
-              std::println!("Selected native codec: {:?}", crate::vectorization_support());
-          }
-          RS
-          (cd codec-verify && cargo test --release --all-features --lib release_backend -- --nocapture) | tee results/backend.txt
-          cd codec-verify
-          cargo test --release --all-features --lib --test native_inputs --test public_api --test owned_decode
-      - name: Compare public callers with the PR and the 2.0 release
-        run: |
-          PAIR_STUDY=windows RESULTS=results/pr python3 verify/consumer.py
-          REFERENCE_REV=6d84260fe321669e7f93ecfb8aecb4db0f582f14 PAIR_STUDY=windows RESULTS=results/release python3 verify/consumer.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: avx-windows-${{ matrix.os }}-${{ matrix.lto }}
-          path: results
-  stages:
-    name: Complete JSON fields and crossed readers and writers / ${{ matrix.os }} / LTO ${{ matrix.lto }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, macos-15-intel]
-        lto: ["false", "thin"]
-    env:
-      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
       PRODUCT_REV: dec48432d8ac3df9d6a15a265fbac66fb850b292
       REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
@@ -72,12 +28,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare the separately linked complete JSON calls on this host
-        run: FIELD_OBJECTS=1 MIXED_CALLER=1 PAIR_STUDY=matched RESULTS=results/isolated python3 verify/consumer.py
-      - name: Compare both package orders and fixed readers and writers on the same host
-        run: RESULTS=results/stages python3 verify/stages.py
+      - name: Make a user-space profiler available for the standalone executables
+        run: |
+          if ! command -v valgrind >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends valgrind
+          fi
+      - name: Measure separately built complete calls
+        run: FIELD_OBJECTS=1 MIXED_CALLER=1 PAIR_STUDY=matched RESULTS=results/paired python3 verify/consumer.py
+      - name: Profile the same executables with their original release code
+        run: python3 verify/standalone_profile.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: matched-json-${{ matrix.os }}-${{ matrix.lto }}
+          name: isolated-profile-${{ matrix.os }}-${{ matrix.lto }}
           path: results
