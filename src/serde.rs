@@ -144,7 +144,8 @@ mod internal {
         }
     }
 
-    #[inline]
+    // Keep the decoder separate from the format's parser and writer.
+    #[inline(never)]
     pub(super) fn decode_bytes(
         text: &str,
         with_prefix: bool,
