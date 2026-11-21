@@ -168,6 +168,9 @@ for role,rev in [('base',base),('head',head)]:
   addr,t=text_segment(exe)
   info[role+'/'+k]={'address':hex(addr),'bytes':len(t),'sha256':hashlib.sha256(t).hexdigest()}
 (out/'sections.json').write_text(json.dumps(info,indent=2))
+if os.environ.get("CHECK_UNCHANGED") and all(info["base/"+k]==info["head/"+k] for k in cases):
+ print(f"All {len(cases)} downstream executables have identical .text address, length and bytes.")
+ sys.exit(0)
 def measured(k,n,role,it):
  return float(output(pin+[str(work/role/k),str(n),str(it)]))
 times={};iters={}
