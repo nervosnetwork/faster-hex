@@ -42,11 +42,11 @@ mod internal {
 
     struct TextVisitor<F>(F);
 
-    impl<'de, F, T> Visitor<'de> for TextVisitor<F>
+    impl<'de, F, T, Reason> Visitor<'de> for TextVisitor<F>
     where
-        F: FnOnce(&str) -> T,
+        F: FnOnce(&str) -> Result<T, Reason>,
     {
-        type Value = Text<'de, T>;
+        type Value = Result<Text<'de, T>, Reason>;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
@@ -54,12 +54,12 @@ mod internal {
 
         #[inline(always)]
         fn visit_str<E: Error>(self, s: &str) -> Result<Self::Value, E> {
-            Ok(Text::Temporary((self.0)(s)))
+            Ok((self.0)(s).map(Text::Temporary))
         }
 
         #[inline(always)]
         fn visit_borrowed_str<E: Error>(self, s: &'de str) -> Result<Self::Value, E> {
-            Ok(Text::Borrowed(s))
+            Ok(Ok(Text::Borrowed(s)))
         }
 
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
@@ -146,8 +146,9 @@ mod internal {
             decode_bytes(s, with_prefix, case, max, core::convert::identity)
         }))?;
         Ok(match input {
-            Text::Borrowed(s) => decode_bytes(s, with_prefix, case, max, error),
-            Text::Temporary(bytes) => bytes.map_err(error),
+            Ok(Text::Borrowed(s)) => decode_bytes(s, with_prefix, case, max, error),
+            Ok(Text::Temporary(bytes)) => Ok(bytes),
+            Err(reason) => Err(error(reason)),
         })
     }
 
@@ -218,7 +219,7 @@ mod internal {
     #[inline(always)]
     fn with_array<'de, D: Deserializer<'de>, P: Policy, const N: usize, R>(
         d: D,
-        finish: impl FnOnce(Text<'de, Result<&[u8; N], &FieldError>>) -> Result<R, D::Error>,
+        finish: impl FnOnce(Result<Text<'de, &[u8; N]>, &FieldError>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut output = MaybeUninit::uninit();
         let slot = &mut output;
@@ -236,9 +237,9 @@ mod internal {
     ) -> Result<Field<[u8; N]>, D::Error> {
         with_array::<D, P, N, _>(d, |input| {
             Ok(match input {
-                Text::Borrowed(text) => P::decode(text, core::convert::identity),
-                Text::Temporary(Ok(bytes)) => Ok(*bytes),
-                Text::Temporary(Err(error)) => Err(*error),
+                Ok(Text::Borrowed(text)) => P::decode(text, core::convert::identity),
+                Ok(Text::Temporary(bytes)) => Ok(*bytes),
+                Err(error) => Err(*error),
             })
         })
     }
@@ -264,9 +265,9 @@ mod internal {
     ) -> Result<[u8; N], D::Error> {
         array_result::<N, _>(|| {
             with_array::<D, P, N, _>(d, |input| match input {
-                Text::Borrowed(text) => P::decode(text, FieldError::into_format),
-                Text::Temporary(Ok(bytes)) => Ok(*bytes),
-                Text::Temporary(Err(error)) => Err(error.into_format()),
+                Ok(Text::Borrowed(text)) => P::decode(text, FieldError::into_format),
+                Ok(Text::Temporary(bytes)) => Ok(*bytes),
+                Err(error) => Err(error.into_format()),
             })
         })
     }
