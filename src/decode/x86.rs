@@ -420,10 +420,41 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
         _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx2(c, d));
         _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(e, f));
     } else {
+        return decode_avx2_bulk(src, dst, case);
+    }
+    Ok(())
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn decode_avx2_bulk(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
+    if dst.len() > 128 {
         if !hex_check_avx2_with_case(src, case) {
             return Err(());
         }
         hex_decode_avx2(src, dst);
+        return Ok(());
+    }
+
+    // 97–128 output bytes fit in four vectors. The last may overlap the third.
+    // Validate all four windows before writing any of them to the caller's slice.
+    let starts = [0, 32, 64, dst.len() - 32];
+    let blocks = starts.map(|start| {
+        let input = src.as_ptr().add(start * 2);
+        (
+            _mm256_loadu_si256(input.cast()),
+            _mm256_loadu_si256(input.add(32).cast()),
+        )
+    });
+    let mut valid = _mm256_set1_epi8(-1);
+    for &(a, b) in &blocks {
+        let pair = _mm256_and_si256(valid_avx2(a, case), valid_avx2(b, case));
+        valid = _mm256_and_si256(valid, pair);
+    }
+    if _mm256_movemask_epi8(valid) != -1 {
+        return Err(());
+    }
+    for (&start, (a, b)) in starts.iter().zip(blocks) {
+        _mm256_storeu_si256(dst.as_mut_ptr().add(start).cast(), decode_avx2_block(a, b));
     }
     Ok(())
 }
