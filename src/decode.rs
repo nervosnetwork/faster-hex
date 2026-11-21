@@ -366,13 +366,7 @@ pub fn hex_decode_array_with_case<const N: usize>(
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
-    let actual = src.len() / 2;
-    if actual != N {
-        return Err(Error::LengthMismatch {
-            expected: N,
-            actual,
-        });
-    }
+    let digits = ArrayDigits::<N>::new(src)?;
     let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
     if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
@@ -385,8 +379,7 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    digits.write(&mut bytes, check_case)?;
     Ok(bytes)
 }
 
@@ -738,33 +731,37 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
     }
 }
 
-// The number of input pairs and the output array share N. Keep the input as
-// a slice so even an array too large to encode can still report a length error.
-#[cfg(feature = "serde")]
-pub(crate) struct ArrayPairs<'a, const N: usize>(&'a [[u8; 2]]);
+// Checked input for exactly N output bytes. Keep a slice so even an array too
+// large to encode can return a length error.
+pub(crate) struct ArrayDigits<'a, const N: usize>(&'a [u8]);
 
-#[cfg(feature = "serde")]
-impl<'a, const N: usize> ArrayPairs<'a, N> {
+impl<'a, const N: usize> ArrayDigits<'a, N> {
     #[inline(always)]
-    pub(crate) fn new(pairs: &'a [[u8; 2]]) -> Result<Self, Error> {
-        let actual = pairs.len();
-        if actual != N {
+    pub(crate) fn new(src: &'a [u8]) -> Result<Self, Error> {
+        let actual = src.len() / 2;
+        if !src.len().is_multiple_of(2) || actual != N {
             return Err(Error::LengthMismatch {
                 expected: N,
                 actual,
             });
         }
-        Ok(Self(pairs))
+        Ok(Self(src))
     }
 
+    #[inline(always)]
+    fn write(self, bytes: &mut [u8; N], case: CheckCase) -> Result<(), Error> {
+        // SAFETY: new verified an even input and exactly N pairs.
+        unsafe { decode_owned(self.0, bytes, case) }
+    }
+
+    #[cfg(feature = "serde")]
     #[inline(always)]
     pub(crate) fn decode_into(
         self,
         storage: &mut core::mem::MaybeUninit<[u8; N]>,
         check_case: CheckCase,
     ) -> Result<&[u8; N], Error> {
-        let pairs = self.0;
-        let src = pairs.as_flattened();
+        let src = self.0;
         #[cfg(target_arch = "aarch64")]
         if N == 4 {
             // The returned-array decoder already has a bounded four-byte NEON kernel.
@@ -772,6 +769,7 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
         }
         let bytes = storage.write([0; N]);
         if N < 8 {
+            let (pairs, _) = src.as_chunks::<2>();
             let digits = match check_case {
                 CheckCase::None => &UNHEX,
                 CheckCase::Lower => &UNHEX_LOWER,
@@ -789,7 +787,7 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
             }
             return Ok(bytes);
         }
-        hex_decode_with_case(src, bytes, check_case)?;
+        self.write(bytes, check_case)?;
         Ok(bytes)
     }
 }
