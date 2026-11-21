@@ -111,6 +111,18 @@ if os.environ.get("MIXED_CALLER"):
  ops={k:(payload_type,operation) if k!="serialize" else ops[k] for k in cases}
  for f in bins.glob('*.rs'):
   if f.stem not in cases:f.unlink()
+if os.environ.get("FIELD_COST"):
+ original=ops["field4096"][1]
+ borrowed=original.split("black_box(",1)[1].rsplit(");",1)[0]
+ temporary=borrowed.replace("BorrowedStrDeserializer","StrDeserializer")
+ raw='faster_hex::hex_decode_array::<4096>(black_box(&hex)).unwrap()'
+ ops={}
+ for name,expr in [('array',raw),('borrowed',borrowed),('transient',temporary)]:
+  ops[name]=('',f'black_box({expr});')
+  ops[name+'_ref']=('',f'let value={expr}; black_box(&value);')
+ cases={k:[4096] for k in ops}
+ for f in bins.glob('*.rs'):
+  if f.stem not in cases: f.unlink()
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
 for k,(defs,op) in ops.items():
  prepare="let payload=Payload{bytes:bytes.clone()};" if k=="serialize" else ""
