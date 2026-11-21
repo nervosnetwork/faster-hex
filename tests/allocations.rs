@@ -84,7 +84,7 @@ impl Write for Buffer {
 
 #[test]
 fn documented_allocation_free_operations_remain_allocation_free() {
-    use faster_hex::{hex_check, hex_decode, hex_decode_array, hex_encode, Hex};
+    use faster_hex::{hex_check, hex_decode, hex_decode_array, hex_encode, hex_validate, Hex};
 
     // Also prove the observer is active; successful zero counts alone are weak evidence.
     let (allocation, count) = measure(|| std::hint::black_box(vec![0u8; 1024]));
@@ -97,6 +97,13 @@ fn documented_allocation_free_operations_remain_allocation_free() {
     let (text, count) = measure(|| hex_encode(&bytes, &mut encoded));
     assert_eq!(&*text.unwrap(), expected);
     assert_eq!(count, 0);
+    let (prefix, count) = measure(|| {
+        Hex::new(&bytes)
+            .leading_digits(7)
+            .encode_to(&mut encoded[..7])
+    });
+    assert_eq!(prefix.unwrap(), &expected[..7]);
+    assert_eq!(count, 0);
     let mut decoded = [0; 513];
     let (data, count) = measure(|| hex_decode(expected.as_bytes(), &mut decoded));
     assert_eq!(data.unwrap(), bytes);
@@ -107,11 +114,19 @@ fn documented_allocation_free_operations_remain_allocation_free() {
     let (valid, count) = measure(|| hex_check(expected.as_bytes()));
     assert!(valid);
     assert_eq!(count, 0);
+    let (valid, count) = measure(|| hex_validate(expected.as_bytes()));
+    assert_eq!(valid, Ok(()));
+    assert_eq!(count, 0);
 
     let mut writer = Buffer {
         bytes: [0; 2048],
         len: 0,
     };
+    let (result, count) = measure(|| write!(writer, "{}", Hex::new(&bytes).leading_digits(7)));
+    result.unwrap();
+    assert_eq!(&writer.bytes[..writer.len], &expected.as_bytes()[..7]);
+    assert_eq!(count, 0);
+    writer.len = 0;
     let (result, count) = measure(|| write!(writer, "{:+#01040X}", Hex::new(&bytes)));
     result.unwrap();
     assert_eq!(
@@ -139,6 +154,11 @@ fn documented_allocation_free_operations_remain_allocation_free() {
         let (suffix, count) = measure(|| faster_hex::hex_append(&bytes, &mut text).len());
         assert_eq!(suffix, expected.len());
         assert_eq!(text, format!("前缀:{expected}"));
+        assert_eq!(count, 0);
+        let mut dst = Vec::with_capacity(bytes.len());
+        let (appended, count) =
+            measure(|| faster_hex::hex_decode_append(expected.as_bytes(), &mut dst));
+        assert_eq!(appended.unwrap(), bytes);
         assert_eq!(count, 0);
         let (error, count) = measure(|| faster_hex::hex_decode_vec(b"g"));
         assert_eq!(error, Err(faster_hex::Error::OddLength));

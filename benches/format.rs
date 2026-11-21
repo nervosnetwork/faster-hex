@@ -25,6 +25,15 @@ fn formatting(c: &mut Criterion) {
             });
             assert_eq!(output, expected);
         });
+        let prefixed = format!("0x{expected}");
+        group.bench_function(BenchmarkId::new("alternate", len), |b| {
+            b.iter(|| {
+                output.clear();
+                write!(output, "{:#x}", Hex::new(black_box(&input))).unwrap();
+                black_box(output.as_bytes());
+            });
+            assert_eq!(output, prefixed);
+        });
         group.bench_function(BenchmarkId::new("allocated_string", len), |b| {
             b.iter(|| {
                 output.clear();
@@ -57,5 +66,31 @@ fn formatting(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, formatting);
+fn leading_digits(c: &mut Criterion) {
+    let hash = support::bytes(32);
+    let full = hex::encode(&hash);
+    let mut group = c.benchmark_group("prefix");
+    for digits in [7, 8, 12] {
+        let mut dst = vec![0; digits];
+        group.bench_function(BenchmarkId::new("buffer", digits), |b| {
+            b.iter(|| {
+                let view = Hex::new(black_box(&hash)).leading_digits(black_box(digits));
+                black_box(view.encode_to(black_box(dst.as_mut_slice())).unwrap());
+            });
+            assert_eq!(dst, &full.as_bytes()[..digits]);
+        });
+        let mut text = String::with_capacity(digits);
+        group.bench_function(BenchmarkId::new("display", digits), |b| {
+            b.iter(|| {
+                text.clear();
+                let view = Hex::new(black_box(&hash)).leading_digits(black_box(digits));
+                write!(text, "{view}").unwrap();
+                black_box(text.as_str());
+            });
+            assert_eq!(text, full[..digits]);
+        });
+    }
+}
+
+criterion_group!(benches, formatting, leading_digits);
 criterion_main!(benches);

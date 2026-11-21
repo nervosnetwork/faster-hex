@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use faster_hex::{hex_check, hex_check_with_case, hex_decode, CheckCase};
+use faster_hex::{hex_check, hex_check_with_case, hex_decode, hex_validate, CheckCase};
 use std::hint::black_box;
 
 mod support;
@@ -43,6 +43,9 @@ fn check(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(len as u64));
         group.bench_with_input(BenchmarkId::new("either", len), &src, |b, src| {
             b.iter(|| black_box(hex_check(black_box(src.as_bytes()))));
+        });
+        group.bench_with_input(BenchmarkId::new("byte_pairs", len), &src, |b, src| {
+            b.iter(|| black_box(hex_validate(black_box(src.as_bytes()))));
         });
         group.bench_with_input(BenchmarkId::new("lower", len), &src, |b, src| {
             b.iter(|| {
