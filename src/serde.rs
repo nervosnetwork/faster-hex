@@ -39,7 +39,8 @@ mod internal {
 
     pub(super) trait Destination {
         type Value;
-        fn decode(digits: &[u8], case: CheckCase) -> Result<Self::Value, FieldError>;
+        const MAX: usize = usize::MAX;
+        fn decode(digits: &[u8], case: CheckCase) -> Result<Self::Value, crate::Error>;
         fn take(value: &mut Self::Value) -> Self::Value;
     }
 
@@ -47,17 +48,15 @@ mod internal {
 
     impl<const MAX: usize> Destination for Bytes<MAX> {
         type Value = Vec<u8>;
+        const MAX: usize = MAX;
 
         fn take(value: &mut Vec<u8>) -> Vec<u8> {
             core::mem::take(value)
         }
 
-        fn decode(digits: &[u8], case: CheckCase) -> Result<Vec<u8>, FieldError> {
-            let actual = digits.len() / 2;
-            if actual > MAX {
-                return Err(FieldError::Limit { max: MAX, actual });
-            }
-            crate::hex_decode_vec_with_case(digits, case).map_err(FieldError::Hex)
+        #[inline(always)]
+        fn decode(digits: &[u8], case: CheckCase) -> Result<Vec<u8>, crate::Error> {
+            crate::hex_decode_vec_with_case(digits, case)
         }
     }
 
@@ -68,8 +67,9 @@ mod internal {
             *value
         }
 
-        fn decode(digits: &[u8], case: CheckCase) -> Result<[u8; N], FieldError> {
-            crate::hex_decode_array_with_case(digits, case).map_err(FieldError::Hex)
+        #[inline(always)]
+        fn decode(digits: &[u8], case: CheckCase) -> Result<[u8; N], crate::Error> {
+            crate::hex_decode_array_with_case(digits, case)
         }
     }
 
@@ -151,9 +151,16 @@ mod internal {
             if !digits.len().is_multiple_of(2) {
                 return invalid(FieldError::Odd);
             }
+            let actual = digits.len() / 2;
+            if actual > T::MAX {
+                return invalid(FieldError::Limit {
+                    max: T::MAX,
+                    actual,
+                });
+            }
             match T::decode(digits.as_bytes(), P::CASE) {
                 Ok(value) => ready(value),
-                Err(error) => invalid(error),
+                Err(error) => invalid(FieldError::Hex(error)),
             }
         }
 
