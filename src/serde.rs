@@ -219,25 +219,18 @@ mod internal {
         finish: impl FnOnce(Text<'de, Field<&[u8; N]>>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
-        let mut result = None;
-        let slot = &mut storage;
-        let output = &mut result;
-        let borrowed = d.deserialize_string(TextVisitor(move |text: Text<'de, &str>| {
-            let slot = slot;
+        let mut transient = MaybeUninit::uninit();
+        let storage = &mut storage;
+        let transient = &mut transient;
+        let input = d.deserialize_string(TextVisitor(move |text: Text<'de, &str>| {
+            let storage = storage;
+            let transient = transient;
             match text {
-                Text::Borrowed(s) => s,
-                Text::Transient(s) => {
-                    *output = Some(P::fill::<N>(s, slot));
-                    ""
-                }
+                Text::Borrowed(s) => Text::Borrowed(s),
+                Text::Transient(s) => Text::Transient(&*transient.write(P::fill::<N>(s, storage))),
             }
         }))?;
-        if borrowed.is_empty() {
-            if let Some(field) = result {
-                return finish(Text::Transient(field));
-            }
-        }
-        finish(Text::Borrowed(borrowed))
+        finish(input.map(|outcome| *outcome))
     }
 
     fn bulk_borrowed<E: Error, const N: usize>(
