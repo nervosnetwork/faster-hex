@@ -4,7 +4,7 @@ use core::iter::FromIterator;
 
 mod internal {
     use crate::{
-        decode::{ArrayPairs, CheckCase},
+        decode::{ArrayDigits, CheckCase},
         encode::encode,
     };
     use alloc::vec::Vec;
@@ -185,7 +185,7 @@ mod internal {
             storage: &'a mut MaybeUninit<[u8; N]>,
         ) -> Field<&'a [u8; N]> {
             let pairs = payload(text, Self::PREFIX, FieldError::Text)?;
-            let pairs = ArrayPairs::<N>::new(pairs).map_err(FieldError::Hex)?;
+            let pairs = ArrayDigits::<N>::new(pairs.as_flattened()).map_err(FieldError::Hex)?;
             pairs
                 .decode_into(storage, Self::CASE)
                 .map_err(FieldError::Hex)
@@ -194,7 +194,8 @@ mod internal {
         #[inline(always)]
         fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
             let pairs =
-                ArrayPairs::<N>::new(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
+                ArrayDigits::<N>::new(payload(text, Self::PREFIX, E::custom)?.as_flattened())
+                    .map_err(E::custom)?;
             // Keep the large return value off the length-error path.
             array_result::<N, _>(|| {
                 pairs
