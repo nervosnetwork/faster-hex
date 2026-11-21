@@ -44,16 +44,6 @@ mod internal {
         Transient(T),
     }
 
-    impl<'de, T> Text<'de, T> {
-        #[inline(always)]
-        fn map<U>(self, f: impl FnOnce(T) -> U) -> Text<'de, U> {
-            match self {
-                Self::Borrowed(s) => Text::Borrowed(s),
-                Self::Transient(value) => Text::Transient(f(value)),
-            }
-        }
-    }
-
     struct TextVisitor<F>(F);
     impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for TextVisitor<F> {
         type Value = Text<'de, T>;
@@ -232,19 +222,15 @@ mod internal {
     }
 
     #[inline(always)]
-    pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+    pub(super) fn array_field<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
-    ) -> Result<Text<'de, Field<[u8; N]>>, D::Error> {
-        with_array::<D, P, _, N>(d, |input| Ok(input.map(|value| value.copied())))
-    }
-    impl<const N: usize> Text<'_, Field<[u8; N]>> {
-        #[inline(always)]
-        pub(super) fn finish<P: Policy, E: Error>(self) -> Result<[u8; N], E> {
-            match self {
-                Self::Borrowed(text) => P::decode(text),
-                Self::Transient(field) => field.map_err(E::custom),
-            }
-        }
+    ) -> Result<Field<[u8; N]>, D::Error> {
+        with_array::<D, P, _, N>(d, |input| {
+            Ok(match input {
+                Text::Borrowed(text) => P::fill(text, &mut MaybeUninit::uninit()).copied(),
+                Text::Transient(field) => field.copied(),
+            })
+        })
     }
     #[inline(always)]
     fn read_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
@@ -769,12 +755,12 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
                 use super::super::$mod_name::Format;
 
-                struct Array<'de, const N: usize>(internal::Text<'de, internal::Field<[u8; N]>>);
+                struct Array<const N:usize>(internal::Field<[u8;N]>);
 
-                impl<'de, const N: usize> serde::Deserialize<'de> for Array<'de, N> {
+                impl<'de,const N:usize> serde::Deserialize<'de> for Array<N>{
                     #[inline(always)]
-                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                        internal::array_input::<D, Format, N>(d).map(Self)
+                    fn deserialize<D:serde::Deserializer<'de>>(d:D)->Result<Self,D::Error>{
+                        internal::array_field::<D,Format,N>(d).map(Self)
                     }
                 }
 
@@ -802,8 +788,8 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                     use serde::Deserialize;
 
                     internal::array_result::<N,_>(|| {
-                    Option::<Array<'de, N>>::deserialize(deserializer)?
-                        .map(|Array(input)| input.finish::<Format, D::Error>())
+                    Option::<Array<N>>::deserialize(deserializer)?
+                        .map(|Array(input)| input.map_err(serde::de::Error::custom))
                         .transpose()
                     })
                 }
