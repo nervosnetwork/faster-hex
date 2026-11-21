@@ -15,43 +15,45 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: balanced_policy, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_policy, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: balanced_policy, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_policy, mode: fields, os: macos-15-intel, lto: "thin"}
-          - {family: balanced_inline, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_inline, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: balanced_inline, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_inline, mode: fields, os: macos-15-intel, lto: "thin"}
-          - {family: native_inline, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: native_inline, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: native_inline, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: native_inline, mode: fields, os: macos-15-intel, lto: "thin"}
-          - {family: balanced_policy, mode: regress, os: ubuntu-22.04, lto: "false"}
-          - {family: balanced_policy, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_policy, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_policy, mode: regress, os: macos-15-intel, lto: "false"}
-          - {family: balanced_policy, mode: regress, os: macos-15-intel, lto: "thin"}
-          - {family: balanced_policy, mode: existing, os: macos-15-intel, lto: "thin"}
-          - {family: balanced_policy, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
-          - {family: balanced_policy, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_policy, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_inline, mode: regress, os: ubuntu-22.04, lto: "false"}
-          - {family: balanced_inline, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_inline, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_inline, mode: regress, os: macos-15-intel, lto: "false"}
-          - {family: balanced_inline, mode: regress, os: macos-15-intel, lto: "thin"}
-          - {family: balanced_inline, mode: existing, os: macos-15-intel, lto: "thin"}
-          - {family: balanced_inline, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
-          - {family: balanced_inline, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_inline, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_policy, mode: edge, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_policy, mode: edge, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_policy, mode: edge, os: macos-15-intel, lto: "thin"}
-          - {family: balanced_policy, mode: shared, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_policy, mode: shared, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: balanced_inline, mode: shared, os: ubuntu-22.04, lto: "thin"}
-          - {family: balanced_inline, mode: shared, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: original_writer, mode: regress, os: ubuntu-22.04, lto: "false"}
+          - {family: original_writer, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: original_writer, mode: owned, os: ubuntu-22.04, lto: "thin"}
+          - {family: original_writer, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: original_writer, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: original_writer, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: original_writer, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: original_writer, mode: owned, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: original_writer, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: original_writer, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: original_writer, mode: regress, os: macos-15-intel, lto: "false"}
+          - {family: original_writer, mode: regress, os: macos-15-intel, lto: "thin"}
+          - {family: original_writer, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: original_writer, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: original_writer, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: chosen_writer, mode: regress, os: ubuntu-22.04, lto: "false"}
+          - {family: chosen_writer, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: chosen_writer, mode: owned, os: ubuntu-22.04, lto: "thin"}
+          - {family: chosen_writer, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: chosen_writer, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: chosen_writer, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: chosen_writer, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: chosen_writer, mode: owned, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: chosen_writer, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: chosen_writer, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: chosen_writer, mode: regress, os: macos-15-intel, lto: "false"}
+          - {family: chosen_writer, mode: regress, os: macos-15-intel, lto: "thin"}
+          - {family: chosen_writer, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: chosen_writer, mode: fields, os: ubuntu-24.04, lto: "thin"}
+          - {family: chosen_writer, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: original_writer, mode: isolated, os: ubuntu-22.04, lto: "thin"}
+          - {family: chosen_split, mode: owned, os: ubuntu-22.04, lto: "thin"}
+          - {family: chosen_split, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: anchor, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: original_writer, mode: isolated, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: chosen_split, mode: owned, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: chosen_split, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: anchor, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: anchor, mode: fields, os: ubuntu-24.04, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -64,19 +66,22 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            balanced_policy) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
-            balanced_inline) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
-            native_inline) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
+            original_writer) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
+            chosen_writer) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
+            chosen_split) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
+            anchor) PRODUCT_REV=$(sed -n '4p' verify/targets) ;;
           esac
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = fields ]; then
             RELEASE_FIELDS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
-          elif [ "${{ matrix.mode }}" = edge ]; then
-            ESCAPED_ARRAYS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
           elif [ "${{ matrix.mode }}" = existing ]; then
             EXISTING_CONTROLS=1 python3 verify/consumer.py
-          elif [ "${{ matrix.mode }}" = shared ]; then
-            python3 verify/shared_writer.py
+          elif [ "${{ matrix.mode }}" = owned ]; then
+            OWNED_WRITER=1 python3 verify/shared_writer.py
+          elif [ "${{ matrix.mode }}" = mixed ]; then
+            MIXED_CALLER=1 python3 verify/consumer.py
+          elif [ "${{ matrix.mode }}" = isolated ]; then
+            ISOLATED_WRITER=1 WRITER_FOCUS=1 python3 verify/regress.py
           else
             python3 verify/regress.py
           fi
