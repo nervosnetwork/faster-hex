@@ -258,22 +258,16 @@ mod internal {
         }
     }
     #[inline(never)]
-    fn decode_large<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
-        d: D,
-    ) -> Result<[u8; N], D::Error> {
-        with_array::<D, P, _, N>(d, |input| match input {
-            Text::Borrowed(s) => bulk_borrowed(s, P::PREFIX, P::CASE),
-            Text::Transient(result) => result.copied().map_err(D::Error::custom),
-        })
+    fn finish_bulk<E: Error, const N: usize>(value: Field<&[u8; N]>) -> Result<[u8; N], E> {
+        value.copied().map_err(E::custom)
     }
     #[inline(always)]
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
-        if N > 1024 {
-            return decode_large::<D, P, N>(d);
-        }
         with_array::<D, P, _, N>(d, |input| match input {
+            Text::Borrowed(text) if N > 1024 => bulk_borrowed(text, P::PREFIX, P::CASE),
+            Text::Transient(field) if N > 1024 => finish_bulk(field),
             Text::Borrowed(text) => P::decode(text),
             Text::Transient(field) => field.copied().map_err(D::Error::custom),
         })
