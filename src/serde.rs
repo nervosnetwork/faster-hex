@@ -76,7 +76,9 @@ mod internal {
                 expected: N,
                 actual: pairs.len(),
             })?;
-            crate::decode::decode_array_pairs(input, case)
+            let mut bytes = [0; N];
+            crate::decode::decode_array_pairs(input, &mut bytes, case)?;
+            Ok(bytes)
         }
     }
 

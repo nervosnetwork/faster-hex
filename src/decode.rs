@@ -363,43 +363,41 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    if !src.len().is_multiple_of(2) {
+    use core::convert::TryInto;
+
+    let (pairs, tail) = src.as_chunks::<2>();
+    if !tail.is_empty() {
         return Err(Error::OddLength);
     }
-    let actual = src.len() / 2;
-    if actual != N {
-        return Err(Error::LengthMismatch {
-            expected: N,
-            actual,
-        });
-    }
+    let input = pairs.try_into().map_err(|_| Error::LengthMismatch {
+        expected: N,
+        actual: pairs.len(),
+    })?;
     let mut bytes = [0; N];
-    #[cfg(target_arch = "aarch64")]
-    if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
-        // A fixed short array can inline the existing NEON block by padding
-        // with valid digits, without reading beyond the source slice.
-        let mut input = [b'0'; 16];
-        input[..src.len()].copy_from_slice(src);
-        let mut output = [0; 8];
-        hex_decode_with_case(&input, &mut output, check_case)?;
-        bytes.copy_from_slice(&output[..N]);
-        return Ok(bytes);
-    }
-    // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    decode_array_pairs(input, &mut bytes, check_case)?;
     Ok(bytes)
 }
 
-#[cfg(feature = "serde")]
-#[inline]
+// The input gives every output byte one pair. Both array entry points use the
+// same fixed-size kernels, including the four-byte NEON path.
+#[inline(always)]
 pub(crate) fn decode_array_pairs<const N: usize>(
     input: &[[u8; 2]; N],
+    bytes: &mut [u8; N],
     case: CheckCase,
-) -> Result<[u8; N], Error> {
-    let mut bytes = [0; N];
-    // SAFETY: The array type supplies exactly one input pair for each private output byte.
-    unsafe { decode_owned(input.as_flattened(), &mut bytes, case) }?;
-    Ok(bytes)
+) -> Result<(), Error> {
+    let src = input.as_flattened();
+    #[cfg(target_arch = "aarch64")]
+    if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
+        let mut padded = [b'0'; 16];
+        padded[..src.len()].copy_from_slice(src);
+        let mut output = [0; 8];
+        hex_decode_with_case(&padded, &mut output, case)?;
+        bytes.copy_from_slice(&output[..N]);
+        return Ok(());
+    }
+    // SAFETY: The input array supplies one pair per byte of the output array.
+    unsafe { decode_owned(src, bytes, case) }
 }
 
 /// Decodes the complete input into a new vector, accepting either letter case.

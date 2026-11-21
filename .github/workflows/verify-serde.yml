@@ -5,20 +5,18 @@ on:
 permissions:
   contents: read
 jobs:
-  profile:
-    name: Isolate JSON string writer placement / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  codec:
+    name: Separate bounded and bulk AVX2 decoding / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 48
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-22.04, lto: "false" }
-          - { os: ubuntu-24.04, lto: "false" }
-          - { os: ubuntu-24.04, lto: "thin" }
+        os: [macos-15-intel, ubuntu-22.04]
+        lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: dec48432d8ac3df9d6a15a265fbac66fb850b292
+      PRODUCT_REV: 95d3a053211c8960ca351025e817689412408220
       REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -28,13 +26,63 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Time the ordinary independently compiled programs and retain their original link objects
+      - name: Check every input byte at vector boundaries
         run: |
-          PATH="$PWD/verify/link-driver:$PATH" JSON_PLACEMENT=1 FIELD_OBJECTS=1 MIXED_CALLER=1 PAIR_STUDY=matched RESULTS=results/paired python3 verify/consumer.py
-      - name: Measure four placements of the same JSON writer within each independent program
-        run: python3 verify/placement.py
+          mkdir codec-verify
+          git archive "$PRODUCT_REV" | tar -xf - -C codec-verify
+          cp verify/core-inputs.rs codec-verify/tests/native_inputs.rs
+          mkdir -p results
+          cat >> codec-verify/src/tests.rs <<'RS'
+          #[test]
+          fn release_backend() {
+              std::println!("Selected native codec: {:?}", crate::vectorization_support());
+          }
+          RS
+          (cd codec-verify && cargo test --release --all-features --lib release_backend -- --nocapture) | tee results/backend.txt
+          cd codec-verify
+          cargo test --release --all-features --lib --test native_inputs --test public_api --test owned_decode
+      - name: Compare public callers with the PR and the 2.0 release
+        run: |
+          PAIR_STUDY=windows RESULTS=results/pr python3 verify/consumer.py
+          REFERENCE_REV=6d84260fe321669e7f93ecfb8aecb4db0f582f14 PAIR_STUDY=windows RESULTS=results/release python3 verify/consumer.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: json-placement-${{ matrix.os }}-${{ matrix.lto }}
+          name: avx-windows-${{ matrix.os }}-${{ matrix.lto }}
+          path: results
+  fields:
+    name: Shared fixed-size raw and Serde array decoder / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 48
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04-arm]
+        lto: ["false", "thin"]
+    env:
+      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
+      PRODUCT_REV: 88d014efa25cc10b898730e801658b852068cecd
+      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - name: Check temporary field allocations and format errors
+        run: |
+          mkdir codec-verify
+          git archive "$PRODUCT_REV" | tar -xf - -C codec-verify
+          cd codec-verify
+          cargo test --release --all-features --test allocations --test serde_protocol
+      - name: Compare independent complete JSON calls
+        run: PAIR_STUDY=json FIELD_OBJECTS=1 MIXED_CALLER=1 RESULTS=results/roundtrip python3 verify/consumer.py
+      - name: Compare array fields, option framing and vector decoding
+        run: PAIR_STUDY=fixed FIELD_OBJECTS=1 RELEASE_FIELDS=1 ARRAY_VARIANT=frozen OWNED_VECTORS=1 RESULTS=results/fields python3 verify/consumer.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: exact-field-${{ matrix.os }}-${{ matrix.lto }}
           path: results
