@@ -363,7 +363,16 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    let digits = ArrayDigits::<N>::new(src)?;
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let actual = src.len() / 2;
+    if actual != N {
+        return Err(Error::LengthMismatch {
+            expected: N,
+            actual,
+        });
+    }
     let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
     if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
@@ -376,7 +385,7 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    digits.write(&mut bytes, check_case)?;
+    ArrayDigits::<N>::new(src)?.write(&mut bytes, check_case)?;
     Ok(bytes)
 }
 
