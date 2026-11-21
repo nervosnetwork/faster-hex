@@ -103,15 +103,15 @@ impl Backend {
         // and accepts arbitrary source bytes and lengths, including odd lengths.
         unsafe {
             match self.0 {
-                Kind::Scalar => decode::hex_check_fallback_with_case(src, case),
+                Kind::Scalar => decode::check_scalar(src, case).is_ok(),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Sse41 => decode::x86::hex_check_sse_with_case(src, case),
+                Kind::Sse41 => decode::x86::hex_check_sse_with_case(src, case).is_ok(),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Avx2 => decode::x86::hex_check_avx2_with_case(src, case),
+                Kind::Avx2 => decode::x86::hex_check_avx2_with_case(src, case).is_ok(),
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                Kind::Avx512 => decode::x86::hex_check_avx512_with_case(src, case),
+                Kind::Avx512 => decode::x86::hex_check_avx512_with_case(src, case).is_ok(),
                 #[cfg(target_arch = "aarch64")]
-                Kind::Neon => decode::aarch64::hex_check_neon_with_case(src, case),
+                Kind::Neon => decode::aarch64::hex_check_neon_with_case(src, case).is_ok(),
             }
         }
     }
@@ -130,7 +130,7 @@ impl Backend {
         unsafe {
             match self.0 {
                 Kind::Scalar => {
-                    if !decode::hex_check_fallback_with_case(src, case) {
+                    if decode::check_scalar(src, case).is_err() {
                         return false;
                     }
                     decode::hex_decode_fallback(src, dst);

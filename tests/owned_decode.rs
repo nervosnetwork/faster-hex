@@ -182,7 +182,22 @@ fn owned_block_errors<const N: usize>() {
             hex_decode_array_with_case::<N>(&input, case).unwrap(),
             [0x11; N]
         );
-        for position in [0, 1, 63, 64, 127, 128, 2047, 2048, N * 2 - 1] {
+        for position in [
+            0,
+            1,
+            63,
+            64,
+            127,
+            128,
+            159,
+            193,
+            255,
+            513,
+            1041,
+            2047,
+            2048,
+            N * 2 - 1,
+        ] {
             input[position] = invalid;
             let error = hex_decode_array_with_case::<N>(&input, case).unwrap_err();
             assert!(matches!(error, Error::InvalidChar { index, byte, .. }
@@ -192,6 +207,12 @@ fn owned_block_errors<const N: usize>() {
                 faster_hex::hex_decode_vec_with_case(&input, case),
                 Err(error)
             );
+            #[cfg(feature = "alloc")]
+            if case == CheckCase::None {
+                let mut dst = vec![0xfe];
+                assert_eq!(faster_hex::hex_decode_append(&input, &mut dst), Err(error));
+                assert_eq!(dst, [0xfe]);
+            }
             // A later failure must never hide an earlier case violation.
             input[0] = invalid;
             assert!(matches!(

@@ -257,7 +257,25 @@ fn diagnostics_identify_the_first_invalid_byte_for_each_policy() {
 #[test]
 fn diagnostic_block_skipping_keeps_byte_offsets_and_first_error() {
     for len in [2, 4, 6, 64, 66, 128, 130, 8192] {
-        for position in [0, 1, 2, 3, 4, 5, 31, 32, 63, 64, 65, len - 1] {
+        for position in [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            31,
+            32,
+            63,
+            64,
+            65,
+            127,
+            159,
+            193,
+            513,
+            1041,
+            len - 1,
+        ] {
             if position >= len {
                 continue;
             }

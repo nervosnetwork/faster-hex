@@ -12,7 +12,7 @@
 
 use core::arch::aarch64::*;
 
-use super::{hex_check_fallback_with_case, hex_decode_fallback, CheckCase};
+use super::{check_scalar, hex_decode_fallback, CheckCase, Validation};
 
 // Wrapping subtraction turns each ASCII range into one unsigned comparison.
 // Only the either-case policy folds the ASCII case bit.
@@ -42,9 +42,12 @@ unsafe fn decode_neon_nibbles(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t 
 
 #[inline]
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase) -> bool {
+pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase) -> Validation<'_> {
     if src.len() < 64 {
-        return hex_check_neon_short(src, check_case);
+        return match src.first() {
+            Some(first) if !hex_check_neon_short(src, check_case) => Err(first),
+            _ => Ok(()),
+        };
     }
     let (batches, rest) = src.as_chunks::<64>();
     for batch in batches {
@@ -53,10 +56,15 @@ pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase)
         let c = valid_neon(vld1q_u8(batch.as_ptr().add(32)), check_case);
         let d = valid_neon(vld1q_u8(batch.as_ptr().add(48)), check_case);
         if vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d))) == 0 {
-            return false;
+            return Err(&batch[0]);
         }
     }
-    rest.is_empty() || hex_check_neon_short(&src[src.len() - rest.len().max(16)..], check_case)
+    if let Some(first) = rest.first() {
+        if !hex_check_neon_short(&src[src.len() - rest.len().max(16)..], check_case) {
+            return Err(first);
+        }
+    }
+    Ok(())
 }
 
 // At most 64 bytes. Overlapping blocks cover the complete input, with only
@@ -65,7 +73,7 @@ pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase)
 #[target_feature(enable = "neon")]
 unsafe fn hex_check_neon_short(src: &[u8], check_case: CheckCase) -> bool {
     if src.len() < 16 {
-        return hex_check_fallback_with_case(src, check_case);
+        return check_scalar(src, check_case).is_ok();
     }
     let a = valid_neon(vld1q_u8(src.as_ptr()), check_case);
     if src.len() == 16 {
@@ -100,17 +108,17 @@ unsafe fn decode_neon_block(high: uint8x16_t, low: uint8x16_t) -> uint8x16_t {
 // blocks cover the complete input; validate all registers before either store.
 #[inline]
 #[target_feature(enable = "neon")]
-pub(super) unsafe fn hex_decode_bounded_neon(
-    src: &[u8],
+pub(super) unsafe fn hex_decode_bounded_neon<'src>(
+    src: &'src [u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Result<(), ()> {
+) -> Validation<'src> {
     let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
     let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), case);
     let c = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 32)), case);
     let d = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
     if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
-        return Err(());
+        return Err(&src[0]);
     }
     let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
     vst1q_u8(dst.as_mut_ptr(), pack(a, b));
@@ -158,23 +166,23 @@ pub(super) unsafe fn hex_decode_neon(src: &[u8], dst: &mut [u8]) {
 // 8..=16 decoded bytes fit in two input registers, possibly overlapping.
 #[inline]
 #[target_feature(enable = "neon")]
-pub(super) unsafe fn hex_decode_short_neon(
-    src: &[u8],
+pub(super) unsafe fn hex_decode_short_neon<'src>(
+    src: &'src [u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Result<(), ()> {
+) -> Validation<'src> {
     let pack = |a, b| vsliq_n_u8::<4>(vuzp2q_u8(a, b), vuzp1q_u8(a, b));
     let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
     if src.len() == 16 {
         if vmaxvq_u8(a) > 15 {
-            return Err(());
+            return Err(&src[0]);
         }
         vst1_u8(dst.as_mut_ptr(), vget_low_u8(pack(a, a)));
         return Ok(());
     }
     let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
     if vmaxvq_u8(vorrq_u8(a, b)) > 15 {
-        return Err(());
+        return Err(&src[0]);
     }
     let decoded = pack(a, b);
     vst1_u8(dst.as_mut_ptr(), vget_low_u8(decoded));
@@ -185,11 +193,11 @@ pub(super) unsafe fn hex_decode_short_neon(
 // Earlier valid blocks may be committed: the owning caller discards output
 // if any later block fails. Lengths have the exact 2:1 input/output ratio.
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn hex_decode_neon_owned(
-    src: &[u8],
+pub(crate) unsafe fn hex_decode_neon_owned<'src>(
+    src: &'src [u8],
     dst: &mut [u8],
     case: CheckCase,
-) -> Result<(), ()> {
+) -> Validation<'src> {
     let (blocks, tail) = src.as_chunks::<64>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
