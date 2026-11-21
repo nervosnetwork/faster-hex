@@ -363,7 +363,16 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    check_array_length::<N>(src)?;
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let actual = src.len() / 2;
+    if actual != N {
+        return Err(Error::LengthMismatch {
+            expected: N,
+            actual,
+        });
+    }
     let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
     if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
@@ -378,55 +387,6 @@ pub fn hex_decode_array_with_case<const N: usize>(
     }
     // SAFETY: The length check above matched the number of input pairs to N.
     unsafe { decode_owned(src, &mut bytes, check_case) }?;
-    Ok(bytes)
-}
-
-#[inline(always)]
-fn check_array_length<const N: usize>(src: &[u8]) -> Result<(), Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
-    }
-    let actual = src.len() / 2;
-    if actual != N {
-        return Err(Error::LengthMismatch {
-            expected: N,
-            actual,
-        });
-    }
-    Ok(())
-}
-
-// A Serde visitor can initialize its field before the input text expires.
-#[cfg(feature = "serde")]
-#[inline(always)]
-pub(crate) fn decode_array_into<'a, const N: usize>(
-    src: &[u8],
-    storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
-    check_case: CheckCase,
-) -> Result<&'a [u8; N], Error> {
-    check_array_length::<N>(src)?;
-    let pairs = src.as_chunks::<2>().0;
-    let bytes = storage.write([0; N]);
-    if N < 8 {
-        let digits = match check_case {
-            CheckCase::None => &UNHEX,
-            CheckCase::Lower => &UNHEX_LOWER,
-            CheckCase::Upper => &UNHEX_UPPER,
-        };
-        let mut invalid = 0;
-        for (out, &[high, low]) in bytes.iter_mut().zip(pairs) {
-            let hi = digits[usize::from(high)];
-            let lo = digits[usize::from(low)];
-            invalid |= hi | lo;
-            *out = (hi << 4) | lo;
-        }
-        if invalid == NIL {
-            diagnose_invalid(src, check_case)?;
-        }
-        return Ok(bytes);
-    }
-    // SAFETY: Each of the N output bytes has exactly one input pair.
-    unsafe { decode_owned(src, bytes, check_case) }?;
     Ok(bytes)
 }
 
@@ -776,4 +736,43 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
         let b = UNHEX[bytes[1] as usize];
         *slot = a | b;
     }
+}
+
+// A temporary Serde string can initialize its field before the visit returns.
+// Each pair supplies two input bytes for one output byte, including for SIMD.
+#[cfg(feature = "serde")]
+#[inline(always)]
+pub(crate) fn decode_array_into<'a, const N: usize>(
+    pairs: &[[u8; 2]; N],
+    storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
+    check_case: CheckCase,
+) -> Result<&'a [u8; N], Error> {
+    let src = pairs.as_flattened();
+    #[cfg(target_arch = "aarch64")]
+    if N == 4 {
+        // The returned-array decoder already has a bounded four-byte NEON kernel.
+        return Ok(storage.write(hex_decode_array_with_case(src, check_case)?));
+    }
+    let bytes = storage.write([0; N]);
+    if N < 8 {
+        let digits = match check_case {
+            CheckCase::None => &UNHEX,
+            CheckCase::Lower => &UNHEX_LOWER,
+            CheckCase::Upper => &UNHEX_UPPER,
+        };
+        let mut invalid = 0;
+        for (out, &[high, low]) in bytes.iter_mut().zip(pairs) {
+            let hi = digits[usize::from(high)];
+            let lo = digits[usize::from(low)];
+            invalid |= hi | lo;
+            *out = (hi << 4) | lo;
+        }
+        if invalid == NIL {
+            diagnose_invalid(src, check_case)?;
+        }
+        return Ok(bytes);
+    }
+    // SAFETY: Each of the N output bytes has exactly one input pair.
+    unsafe { decode_owned(src, bytes, check_case) }?;
+    Ok(bytes)
 }
