@@ -219,12 +219,25 @@ mod internal {
         finish: impl FnOnce(Text<'de, Field<&[u8; N]>>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
+        let mut result = None;
         let slot = &mut storage;
-        let input = d.deserialize_string(TextVisitor(move |text: Text<'de, &str>| {
+        let output = &mut result;
+        let borrowed = d.deserialize_string(TextVisitor(move |text: Text<'de, &str>| {
             let slot = slot;
-            text.map(move |s| P::fill::<N>(s, slot))
+            match text {
+                Text::Borrowed(s) => s,
+                Text::Transient(s) => {
+                    *output = Some(P::fill::<N>(s, slot));
+                    ""
+                }
+            }
         }))?;
-        finish(input)
+        if borrowed.is_empty() {
+            if let Some(field) = result {
+                return finish(Text::Transient(field));
+            }
+        }
+        finish(Text::Borrowed(borrowed))
     }
 
     fn bulk_borrowed<E: Error, const N: usize>(
@@ -258,16 +271,22 @@ mod internal {
         }
     }
     #[inline(never)]
-    fn finish_bulk<E: Error, const N: usize>(value: Field<&[u8; N]>) -> Result<[u8; N], E> {
-        value.copied().map_err(E::custom)
+    fn decode_large<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+        d: D,
+    ) -> Result<[u8; N], D::Error> {
+        with_array::<D, P, _, N>(d, |input| match input {
+            Text::Borrowed(s) => bulk_borrowed(s, P::PREFIX, P::CASE),
+            Text::Transient(result) => result.copied().map_err(D::Error::custom),
+        })
     }
     #[inline(always)]
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
+        if N > 1024 {
+            return decode_large::<D, P, N>(d);
+        }
         with_array::<D, P, _, N>(d, |input| match input {
-            Text::Borrowed(text) if N > 1024 => bulk_borrowed(text, P::PREFIX, P::CASE),
-            Text::Transient(field) if N > 1024 => finish_bulk(field),
             Text::Borrowed(text) => P::decode(text),
             Text::Transient(field) => field.copied().map_err(D::Error::custom),
         })
