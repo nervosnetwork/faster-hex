@@ -49,6 +49,27 @@ if variant:=os.environ.get("ARRAY_VARIANT"):
  if os.environ.get("FOCUSED_FIELDS"):
   covered={"option32","option4096","field4096","field4095","json32","json4096","transient32","transient4096","bad4096","error4096"}
   cases={k:v for k,v in cases.items() if k in covered}
+ if os.environ.get("ESCAPED_ARRAYS"):
+  cases={}
+  ops={}
+  present='''struct Present<D>(D);
+impl<'de,D:serde::Deserializer<'de>> serde::Deserializer<'de> for Present<D>{
+ type Error=D::Error;
+ fn deserialize_any<V:serde::de::Visitor<'de>>(self,v:V)->Result<V::Value,D::Error>{v.visit_some(self.0)}
+ serde::forward_to_deserialize_any!{bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map struct enum identifier ignored_any}
+}'''
+  for n in [32,4096]:
+   for opt in [False,True]:
+    adapter="faster_hex::option_withpfx_ignorecase::array" if opt else "faster_hex::array"
+    ty=f"Option<[u8;{n}]>" if opt else f"[u8;{n}]"
+    k=("escapedoption" if opt else "escapedrequired")+str(n)
+    defs=f'#[derive(serde::Deserialize)] struct Value(#[serde(with="{adapter}")] {ty});'
+    cases[k]=[n];ops[k]=(defs,'black_box(serde_json::from_str::<Value>(black_box(&optional_json)).unwrap().0);')
+   k="rawoption"+str(n)
+   cases[k]=[n];ops[k]=(present,f'black_box(faster_hex::option_withpfx_ignorecase::array::deserialize::<_,{n}>(Present(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(black_box(&field)))).unwrap().unwrap());')
+  for n in [1023,1024,1025,4095,4097,8192]:
+   k="transient"+str(n)
+   cases[k]=[n];ops[k]=("",f'black_box(faster_hex::array::deserialize::<_,{n}>(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(black_box(&field))).unwrap());')
  ops={k:v for k,v in ops.items() if k in cases}
  shutil.rmtree(bins);bins.mkdir()
 elif os.environ.get('EXISTING_CONTROLS'):
@@ -84,6 +105,8 @@ fn main() {
  println!("{:.6}",run_sample(n,iters));
 }
 '''.replace("OPTIONAL",'let optional_json=format!("{field:?}");' if k.startswith(("option","json")) else "").replace("DEFS",defs).replace("KIND",k).replace("PREPARE",prepare).replace("OP",op)
+ if k.startswith('escaped'):
+  code=code.replace('let start=Instant::now();','let q=char::from(34); let slash=char::from(92); let optional_json=format!("{q}{slash}u0030{}{q}", &field[1..]); let start=Instant::now();')
  (bins/(k+'.rs')).write_text(code)
 def text_segment(exe):
  if sys.platform=="darwin":
