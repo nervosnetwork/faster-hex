@@ -210,14 +210,15 @@ mod internal {
     pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<ArrayInput<'de, Field<[u8; N]>>, D::Error> {
-        let mut decoded = None;
-        let text = d.deserialize_string(BorrowText(|s: &str| decoded = Some(P::parse::<N>(s))))?;
-        if text.is_empty() {
-            if let Some(field) = decoded {
-                return Ok(ArrayInput::Decoded(field));
-            }
-        }
-        Ok(ArrayInput::Borrowed(text))
+        let mut transient = ArrayInput::Borrowed("");
+        let borrowed = d.deserialize_string(BorrowText(|s: &str| {
+            transient = ArrayInput::Decoded(P::parse::<N>(s));
+        }))?;
+        Ok(if borrowed.is_empty() {
+            transient
+        } else {
+            ArrayInput::Borrowed(borrowed)
+        })
     }
     impl<const N: usize> ArrayInput<'_, Field<[u8; N]>> {
         #[inline(always)]
