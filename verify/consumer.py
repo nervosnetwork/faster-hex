@@ -112,6 +112,15 @@ if os.environ.get("MIXED_CALLER"):
  ops={k:(payload_type,operation) if k!="serialize" else ops[k] for k in cases}
  for f in bins.glob('*.rs'):
   if f.stem not in cases:f.unlink()
+if os.environ.get("MIXED_CALLER") and os.environ.get("FIELD_OBJECTS"):
+ root='#[derive(serde::Deserialize,serde::Serialize)] struct StateRoot(#[serde(with="faster_hex")] Vec<u8>);'
+ for name,read in [('hash_slice','from_slice'),('hash_reader','from_reader')]:
+  present='let root:Option<StateRoot>=serde_json::'+read+'(black_box(optional_json.as_bytes())).unwrap();'
+  ops[name]=(root,present+'dst.clear();serde_json::to_writer(&mut dst,&root).unwrap();black_box(dst.as_slice());')
+  cases[name]=[32]
+if os.environ.get("RELEASE_FIELDS") and os.environ.get("FIELD_OBJECTS"):
+ ops["array32"]=("",'black_box(faster_hex::hex_decode_array::<32>(black_box(&hex)).unwrap());')
+ cases["array32"]=[32]
 if os.environ.get("RELEASE_COMMON"):
  cases={'encode':[4,8,16,20,32,65,256,4096], 'owned_string':[32], 'decode':[4,32,256,4096], 'field4':[4],'field4096':[4096],'serialize':[32,4096],'deserialize':[32,4096]}
  ops={k:v for k,v in ops.items() if k in cases}
@@ -176,6 +185,8 @@ if os.environ.get("OWNED_VECTORS"):
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
 for k,(defs,op) in ops.items():
  prepare="let payload=Payload{bytes:bytes.clone()};" if k=="serialize" else ""
+ if k in ("hash_slice","hash_reader"):
+  prepare='let expected:Option<StateRoot>=serde_json::from_slice(optional_json.as_bytes()).unwrap();assert_eq!(expected.as_ref().unwrap().0,bytes);assert_eq!(serde_json::to_string(&expected).unwrap(),optional_json);'
  if kernel=="lanes":
   cap="upper" if k.endswith("upper") else "lower"
   prepare=f"let expected=hex.to_ascii_{cap}case(); assert_eq!(faster_hex::hex_encode{'_upper' if cap=='upper' else ''}(&bytes,&mut dst).unwrap().as_bytes(),expected);"
@@ -215,7 +226,9 @@ fn main() {
  black_box(run_sample(n,(iters/6).max(32)));
  println!("{:.6}",run_sample(n,iters));
 }
-'''.replace("OPTIONAL",'let optional_json=format!("{field:?}");' if k.startswith(("option","json")) else "").replace("DEFS",defs).replace("KIND",k).replace("PREPARE",prepare).replace("OP",op)
+'''.replace("OPTIONAL",'let optional_json=format!("{field:?}");' if k.startswith(("option","json","hash_")) else "").replace("DEFS",defs).replace("KIND",k).replace("PREPARE",prepare).replace("OP",op)
+ if k in ("hash_slice","hash_reader"):
+  code=code.replace('let optional_json=format!("{field:?}");','let optional_json=format!("{field:?}").to_ascii_lowercase();')
  if k=="escapedmixed":
   code=code.replace('let start=Instant::now();','let json=json.replace("0x",&format!("{}u0030x",char::from(92))); let start=Instant::now();')
  elif k.startswith('escaped'):
@@ -252,6 +265,15 @@ for role,rev in [('base',base),('head',head)]:
   # Keep the ordinary binaries untouched. Inspect the final linked caller.
   for name in ("field4096","transient4096","rawoption4096","raw_vec"):
    (out/(role+"-"+name+".asm")).write_text(output(["objdump","-d","-C","--disassemble=run_sample",dest/name]))
+if os.environ.get("FIELD_OBJECTS"):
+ for role in ("base","head"):
+  for name in ("json32","option32","hash_slice","mixed","array32"):
+   if name not in cases:continue
+   asm=output(["objdump","-dC","--no-show-raw-insn",work/role/name])
+   chunks=re.split(r"(?m)(?=^[0-9a-fA-F]+ <.+>:$)",asm)
+   wanted=[x for x in chunks if any(s in x.splitlines()[0] for s in ("run_sample","faster_hex::serde::internal::Field","as faster_hex::serde::internal::Destination","faster_hex::decode::hex_decode_array_with_case"))]
+   assert wanted,(role,name)
+   (out/(role+"-"+name+".asm")).write_text("\n".join(wanted))
 if os.environ.get("KERNEL_FOCUS")=="cases":
  tool=["objdump","-dC","--no-show-raw-insn"] if sys.platform=="linux" else ["xcrun","llvm-objdump","--disassemble","--demangle","--no-show-raw-insn"]
  for role in ("base","head"):

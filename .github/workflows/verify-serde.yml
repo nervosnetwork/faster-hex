@@ -7,53 +7,8 @@ permissions:
 env:
   RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
-  codec:
-    name: Validated AVX2 conversion / ${{ matrix.os }} / LTO ${{ matrix.lto }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 48
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15-intel, ubuntu-22.04]
-        lto: ["false", "thin"]
-    env:
-      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: d03f3873982976be3a26c58360789e957ab147c5
-      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Check every input byte at vector boundaries
-        run: |
-          mkdir codec-verify
-          git archive "$PRODUCT_REV" | tar -xf - -C codec-verify
-          cp verify/core-inputs.rs codec-verify/tests/native_inputs.rs
-          mkdir -p results
-          cat >> codec-verify/src/tests.rs <<'RS'
-          #[test]
-          fn release_backend() {
-              std::println!("Selected native codec: {:?}", crate::vectorization_support());
-          }
-          RS
-          (cd codec-verify && cargo test --release --all-features --lib release_backend -- --nocapture) | tee results/backend.txt
-          cd codec-verify
-          cargo test --release --all-features --lib --test native_inputs --test public_api --test owned_decode
-      - name: Compare public callers with the PR and the 2.0 release
-        run: |
-          KERNEL_CASES=mask KERNEL_FOCUS=cases RESULTS=results/pr python3 verify/consumer.py
-          REFERENCE_REV=6d84260fe321669e7f93ecfb8aecb4db0f582f14 KERNEL_CASES=mask KERNEL_FOCUS=cases RESULTS=results/release python3 verify/consumer.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: valid-digits-${{ matrix.os }}-${{ matrix.lto }}
-          path: results
   fields:
-    name: Serde field references / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: Serde codec results / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 48
     strategy:
@@ -63,7 +18,7 @@ jobs:
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 427026cd761bea8d3ee3db42b30235e4a4fa5e3a
+      PRODUCT_REV: cc95dcd1b90a634a36be0a4717e3839af7b14f42
       REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -76,11 +31,11 @@ jobs:
       - name: Check temporary field allocations and format errors
         run: cargo test --release --all-features --test allocations --test serde_protocol
       - name: Compare independent complete JSON calls
-        run: MIXED_CALLER=1 RESULTS=results/roundtrip python3 verify/consumer.py
+        run: FIELD_OBJECTS=1 MIXED_CALLER=1 RESULTS=results/roundtrip python3 verify/consumer.py
       - name: Compare array fields, option framing and vector decoding
-        run: RELEASE_FIELDS=1 ARRAY_VARIANT=frozen OWNED_VECTORS=1 RESULTS=results/fields python3 verify/consumer.py
+        run: FIELD_OBJECTS=1 RELEASE_FIELDS=1 ARRAY_VARIANT=frozen OWNED_VECTORS=1 RESULTS=results/fields python3 verify/consumer.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: field-reference-${{ matrix.os }}-${{ matrix.lto }}
+          name: field-codec-${{ matrix.os }}-${{ matrix.lto }}
           path: results

@@ -358,7 +358,7 @@ pub fn hex_decode_array<const N: usize>(src: &[u8]) -> Result<[u8; N], Error> {
 /// assert!(hex_decode_array_with_case::<2>(b"ab01", CheckCase::Upper).is_err());
 /// # Ok::<(), faster_hex::Error>(())
 /// ```
-#[inline]
+#[inline(always)]
 pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
