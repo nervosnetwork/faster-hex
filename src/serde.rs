@@ -237,6 +237,21 @@ mod internal {
         }
         borrowed(text)
     }
+    fn bulk_borrowed<E: Error, const N: usize>(
+        text: &str,
+        prefix: bool,
+        case: CheckCase,
+    ) -> Result<[u8; N], E> {
+        let src = payload(text, prefix, E::custom)?;
+        let actual = src.len() / 2;
+        if actual != N {
+            return Err(E::custom(format_args!(
+                "expected {N} decoded bytes, got {actual}"
+            )));
+        }
+        hex_decode_array_with_case(src.as_bytes(), case).map_err(E::custom)
+    }
+
     #[inline(always)]
     pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
@@ -261,9 +276,17 @@ mod internal {
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
-        with_array::<D, P, _, N>(d, P::decode::<D::Error, N>, |v| {
-            v.copied().map_err(D::Error::custom)
-        })
+        with_array::<D, P, _, N>(
+            d,
+            |text| {
+                if N > 1024 {
+                    bulk_borrowed(text, P::PREFIX, P::CASE)
+                } else {
+                    P::decode(text)
+                }
+            },
+            |v| v.copied().map_err(D::Error::custom),
+        )
     }
 
     pub(crate) fn serialize_option<S, T>(
