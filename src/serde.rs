@@ -39,9 +39,19 @@ mod internal {
 
     // The format determines how long each string lives. Short-lived values
     // must be consumed before their visit returns.
-    enum Text<'de, T> {
+    pub(super) enum Text<'de, T> {
         Borrowed(&'de str),
         Transient(T),
+    }
+
+    impl<'de, T> Text<'de, T> {
+        #[inline(always)]
+        fn map<U>(self, f: impl FnOnce(T) -> U) -> Text<'de, U> {
+            match self {
+                Self::Borrowed(s) => Text::Borrowed(s),
+                Self::Transient(value) => Text::Transient(f(value)),
+            }
+        }
     }
 
     struct TextVisitor<F>(F);
@@ -114,17 +124,28 @@ mod internal {
         text: &str,
         with_prefix: bool,
         custom: impl Fn(&'static str) -> E,
-    ) -> Result<&str, E> {
+    ) -> Result<&[[u8; 2]], E> {
         let text = if with_prefix {
             text.strip_prefix("0x")
                 .ok_or_else(|| custom("invalid prefix"))?
         } else {
             text
         };
-        if !text.len().is_multiple_of(2) {
-            return Err(custom("invalid length"));
+        let (pairs, tail) = text.as_bytes().as_chunks::<2>();
+        if tail.is_empty() {
+            Ok(pairs)
+        } else {
+            Err(custom("invalid length"))
         }
-        Ok(text)
+    }
+
+    #[inline(always)]
+    fn fixed_pairs<const N: usize>(pairs: &[[u8; 2]]) -> Result<&[[u8; 2]; N], crate::Error> {
+        use core::convert::TryInto;
+        pairs.try_into().map_err(|_| crate::Error::LengthMismatch {
+            expected: N,
+            actual: pairs.len(),
+        })
     }
 
     #[inline]
@@ -145,11 +166,12 @@ mod internal {
         case: CheckCase,
         max: usize,
     ) -> Field<Vec<u8>> {
-        let src = payload(text, with_prefix, FieldError::Text)?.as_bytes();
-        let actual = src.len() / 2;
+        let pairs = payload(text, with_prefix, FieldError::Text)?;
+        let actual = pairs.len();
         if actual > max {
             return Err(FieldError::Limit { max, actual });
         }
+        let src = pairs.as_flattened();
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         if actual <= 256 {
             #[expect(
@@ -164,14 +186,6 @@ mod internal {
         hex_decode_vec_with_case(src, case).map_err(FieldError::Hex)
     }
 
-    // Keep storage for a large valid value off the wrong-length path.
-    #[inline(never)]
-    fn decode_payload<E: Error, const N: usize>(src: &[u8], case: CheckCase) -> Result<[u8; N], E> {
-        crate::decode::decode_array_into(src, &mut MaybeUninit::uninit(), case)
-            .copied()
-            .map_err(E::custom)
-    }
-
     pub(super) trait Policy {
         const PREFIX: bool;
         const CASE: CheckCase;
@@ -181,31 +195,21 @@ mod internal {
             text: &str,
             storage: &'a mut MaybeUninit<[u8; N]>,
         ) -> Field<&'a [u8; N]> {
-            let payload = payload(text, Self::PREFIX, FieldError::Text)?;
-            crate::decode::decode_array_into(payload.as_bytes(), storage, Self::CASE)
-                .map_err(FieldError::Hex)
+            let pairs = payload(text, Self::PREFIX, FieldError::Text)?;
+            let pairs = fixed_pairs::<N>(pairs).map_err(FieldError::Hex)?;
+            crate::decode::decode_array_into(pairs, storage, Self::CASE).map_err(FieldError::Hex)
         }
 
         #[inline(always)]
         fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
-            let payload = payload(text, Self::PREFIX, E::custom)?;
-            let actual = payload.len() / 2;
-            if actual != N {
-                return Err(E::custom(format_args!(
-                    "expected {N} decoded bytes, got {actual}"
-                )));
-            }
-            if N > 1024 {
-                decode_payload(payload.as_bytes(), Self::CASE)
-            } else {
-                crate::decode::decode_array_into(
-                    payload.as_bytes(),
-                    &mut MaybeUninit::uninit(),
-                    Self::CASE,
-                )
-                .copied()
-                .map_err(E::custom)
-            }
+            let pairs =
+                fixed_pairs::<N>(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
+            // Keep storage for a large valid value off the error path.
+            array_result::<N, _>(|| {
+                crate::decode::decode_array_into(pairs, &mut MaybeUninit::uninit(), Self::CASE)
+                    .copied()
+                    .map_err(E::custom)
+            })
         }
     }
 
@@ -225,15 +229,19 @@ mod internal {
     }
 
     #[inline(always)]
-    pub(super) fn array_field<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+    pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
-    ) -> Result<Field<[u8; N]>, D::Error> {
-        with_array::<D, P, _, N>(d, |input| {
-            Ok(match input {
-                Text::Borrowed(text) => P::fill(text, &mut MaybeUninit::uninit()).copied(),
-                Text::Transient(field) => field.copied(),
-            })
-        })
+    ) -> Result<Text<'de, Field<[u8; N]>>, D::Error> {
+        with_array::<D, P, _, N>(d, |input| Ok(input.map(|value| value.copied())))
+    }
+    impl<const N: usize> Text<'_, Field<[u8; N]>> {
+        #[inline(always)]
+        pub(super) fn finish<P: Policy, E: Error>(self) -> Result<[u8; N], E> {
+            match self {
+                Self::Borrowed(text) => P::decode(text),
+                Self::Transient(field) => field.map_err(E::custom),
+            }
+        }
     }
     #[inline(always)]
     fn read_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
@@ -757,12 +765,12 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
                 pub use super::serialize;
 
-                struct Array<const N: usize>(internal::Field<[u8; N]>);
+                struct Array<'de, const N: usize>(internal::Text<'de, internal::Field<[u8; N]>>);
 
-                impl<'de, const N: usize> serde::Deserialize<'de> for Array<N> {
+                impl<'de, const N: usize> serde::Deserialize<'de> for Array<'de, N> {
                     #[inline(always)]
                     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                        internal::array_field::<D, Format, N>(d).map(Self)
+                        internal::array_input::<D, Format, N>(d).map(Self)
                     }
                 }
 
@@ -790,8 +798,8 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                     use serde::Deserialize;
 
                     internal::array_result::<N, _>(|| {
-                        Option::<Array<N>>::deserialize(deserializer)?
-                            .map(|Array(field)| field.map_err(serde::de::Error::custom))
+                        Option::<Array<'de, N>>::deserialize(deserializer)?
+                            .map(|Array(input)| input.finish::<Format, D::Error>())
                             .transpose()
                     })
                 }
