@@ -22,14 +22,14 @@ mod internal {
         Hex(crate::Error),
     }
 
-    impl fmt::Display for FieldError {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    impl FieldError {
+        pub(super) fn into_format<E: Error>(self) -> E {
             match self {
-                Self::Text(message) => f.write_str(message),
-                Self::Limit { max, actual } => {
-                    write!(f, "expected at most {max} decoded bytes, got {actual}")
-                }
-                Self::Hex(error) => error.fmt(f),
+                Self::Text(message) => E::custom(message),
+                Self::Limit { max, actual } => E::custom(format_args!(
+                    "expected at most {max} decoded bytes, got {actual}"
+                )),
+                Self::Hex(error) => E::custom(error),
             }
         }
     }
@@ -145,12 +145,13 @@ mod internal {
         max: usize,
         error: impl Fn(FieldError) -> E,
     ) -> Result<Result<Vec<u8>, E>, D::Error> {
-        let input = d.deserialize_string(TextVisitor(|s: &str| {
-            decode_bytes(s, with_prefix, case, max, core::convert::identity)
+        let mut decoded = Ok(Vec::new());
+        let input = d.deserialize_string(TextVisitor(|text: &str| {
+            decoded = decode_bytes(text, with_prefix, case, max, core::convert::identity);
         }))?;
         Ok(match input {
             Text::Available(text) => decode_bytes(&text, with_prefix, case, max, error),
-            Text::Transient(bytes) => bytes.map_err(error),
+            Text::Transient(()) => decoded.map_err(error),
         })
     }
 
@@ -187,23 +188,16 @@ mod internal {
             crate::hex_decode_array_with_case(text.as_bytes(), Self::CASE)
                 .map_err(|e| error(FieldError::Hex(e)))
         }
-    }
 
-    #[inline(always)]
-    fn with_array<'de, D: Deserializer<'de>, P: Policy, const N: usize, R>(
-        d: D,
-        finish: impl FnOnce(Text<'de, Field<&[u8; N]>>) -> Result<R, D::Error>,
-    ) -> Result<R, D::Error> {
-        let mut field = MaybeUninit::uninit();
-        let slot = &mut field;
-        let input = d.deserialize_string(TextVisitor(move |text: &str| {
-            // Small arrays can be returned in registers. For larger fields, decode
-            // into caller-owned storage so the format only has to return a reference.
-            let slot = slot;
+        #[inline(always)]
+        fn fill<'out, const N: usize>(
+            text: &str,
+            storage: &'out mut MaybeUninit<[u8; N]>,
+        ) -> Field<&'out [u8; N]> {
             if N < 8 {
-                return Ok(&*slot.write(P::decode(text, core::convert::identity)?));
+                return Ok(&*storage.write(Self::decode(text, core::convert::identity)?));
             }
-            let text = payload(text, P::PREFIX, FieldError::Text)?;
+            let text = payload(text, Self::PREFIX, FieldError::Text)?;
             let actual = text.len() / 2;
             if actual != N {
                 return Err(FieldError::Hex(crate::Error::LengthMismatch {
@@ -211,16 +205,31 @@ mod internal {
                     actual,
                 }));
             }
-            let bytes = slot.write([0; N]);
+            let bytes = storage.write([0; N]);
             if N > 1024 {
                 let (pairs, _) = text.as_bytes().as_chunks::<2>();
-                crate::decode::decode_owned_pairs(pairs, bytes, P::CASE)
+                crate::decode::decode_owned_pairs(pairs, bytes, Self::CASE)
                     .map_err(FieldError::Hex)?;
             } else {
-                crate::hex_decode_with_case(text.as_bytes(), bytes, P::CASE)
+                crate::hex_decode_with_case(text.as_bytes(), bytes, Self::CASE)
                     .map_err(FieldError::Hex)?;
             }
             Ok(&*bytes)
+        }
+    }
+
+    #[inline(always)]
+    fn with_array<'de, D: Deserializer<'de>, P: Policy, const N: usize, R>(
+        d: D,
+        finish: impl FnOnce(Text<'de, Result<&[u8; N], &FieldError>>) -> Result<R, D::Error>,
+    ) -> Result<R, D::Error> {
+        let mut output = MaybeUninit::uninit();
+        let mut rejection = None;
+        let output = &mut output;
+        let rejection = &mut rejection;
+        let input = d.deserialize_string(TextVisitor(move |s: &str| {
+            let output = output;
+            P::fill(s, output).map_err(move |error| &*rejection.insert(error))
         }))?;
         finish(input)
     }
@@ -232,7 +241,7 @@ mod internal {
         with_array::<D, P, N, _>(d, |input| {
             Ok(match input {
                 Text::Available(text) => P::decode(&text, core::convert::identity),
-                Text::Transient(result) => result.copied(),
+                Text::Transient(result) => result.copied().map_err(|error| *error),
             })
         })
     }
@@ -257,8 +266,8 @@ mod internal {
         d: D,
     ) -> Result<[u8; N], D::Error> {
         with_array::<D, P, N, _>(d, |input| match input {
-            Text::Available(text) => P::decode(&text, D::Error::custom),
-            Text::Transient(result) => result.copied().map_err(D::Error::custom),
+            Text::Available(text) => P::decode(&text, FieldError::into_format),
+            Text::Transient(result) => result.copied().map_err(|error| error.into_format()),
         })
     }
 
@@ -561,7 +570,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 T: FromIterator<u8>,
             {
                 let bytes = internal::read_bytes(
-                    deserializer, $with_pfx, $check_case, MAX, serde::de::Error::custom,
+                    deserializer, $with_pfx, $check_case, MAX, internal::FieldError::into_format,
                 )??;
                 Ok(bytes.into_iter().collect())
             }
@@ -733,7 +742,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 Option::<Bytes<MAX>>::deserialize(deserializer)?
                     .map(|Bytes(bytes)| {
                         bytes.map(|bytes| bytes.into_iter().collect())
-                            .map_err(serde::de::Error::custom)
+                            .map_err(internal::FieldError::into_format)
                     })
                     .transpose()
             }
@@ -796,7 +805,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
                     internal::array_result::<N, _>(|| {
                         Option::<Array<N>>::deserialize(deserializer)?
-                            .map(|Array(field)| field.map_err(serde::de::Error::custom))
+                            .map(|Array(field)| field.map_err(internal::FieldError::into_format))
                             .transpose()
                     })
                 }
