@@ -212,8 +212,14 @@ mod internal {
                 }));
             }
             let bytes = slot.write([0; N]);
-            crate::hex_decode_with_case(text.as_bytes(), bytes, P::CASE)
-                .map_err(FieldError::Hex)?;
+            if N > 1024 {
+                let (pairs, _) = text.as_bytes().as_chunks::<2>();
+                crate::decode::decode_owned_pairs(pairs, bytes, P::CASE)
+                    .map_err(FieldError::Hex)?;
+            } else {
+                crate::hex_decode_with_case(text.as_bytes(), bytes, P::CASE)
+                    .map_err(FieldError::Hex)?;
+            }
             Ok(&*bytes)
         }))?;
         finish(input)

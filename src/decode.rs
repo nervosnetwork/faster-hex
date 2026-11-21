@@ -448,13 +448,32 @@ pub fn hex_decode_vec_with_case(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<alloc::vec::Vec<u8>, Error> {
-    if !src.len().is_multiple_of(2) {
+    let (pairs, tail) = src.as_chunks::<2>();
+    if !tail.is_empty() {
         return Err(Error::OddLength);
     }
-    let mut bytes = alloc::vec![0; src.len() / 2];
-    // SAFETY: The vector has one byte for each pair of the even input.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    let mut bytes = alloc::vec![0; pairs.len()];
+    decode_owned_pairs(pairs, &mut bytes, check_case)?;
     Ok(bytes)
+}
+
+// Only private output can commit a checked block before validating the next.
+// The caller discards the destination if a later pair fails.
+#[cfg(feature = "alloc")]
+#[inline]
+pub(crate) fn decode_owned_pairs(
+    pairs: &[[u8; 2]],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), Error> {
+    if pairs.len() != dst.len() {
+        return Err(Error::LengthMismatch {
+            expected: dst.len(),
+            actual: pairs.len(),
+        });
+    }
+    // SAFETY: Each destination byte has exactly one two-byte input pair.
+    unsafe { decode_owned(pairs.as_flattened(), dst, case) }
 }
 
 /// Appends decoded bytes to `dst` and returns just the new suffix.
