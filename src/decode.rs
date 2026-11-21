@@ -390,6 +390,18 @@ pub fn hex_decode_array_with_case<const N: usize>(
     Ok(bytes)
 }
 
+#[cfg(feature = "serde")]
+#[inline]
+pub(crate) fn decode_array_pairs<const N: usize>(
+    input: &[[u8; 2]; N],
+    case: CheckCase,
+) -> Result<[u8; N], Error> {
+    let mut bytes = [0; N];
+    // SAFETY: The array type supplies exactly one input pair for each private output byte.
+    unsafe { decode_owned(input.as_flattened(), &mut bytes, case) }?;
+    Ok(bytes)
+}
+
 /// Decodes the complete input into a new vector, accepting either letter case.
 ///
 /// Available with `alloc`. The result owns exactly `src.len() / 2` decoded bytes,

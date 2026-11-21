@@ -71,15 +71,12 @@ mod internal {
 
         #[inline(always)]
         fn decode(pairs: &[[u8; 2]], case: CheckCase) -> Result<[u8; N], crate::Error> {
-            if pairs.len() != N {
-                return Err(crate::Error::LengthMismatch {
-                    expected: N,
-                    actual: pairs.len(),
-                });
-            }
-            let mut bytes = [0; N];
-            crate::hex_decode_with_case(pairs.as_flattened(), &mut bytes, case)?;
-            Ok(bytes)
+            use core::convert::TryInto;
+            let input = pairs.try_into().map_err(|_| crate::Error::LengthMismatch {
+                expected: N,
+                actual: pairs.len(),
+            })?;
+            crate::decode::decode_array_pairs(input, case)
         }
     }
 
