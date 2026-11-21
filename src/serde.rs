@@ -37,53 +37,29 @@ mod internal {
         }
     }
 
-    enum Text<'de, 'transient> {
-        Borrowed(&'de str),
-        Transient(&'transient str),
-    }
+    // Serde forwards borrowed and owned strings and bytes to these two visits.
+    struct HexVisitor<F>(F);
 
-    impl Text<'_, '_> {
-        fn as_str(&self) -> &str {
-            match *self {
-                Self::Borrowed(text) => text,
-                Self::Transient(text) => text,
-            }
-        }
-    }
-
-    struct TextVisitor<F>(F);
-
-    impl<'de, F, T> Visitor<'de> for TextVisitor<F>
+    impl<'de, F, T> Visitor<'de> for HexVisitor<F>
     where
-        F: for<'s> FnOnce(Text<'de, 's>) -> T,
+        F: FnOnce(&str) -> T,
     {
         type Value = T;
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
             f.write_str("a string")
         }
 
+        // Let the format call the collection decoder directly.
         #[inline(always)]
         fn visit_str<E: Error>(self, text: &str) -> Result<T, E> {
-            Ok((self.0)(Text::Transient(text)))
-        }
-
-        #[inline(always)]
-        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<T, E> {
-            Ok((self.0)(Text::Borrowed(text)))
+            Ok((self.0)(text))
         }
 
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<T, E> {
-            match core::str::from_utf8(bytes) {
-                Ok(s) => self.visit_str(s),
-                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-            }
-        }
-
-        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<T, E> {
-            match core::str::from_utf8(bytes) {
-                Ok(s) => self.visit_borrowed_str(s),
-                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-            }
+            let text = core::str::from_utf8(bytes)
+                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
+            self.visit_str(text)
         }
     }
 
@@ -150,7 +126,7 @@ mod internal {
         d: D,
         decode: impl FnOnce(&str) -> T,
     ) -> Result<T, D::Error> {
-        d.deserialize_string(TextVisitor(|value: Text<'de, '_>| decode(value.as_str())))
+        d.deserialize_string(HexVisitor(decode))
     }
 
     #[inline]
@@ -184,14 +160,24 @@ mod internal {
         const CASE: CheckCase;
 
         #[inline(always)]
-        fn parse<const N: usize>(text: &str) -> Field<[u8; N]> {
+        fn fill<'a, const N: usize>(
+            text: &str,
+            storage: &'a mut MaybeUninit<[u8; N]>,
+        ) -> Field<&'a [u8; N]> {
             let payload = payload(text, Self::PREFIX, FieldError::Text)?;
-            hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(FieldError::Hex)
+            crate::decode::decode_array_into(payload.as_bytes(), storage, Self::CASE)
+                .map_err(FieldError::Hex)
         }
 
         #[inline(always)]
         fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
             let payload = payload(text, Self::PREFIX, E::custom)?;
+            let actual = payload.len() / 2;
+            if actual != N {
+                return Err(E::custom(format_args!(
+                    "expected {N} decoded bytes, got {actual}"
+                )));
+            }
             hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(E::custom)
         }
     }
@@ -202,19 +188,66 @@ mod internal {
         Decoded(T),
     }
 
+    // The text lives until completion only when the format lends it. With a transient
+    // value the callback stores the decoded field before this visitor returns.
+    struct BorrowText<F>(F);
+    impl<'de, F: FnOnce(&str)> Visitor<'de> for BorrowText<F> {
+        type Value = &'de str;
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a string")
+        }
+        fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
+            (self.0)(text);
+            Ok("")
+        }
+        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
+            Ok(text)
+        }
+        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
+        }
+        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_borrowed_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
+        }
+    }
+    #[inline(always)]
+    fn with_array<'de, D: Deserializer<'de>, P: Policy, R, const N: usize>(
+        d: D,
+        borrowed: impl FnOnce(&'de str) -> Result<R, D::Error>,
+        transient: impl FnOnce(Field<&[u8; N]>) -> Result<R, D::Error>,
+    ) -> Result<R, D::Error> {
+        let mut storage = MaybeUninit::uninit();
+        let mut decoded = None;
+        let slot = &mut storage;
+        let result = &mut decoded;
+        let text = d.deserialize_string(BorrowText(move |text: &str| {
+            let slot = slot;
+            *result = Some(P::fill::<N>(text, slot));
+        }))?;
+        if text.is_empty() {
+            if let Some(field) = decoded {
+                return transient(field);
+            }
+        }
+        borrowed(text)
+    }
     #[inline(always)]
     pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<ArrayInput<'de, Field<[u8; N]>>, D::Error> {
-        let mut field = ArrayInput::Borrowed("");
-        d.deserialize_string(TextVisitor(|text: Text<'de, '_>| {
-            field = match text {
-                Text::Borrowed(text) => ArrayInput::Borrowed(text),
-                Text::Transient(text) => ArrayInput::Decoded(P::parse::<N>(text)),
-            };
-        }))?;
-        Ok(field)
+        with_array::<D, P, _, N>(
+            d,
+            |s| Ok(ArrayInput::Borrowed(s)),
+            |v| Ok(ArrayInput::Decoded(v.copied())),
+        )
     }
+
     impl<const N: usize> ArrayInput<'_, Field<[u8; N]>> {
         #[inline(always)]
         pub(super) fn finish<P: Policy, E: Error>(self) -> Result<[u8; N], E> {
@@ -228,8 +261,11 @@ mod internal {
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
-        array_input::<D, P, N>(d)?.finish::<P, D::Error>()
+        with_array::<D, P, _, N>(d, P::decode::<D::Error, N>, |v| {
+            v.copied().map_err(D::Error::custom)
+        })
     }
+
     pub(crate) fn serialize_option<S, T>(
         data: &Option<T>,
         serializer: S,
