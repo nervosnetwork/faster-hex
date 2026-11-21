@@ -74,17 +74,30 @@ mod internal {
         }
     }
 
-    pub(crate) fn serialize<S, T>(
+    pub(crate) fn serialize<S: Serializer, T: AsRef<[u8]>>(
         data: T,
         serializer: S,
         with_prefix: bool,
         case: CheckCase,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        T: AsRef<[u8]>,
-    {
-        let src = data.as_ref();
+    ) -> Result<S::Ok, S::Error> {
+        write_encoded(data.as_ref(), serializer, with_prefix, case)
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) fn serialize_policy<S: Serializer, T: AsRef<[u8]>, P: Policy>(
+        data: T,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        write_encoded(data.as_ref(), serializer, P::PREFIX, P::CASE)
+    }
+
+    #[inline(always)]
+    fn write_encoded<S: Serializer>(
+        src: &[u8],
+        serializer: S,
+        with_prefix: bool,
+        case: CheckCase,
+    ) -> Result<S::Ok, S::Error> {
         let prefix: &[u8] = if with_prefix { b"0x" } else { b"" };
         let len = src
             .len()
@@ -499,7 +512,14 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                internal::serialize(data, serializer, $with_pfx, $check_case)
+                #[cfg(target_arch = "aarch64")]
+                {
+                    internal::serialize_policy::<_, _, Format>(data, serializer)
+                }
+                #[cfg(not(target_arch = "aarch64"))]
+                {
+                    internal::serialize(data, serializer, $with_pfx, $check_case)
+                }
             }
 
             /// Deserializes a hex string using this module's prefix and case policy.
