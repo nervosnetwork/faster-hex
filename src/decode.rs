@@ -373,18 +373,11 @@ pub fn hex_decode_array_with_case<const N: usize>(
             actual,
         });
     }
-    let mut bytes = [0; N];
     #[cfg(target_arch = "aarch64")]
-    if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
-        // A fixed short array can inline the existing NEON block by padding
-        // with valid digits, without reading beyond the source slice.
-        let mut input = [b'0'; 16];
-        input[..src.len()].copy_from_slice(src);
-        let mut output = [0; 8];
-        hex_decode_with_case(&input, &mut output, check_case)?;
-        bytes.copy_from_slice(&output[..N]);
-        return Ok(bytes);
+    if let Some(result) = decode_array_neon(src, check_case) {
+        return result;
     }
+    let mut bytes = [0; N];
     // SAFETY: The length check above matched the number of input pairs to N.
     unsafe { decode_owned(src, &mut bytes, check_case) }?;
     Ok(bytes)
@@ -396,10 +389,38 @@ pub(crate) fn decode_array_pairs<const N: usize>(
     input: &[[u8; 2]; N],
     case: CheckCase,
 ) -> Result<[u8; N], Error> {
+    let src = input.as_flattened();
+    #[cfg(target_arch = "aarch64")]
+    if let Some(result) = decode_array_neon(src, case) {
+        return result;
+    }
     let mut bytes = [0; N];
     // SAFETY: The array type supplies exactly one input pair for each private output byte.
-    unsafe { decode_owned(input.as_flattened(), &mut bytes, case) }?;
+    unsafe { decode_owned(src, &mut bytes, case) }?;
     Ok(bytes)
+}
+
+// Four decoded bytes fit in a padded NEON block. The callers supply exactly
+// two input bytes per array element; padding never reads beyond that input.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn decode_array_neon<const N: usize>(
+    src: &[u8],
+    case: CheckCase,
+) -> Option<Result<[u8; N], Error>> {
+    if N != 4 || crate::vectorization_support() != crate::Vectorization::Neon {
+        return None;
+    }
+    let mut digits = [b'0'; 16];
+    digits[..src.len()].copy_from_slice(src);
+    let mut output = [0; 8];
+    Some(
+        hex_decode_with_case(&digits, &mut output, case).map(|output| {
+            let mut bytes = [0; N];
+            bytes.copy_from_slice(&output[..N]);
+            bytes
+        }),
+    )
 }
 
 /// Decodes the complete input into a new vector, accepting either letter case.
