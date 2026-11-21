@@ -17,7 +17,7 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04-arm]
         lto: ["false"]
         mode: [fields]
-        family: [array-return]
+        family: [owned-fields]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -28,26 +28,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Measure the decoder and both ways of consuming its result
+      - name: Compare the released decoder and preceding field implementation
         env:
-          PRODUCT_REV: 669d692d8c2f493d6e1b6d7f51c75d300de4a005
+          PRODUCT_REV: 0459765ed956a8dd0a67b95b0bb66aedba0d81d9
           FIELD_COST: 1
+          OWNED_VECTORS: 1
         run: |
-          python3 verify/consumer.py
+          RESULTS=results/released python3 verify/consumer.py
+          REFERENCE_REV=669d692d8c2f493d6e1b6d7f51c75d300de4a005 RESULTS=results/previous python3 verify/consumer.py
           python3 verify/profile_fields.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: study-${{ matrix.family }}-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
           path: |
-            results/placement.json
+            results/*/host.txt
+            results/*/sections.json
+            results/*/independent-summary.json
             results/field-profile.json
-            results/profile.json
-            results/writer-layout.json
-            results/shared-writer.json
-            results/host.txt
-            results/sections.json
-            results/independent-summary.json
-            results/measurements.json
-            results/verdict.json
-            results/copy-spacing.txt

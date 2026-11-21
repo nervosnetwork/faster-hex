@@ -12,7 +12,7 @@ if (lto:=os.environ.get("CARGO_PROFILE_BENCH_LTO")): env["CARGO_PROFILE_RELEASE_
 pin=["taskset","-c",str(min(os.sched_getaffinity(0)))] if sys.platform=="linux" else []
 def output(a,**kwargs): return subprocess.check_output(a,env=env,text=True,**kwargs)
 def run(a,**kwargs): return subprocess.run(a,env=env,check=True,**kwargs)
-base="25cfd8eb6a4cd8257a96fabaf73771cabcced4b4"
+base=os.environ.get("REFERENCE_REV","25cfd8eb6a4cd8257a96fabaf73771cabcced4b4")
 head=os.environ["PRODUCT_REV"]
 cases={"encode":[8,32],"owned_string":[32],"decode":[4,32],"prefix":[12],
        "serialize":[10,32,256],"deserialize":[10,32],"field4":[4],"field4096":[4096]}
@@ -121,6 +121,9 @@ if os.environ.get("FIELD_COST"):
   ops[name]=('',f'black_box({expr});')
   ops[name+'_ref']=('',f'let value={expr}; black_box(&value);')
  cases={k:[4096] for k in ops}
+ if os.environ.get("OWNED_VECTORS"):
+  ops['raw_vec']=('', 'black_box(faster_hex::hex_decode_vec(black_box(&hex)).unwrap());')
+  cases['raw_vec']=[0,4,32,256,1024,1025,4096]
  for f in bins.glob('*.rs'):
   if f.stem not in cases: f.unlink()
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
