@@ -70,6 +70,16 @@ impl<'de,D:serde::Deserializer<'de>> serde::Deserializer<'de> for Present<D>{
   for n in [1023,1024,1025,4095,4097,8192]:
    k="transient"+str(n)
    cases[k]=[n];ops[k]=("",f'black_box(faster_hex::array::deserialize::<_,{n}>(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(black_box(&field))).unwrap());')
+ if os.environ.get('SHORT_FIELDS'):
+  cases={k:v for k,v in cases.items() if k in ['field4','field4096','transient4096','error4096','bad4096','option32','json32']}
+  for n in [1,2,3,4,5,6,7,8]:
+   for op in ['array','field']:
+    name=op+str(n)
+    cases[name]=[n]
+    if op=='array':
+     ops[name]=('',f'black_box(faster_hex::hex_decode_array::<{n}>(black_box(&hex)).unwrap());')
+    else:
+     ops[name]=('',ops['field4096'][1].replace('4096',str(n)))
  ops={k:v for k,v in ops.items() if k in cases}
  shutil.rmtree(bins);bins.mkdir()
 elif os.environ.get('EXISTING_CONTROLS'):
