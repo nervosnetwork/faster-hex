@@ -14,10 +14,16 @@ pub fn required_traits() {
     value::<CheckCase>();
     error::<Error>();
     formatting::<Hex<'_>>();
+    formatting::<faster_hex::LeadingDigits<'_>>();
     let _: CheckCase = Default::default();
 }
 
 pub const EMPTY: Hex<'static> = Hex::new(&[]);
+pub const SHORT: faster_hex::LeadingDigits<'static> = EMPTY.leading_digits(7);
+
+pub fn short_into<'dst>(src: &[u8], dst: &'dst mut [u8]) -> Result<&'dst mut str, Error> {
+    Hex::new(src).leading_digits(7).encode_to(dst)
+}
 
 // Preserve exact return types and independent source/destination lifetimes.
 // Generic rustdoc lints do not catch every change between non-unit types.
@@ -31,6 +37,7 @@ const _: Encode = faster_hex::hex_encode_upper;
 const _: Decode = faster_hex::hex_decode;
 const _: DecodeCase = faster_hex::hex_decode_with_case;
 const _: fn(&[u8]) -> bool = faster_hex::hex_check;
+const _: fn(&[u8]) -> Result<(), Error> = faster_hex::hex_validate;
 const _: fn(&[u8], CheckCase) -> bool = faster_hex::hex_check_with_case;
 const _: fn(&[u8]) -> Result<[u8; 32], Error> = faster_hex::hex_decode_array::<32>;
 const _: fn(&[u8], CheckCase) -> Result<[u8; 32], Error> =
@@ -44,6 +51,7 @@ pub fn owned_output() {
     let mut string: alloc::string::String = faster_hex::hex_string(&[0]);
     faster_hex::hex_append_upper(&[255], &mut string);
     let _: alloc::vec::Vec<u8> = faster_hex::hex_decode_vec(b"ff").unwrap();
+    let _: &mut [u8] = faster_hex::hex_decode_append(b"ff", &mut alloc::vec::Vec::new()).unwrap();
     let _: alloc::vec::Vec<u8> =
         faster_hex::hex_decode_vec_with_case(b"FF", CheckCase::Upper).unwrap();
 }

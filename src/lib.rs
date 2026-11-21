@@ -26,11 +26,14 @@
 //! | Decode into a byte buffer | [`hex_decode`], [`hex_decode_with_case`] |
 //! | Decode an exact-length array | [`hex_decode_array`], [`hex_decode_array_with_case`] |
 //! | Format borrowed bytes into text | [`Hex`] with [`Display`](core::fmt::Display), [`LowerHex`](core::fmt::LowerHex) or [`UpperHex`](core::fmt::UpperHex) |
+//! | Format the first few hex digits or write them into a buffer | [`Hex::leading_digits`], [`LeadingDigits::encode_to`] |
 //! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
+//! | Validate complete byte pairs with error positions | [`hex_validate`] |
 //!
-//! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
-//! `hex_append` and `hex_append_upper` reuse a string's capacity;
-//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors.
+//! With `alloc`, `hex_string` and `hex_string_upper` create owned strings.
+//! `hex_append` and `hex_append_upper` reuse a string's capacity.
+//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors,
+//! and `hex_decode_append` appends to an existing one.
 //! The `heapless-09` feature provides fixed-capacity strings in `heapless_09`.
 //!
 //! # Conversion contracts
@@ -62,7 +65,7 @@
 //! | Feature | Provides |
 //! | --- | --- |
 //! | None | Slice and fixed-array conversion, borrowed formatting, and `core::error::Error` |
-//! | `alloc` | Owned strings and byte vectors; appending to strings |
+//! | `alloc` | Owned strings and byte vectors, including appending to either |
 //! | `std` | `alloc` and standard-library support in enabled dependencies |
 //! | `serde` | Serde adapters and `alloc`; also works without `std` |
 //! | `heapless-09` | Fixed-capacity strings using `heapless` 0.9, without requiring `alloc` |
@@ -84,7 +87,7 @@
 //! selection, SIMD thresholds and instruction sequences are implementation details;
 //! no public backend selection or architecture-specific call is required.
 //!
-//! The minimum supported Rust version is 1.95.0 throughout the 2.0.x line.
+//! The minimum supported Rust version is 1.95.0.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -183,7 +186,7 @@ mod serde;
 
 pub use crate::decode::{
     hex_check, hex_check_with_case, hex_decode, hex_decode_array, hex_decode_array_with_case,
-    hex_decode_with_case, CheckCase,
+    hex_decode_with_case, hex_validate, CheckCase,
 };
 pub use crate::encode::{hex_encode, hex_encode_upper};
 
@@ -191,10 +194,10 @@ pub use crate::encode::{hex_encode, hex_encode_upper};
 pub use crate::encode::{hex_append, hex_append_upper, hex_string, hex_string_upper};
 
 #[cfg(feature = "alloc")]
-pub use crate::decode::{hex_decode_vec, hex_decode_vec_with_case};
+pub use crate::decode::{hex_decode_append, hex_decode_vec, hex_decode_vec_with_case};
 
 pub use crate::error::Error;
-pub use crate::format::Hex;
+pub use crate::format::{Hex, LeadingDigits};
 
 #[cfg(feature = "serde")]
 pub use crate::serde::withpfx_ignorecase::array;

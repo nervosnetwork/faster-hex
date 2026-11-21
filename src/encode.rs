@@ -17,8 +17,7 @@ use core::mem::MaybeUninit;
 use crate::error::Error;
 
 // SIMD callers establish CPU/OS support and exactly twice the source length
-// in destination space. Kernels initialize every output byte as ASCII; only
-// encode() exposes the initialized prefix as a string.
+// in destination space. Each kernel initializes its output with ASCII.
 const TABLE_LOWER: &[u8; 16] = b"0123456789abcdef";
 const TABLE_UPPER: &[u8; 16] = b"0123456789ABCDEF";
 
@@ -154,6 +153,21 @@ pub(crate) fn encode<'a>(
             len,
         ))
     })
+}
+
+// An odd digit count always selects at least the high nibble of the last byte.
+#[inline]
+pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+    let (&last, pairs) = src.split_last().expect("an odd prefix selects a byte");
+    let required = pairs.len() * 2 + 1;
+    let output = dst
+        .get_mut(..required)
+        .ok_or(Error::OutputTooSmall { required })?;
+    let written = hex_encode(pairs, output)?.len();
+    output[written] = TABLE_LOWER[usize::from(last >> 4)];
+    // SAFETY: hex_encode wrote the complete pairs as ASCII. The only
+    // remaining byte was filled from the ASCII digit table.
+    Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
 }
 
 /// Encodes all of `src` as lowercase hex into `dst` without allocation.
@@ -383,11 +397,14 @@ unsafe fn encode_sse41_16(src: &[u8; 16], dst: &mut [MaybeUninit<u8>; 32], table
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
+    let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
+    let table = vld1q_u8(table.as_ptr());
+    if src.len() > 32 {
+        return encode_neon_bulk(src, dst, table);
+    }
     if src.len() < 8 {
         return hex_encode_custom_case_fallback(src, dst, upper_case);
     }
-    let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
-    let table = vld1q_u8(table.as_ptr());
     if src.len() < 16 {
         if let (Some(input), Some(output)) = (src.first_chunk::<8>(), dst.first_chunk_mut::<16>()) {
             encode_neon_8(input, output, table);
@@ -400,6 +417,21 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
+    // First and last vectors cover a short hash. Overlap writes the same digits.
+    if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
+        encode_neon_16(input, output, table);
+    }
+    if src.len() > 16 {
+        if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+            encode_neon_16(input, output, table);
+        }
+    }
+}
+
+#[inline]
+#[target_feature(enable = "neon")]
+#[cfg(target_arch = "aarch64")]
+unsafe fn encode_neon_bulk(src: &[u8], dst: &mut [MaybeUninit<u8>], table: uint8x16_t) {
     let (batches, rest) = src.as_chunks::<64>();
     let (outputs, remaining) = dst.as_chunks_mut::<128>();
     for (input, output) in batches.iter().zip(outputs) {
@@ -419,9 +451,8 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     if !tail.is_empty() {
         // Re-encode the last complete block to cover a short tail. The overlap
         // writes the same bytes and never accesses outside either slice.
-        match (src.last_chunk::<16>(), dst.last_chunk_mut::<32>()) {
-            (Some(input), Some(output)) => encode_neon_16(input, output, table),
-            _ => hex_encode_custom_case_fallback(src, dst, upper_case),
+        if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+            encode_neon_16(input, output, table);
         }
     }
 }

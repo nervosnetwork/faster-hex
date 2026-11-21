@@ -52,8 +52,9 @@ pub enum Error {
     OutputTooSmall {
         /// The full required destination capacity in bytes, not the shortfall.
         ///
-        /// This is twice the input length for encoding and half the even input
-        /// length for decoding.
+        /// Full-byte encoding requires twice the input length. A
+        /// [`LeadingDigits`](crate::LeadingDigits) view requires one byte per
+        /// selected digit. Decoding requires half the even input length.
         required: usize,
     },
     /// An array decoder's input has the wrong decoded length.
