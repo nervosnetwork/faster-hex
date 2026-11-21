@@ -97,8 +97,17 @@ def linked(refs, names, label):
     return built
 
 def section(exe):
+    image=exe.read_bytes()
+    loads={}
     if sys.platform == "darwin":
         header=subprocess.check_output(["otool","-l",exe],text=True)
+        for desc in header.split("Section\n")[1:]:
+            fields=re.match(r"\s*sectname (\S+)\s+segname (\S+)\s+addr (\S+)\s+size (\S+)\s+offset (\S+)",desc)
+            if fields:
+                field,segment,addr,length,start=fields.groups()
+                addr,length,start=(int(v,0) for v in (addr,length,start))
+                content=image[start:start+length] if start else b""
+                loads[segment+"/"+field]=[addr,length,hashlib.sha256(content).hexdigest()]
         part=next(x for x in header.split("Section\n") if re.match(r"\s*sectname __text\s+segname __TEXT",x))
         address,size,offset=[int(re.search(r"\b"+n+r"\s+(\S+)",part)[1],0) for n in ["addr","size","offset"]]
         data=exe.read_bytes()[offset:offset+size]
@@ -108,7 +117,16 @@ def section(exe):
         header=subprocess.check_output(["objdump","-h",exe],text=True)
         address=int(next(l.split()[3] for l in header.splitlines() if re.search(r"^\s*\d+\s+\.text\s",l)),16)
         data=part.read_bytes()
-    return {"address":address,"bytes":len(data),"sha256":hashlib.sha256(data).hexdigest()}
+        sections=subprocess.check_output(["readelf","-SW",exe],text=True)
+        for row in sections.splitlines():
+            fields=re.match(r"\s*\[\s*\d+\]\s+(\.\S+)\s+(\S+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+[0-9a-f]+\s+(\S+)\s+",row)
+            if fields and "A" in fields[6]:
+                field,kind,addr,start,length,_=fields.groups()
+                addr,start,length=(int(v,16) for v in (addr,start,length))
+                content=b"" if kind=="NOBITS" else image[start:start+length]
+                loads[field]=[addr,length,hashlib.sha256(content).hexdigest()]
+    return {"address":address,"bytes":len(data),"sha256":hashlib.sha256(data).hexdigest(),
+            "file_sha256":hashlib.sha256(image).hexdigest(),"loaded":loads}
 
 def estimate(path):
     obj=json.loads(path.read_text())

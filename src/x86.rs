@@ -10,33 +10,39 @@ pub(super) fn basic(
     if max_leaf < 1 {
         return Vectorization::None;
     }
-    let features = leaf1_ecx();
-    if features & (1 << 19) == 0 {
+    let proc_info_ecx = leaf1_ecx();
+    let have_sse4 = (proc_info_ecx >> 19) & 1 == 1;
+    // Every accelerated x86 backend requires SSE4.1.
+    if !have_sse4 {
         return Vectorization::None;
     }
-    const XSAVE_OSXSAVE_AVX: u32 = (1 << 26) | (1 << 27) | (1 << 28);
-    if max_leaf < 7 || features & XSAVE_OSXSAVE_AVX != XSAVE_OSXSAVE_AVX {
-        return Vectorization::SSE41;
+
+    let have_xsave = (proc_info_ecx >> 26) & 1 == 1;
+    let have_osxsave = (proc_info_ecx >> 27) & 1 == 1;
+    let have_avx = (proc_info_ecx >> 28) & 1 == 1;
+    if max_leaf >= 7 && have_xsave && have_osxsave && have_avx {
+        return avx();
     }
-    avx()
+    Vectorization::SSE41
 }
 
 #[inline(always)]
-pub(super) fn extended(state: u64, leaf7_ebx: impl FnOnce() -> u32) -> Vectorization {
-    if state & 0x06 != 0x06 {
-        return Vectorization::SSE41;
+pub(super) fn extended(xcr0: u64, leaf7_ebx: impl FnOnce() -> u32) -> Vectorization {
+    let os_avx_support = xcr0 & 6 == 6;
+    if os_avx_support {
+        let extended_features_ebx = leaf7_ebx();
+        let have_avx2 = (extended_features_ebx >> 5) & 1 == 1;
+        if have_avx2 {
+            // AVX-512 needs opmask and both ZMM state components in addition
+            // to SSE/AVX state. CPUID alone is insufficient for safe dispatch.
+            let avx512 = (1 << 16) | (1 << 30); // AVX-512F and AVX-512BW.
+            if xcr0 & 0xe6 == 0xe6 && extended_features_ebx & avx512 == avx512 {
+                return Vectorization::AVX512;
+            }
+            return Vectorization::AVX2;
+        }
     }
-    let extended = leaf7_ebx();
-    if extended & (1 << 5) == 0 {
-        return Vectorization::SSE41;
-    }
-    // AVX-512 also requires opmask and both ZMM state components.
-    const AVX512F_BW: u32 = (1 << 16) | (1 << 30);
-    if state & 0xe0 == 0xe0 && extended & AVX512F_BW == AVX512F_BW {
-        Vectorization::AVX512
-    } else {
-        Vectorization::AVX2
-    }
+    Vectorization::SSE41
 }
 
 #[cfg(test)]
