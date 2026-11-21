@@ -115,11 +115,22 @@ mod internal {
             heap = Vec::<u8>::with_capacity(len);
             &mut heap.spare_capacity_mut()[..len]
         };
-        for (slot, &byte) in dst.iter_mut().zip(prefix) {
-            slot.write(byte);
-        }
-        encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
-            .map_err(serde::ser::Error::custom)?;
+        #[cfg(target_arch = "aarch64")]
+        let output = {
+            let (prefix_bytes, body) = dst.split_at_mut(prefix.len());
+            for (slot, &byte) in prefix_bytes.iter_mut().zip(prefix) {
+                slot.write(byte);
+            }
+            body
+        };
+        #[cfg(not(target_arch = "aarch64"))]
+        let output = {
+            for (slot, &byte) in dst.iter_mut().zip(prefix) {
+                slot.write(byte);
+            }
+            &mut dst[prefix.len()..]
+        };
+        encode(src, output, case == CheckCase::Upper).map_err(serde::ser::Error::custom)?;
         // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
         // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
         // backing stack buffer or allocation stays live throughout serialization.
