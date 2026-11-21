@@ -182,6 +182,18 @@ if diagnostics:
 if os.environ.get("OWNED_VECTORS"):
  ops['raw_vec']=('', 'black_box(faster_hex::hex_decode_vec(black_box(&hex)).unwrap());')
  cases['raw_vec']=[0,4,32,256,1024,1025,4096]
+study=os.environ.get("PAIR_STUDY")
+if study:
+ if study=="blocks":
+  cases={"decode":[32,96,97,127,128,129,255,256,257,4096]}
+ elif study=="fixed":
+  cases={k:cases[k] for k in ["array8","array32","field4","field20","json32","option32","json4096","option4096","transient4096","escapedoption4096"]}
+ elif study=="json":
+  cases={"hash_slice":[32],"hash_reader":[32],"mixed":[32,256,4096],"escapedmixed":[32,4096]}
+ else:raise ValueError(study)
+ ops={k:ops[k] for k in cases}
+ for file in bins.glob("*.rs"):
+  if file.stem not in cases:file.unlink()
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
 for k,(defs,op) in ops.items():
  prepare="let payload=Payload{bytes:bytes.clone()};" if k=="serialize" else ""
@@ -267,7 +279,7 @@ for role,rev in [('base',base),('head',head)]:
    (out/(role+"-"+name+".asm")).write_text(output(["objdump","-d","-C","--disassemble=run_sample",dest/name]))
 if os.environ.get("FIELD_OBJECTS"):
  for role in ("base","head"):
-  for name in ("json32","option32","hash_slice","mixed","array32"):
+  for name in ("json32","option32","hash_slice","mixed","array32","array8"):
    if name not in cases:continue
    asm=output(["objdump","-dC","--no-show-raw-insn",work/role/name])
    chunks=re.split(r"(?m)(?=^[0-9a-fA-F]+ <.+>:$)",asm)
