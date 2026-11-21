@@ -136,6 +136,10 @@ def regress():
     }
     if os.environ.get('FOCUS_REGRESS'):
         cases={n for n in cases if n in {'field/borrowed_array/4','field/borrowed_array/32','field/wrong_length_field/4096','decode/faster_hex_mixed/4','decode_array/faster_hex/4','serde_json/serialize_reuse/10','serde_json/serialize_reuse/32','serde_json/serialize_reuse/65','serde_json/deserialize/65'}}
+    if os.environ.get('WRITER_FOCUS'):
+        cases={f"serde_json/{op}/{n}" for op in ["serialize_reuse","serialize_text_reuse"] for n in [10,32,65,256,4096]}
+        # The bare JSON writer receives pre-encoded text and never calls the hex crate.
+        # Retain its same-executable timings for each candidate, including the reversed-link trials.
     bins={r: standalone(r,ref) for r,ref in [("base",base),("head",head)]}
     times={}
     for label in ["base1","head1","head2","base2"]:
@@ -157,6 +161,8 @@ def regress():
     confirmed=set()
     if suspect or os.environ.get("FORCE_LINKED"):
         pool=suspect or cases
+        if os.environ.get('WRITER_FOCUS'):
+            pool=cases
         names=[k for k,exe in bins["base"].items() if any((n+": benchmark") in subprocess.check_output([exe,"--list"],text=True) for n in pool)]
         forward=linked({"a":base,"b":head},names,"linked-forward")
         reverse=linked({"a":head,"b":base},names,"linked-reverse")
