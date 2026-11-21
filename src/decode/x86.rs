@@ -370,60 +370,51 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
             _mm256_extracti128_si256::<1>(packed),
         );
     } else if src.len() <= 128 {
-        let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        let (b, b_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
-        let (c, c_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 64).cast()),
-            case,
-        );
-        let (d, d_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
-            case,
-        );
-        let checked = _mm256_or_si256(
-            _mm256_or_si256(a_checked, b_checked),
-            _mm256_or_si256(c_checked, d_checked),
-        );
-        if _mm256_movemask_epi8(checked) != 0 {
-            return Err(());
-        }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(c, d));
+        return decode_avx2_windows::<2>(src, dst, case);
     } else if src.len() <= 192 {
-        let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        let (b, b_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
-        let (c, c_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(64).cast()), case);
-        let (d, d_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(96).cast()), case);
-        let (e, e_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 64).cast()),
-            case,
-        );
-        let (f, f_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
-            case,
-        );
-        let checked = _mm256_or_si256(
-            _mm256_or_si256(a_checked, b_checked),
-            _mm256_or_si256(
-                _mm256_or_si256(c_checked, d_checked),
-                _mm256_or_si256(e_checked, f_checked),
-            ),
-        );
-        if _mm256_movemask_epi8(checked) != 0 {
-            return Err(());
-        }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx2(c, d));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(e, f));
+        return decode_avx2_windows::<3>(src, dst, case);
+    } else if src.len() <= 256 {
+        return decode_avx2_windows::<4>(src, dst, case);
     } else {
         if !hex_check_avx2_with_case(src, case) {
             return Err(());
         }
         hex_decode_avx2(src, dst);
+    }
+    Ok(())
+}
+
+// Each window consumes 64 digits and produces one vector. The last window
+// ends at the slice boundary and may overlap its predecessor. Retain the
+// input vectors for conversion after every digit has passed the case check.
+// The caller selects N = ceil(src.len() / 64) and supplies src.len() / 2
+// output bytes. All N - 1 leading windows are therefore complete.
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn decode_avx2_windows<const N: usize>(
+    src: &[u8],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), ()> {
+    let blocks: [(__m256i, __m256i); N] = core::array::from_fn(|i| {
+        let start = if i + 1 == N { src.len() - 64 } else { i * 64 };
+        let input = src.as_ptr().add(start);
+        (
+            _mm256_loadu_si256(input.cast()),
+            _mm256_loadu_si256(input.add(32).cast()),
+        )
+    });
+    let mut valid = _mm256_set1_epi8(-1);
+    for &(a, b) in &blocks {
+        let pair = _mm256_and_si256(valid_avx2(a, case), valid_avx2(b, case));
+        valid = _mm256_and_si256(valid, pair);
+    }
+    if _mm256_movemask_epi8(valid) != -1 {
+        return Err(());
+    }
+    for (i, &(a, b)) in blocks.iter().enumerate() {
+        let start = if i + 1 == N { dst.len() - 32 } else { i * 32 };
+        _mm256_storeu_si256(dst.as_mut_ptr().add(start).cast(), decode_avx2_block(a, b));
     }
     Ok(())
 }
