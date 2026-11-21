@@ -188,31 +188,34 @@ mod internal {
         Decoded(T),
     }
 
-    struct ArrayReader<F>(F);
-
-    impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for ArrayReader<F> {
-        type Value = ArrayInput<'de, T>;
+    // The text lives until completion only when the format lends it. With a transient
+    // value the callback stores the decoded field before this visitor returns.
+    struct BorrowText<F>(F);
+    impl<'de, F: FnOnce(&str)> Visitor<'de> for BorrowText<F> {
+        type Value = &'de str;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            Ok(ArrayInput::Decoded((self.0)(text)))
+            (self.0)(text);
+            Ok("")
         }
         fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(ArrayInput::Borrowed(text))
+            Ok(text)
         }
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
-            let text = core::str::from_utf8(bytes)
-                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
-            self.visit_str(text)
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
         }
         fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
-            let text = core::str::from_utf8(bytes)
-                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
-            self.visit_borrowed_str(text)
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_borrowed_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
         }
     }
-
     #[inline(always)]
     fn with_array<'de, D: Deserializer<'de>, P: Policy, R, const N: usize>(
         d: D,
@@ -220,15 +223,19 @@ mod internal {
         transient: impl FnOnce(Field<&[u8; N]>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
+        let mut decoded = None;
         let slot = &mut storage;
-        let input = d.deserialize_string(ArrayReader(move |text: &str| {
+        let result = &mut decoded;
+        let text = d.deserialize_string(BorrowText(move |text: &str| {
             let slot = slot;
-            P::fill::<N>(text, slot)
+            *result = Some(P::fill::<N>(text, slot));
         }))?;
-        match input {
-            ArrayInput::Borrowed(text) => borrowed(text),
-            ArrayInput::Decoded(field) => transient(field),
+        if text.is_empty() {
+            if let Some(field) = decoded {
+                return transient(field);
+            }
         }
+        borrowed(text)
     }
     #[inline(always)]
     pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
