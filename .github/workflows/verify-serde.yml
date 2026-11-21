@@ -15,16 +15,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {family: storage, mode: fields, os: ubuntu-22.04, lto: "thin"}
-          - {family: storage, mode: mixed, os: ubuntu-22.04, lto: "thin"}
-          - {family: storage, mode: existing, os: ubuntu-22.04, lto: "thin"}
-          - {family: storage, mode: regress, os: ubuntu-22.04, lto: "thin"}
-          - {family: storage, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: storage, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: storage, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: storage, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
-          - {family: storage, mode: fields, os: ubuntu-24.04, lto: "thin"}
-          - {family: storage, mode: mixed, os: ubuntu-24.04, lto: "thin"}
+          - {family: available, mode: fields, os: ubuntu-22.04, lto: "false"}
+          - {family: available, mode: mixed, os: ubuntu-22.04, lto: "false"}
+          - {family: available, mode: fields, os: ubuntu-22.04, lto: "thin"}
+          - {family: available, mode: mixed, os: ubuntu-22.04, lto: "thin"}
+          - {family: available, mode: fields, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: available, mode: mixed, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: available, mode: fields, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: available, mode: mixed, os: ubuntu-24.04-arm, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -36,7 +34,7 @@ jobs:
         with:
           toolchain: 1.95.0
       - run: |
-          PRODUCT_REV=cb4bc9a455a9575ecb5e3f3429c0db2fa124ce1d
+          PRODUCT_REV=3cca1b4cedcec7e85e75fb214f7868107728f83b
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = fields ]; then
             RELEASE_FIELDS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
