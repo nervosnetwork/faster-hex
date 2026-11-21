@@ -159,6 +159,7 @@ mod internal {
         const PREFIX: bool;
         const CASE: CheckCase;
 
+        #[inline(always)]
         fn parse<const N: usize>(text: &str) -> Field<[u8; N]> {
             let payload = payload(text, Self::PREFIX, FieldError::Text)?;
             hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(FieldError::Hex)
@@ -177,8 +178,8 @@ mod internal {
         Decoded(T),
     }
 
-    // Borrowed text survives the call. For transient text, save the decoded field
-    // and return an empty string. A genuinely empty borrow leaves the slot empty.
+    // The text lives until completion only when the format lends it. With a transient
+    // value the callback stores the decoded field before this visitor returns.
     struct BorrowText<F>(F);
     impl<'de, F: FnOnce(&str)> Visitor<'de> for BorrowText<F> {
         type Value = &'de str;
@@ -767,18 +768,11 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 where
                     D: serde::Deserializer<'de>,
                 {
-                    use internal::Policy;
                     use serde::Deserialize;
 
-                    match Option::<Array<'de, N>>::deserialize(deserializer)? {
-                        None => Ok(None),
-                        Some(Array(internal::ArrayInput::Borrowed(text))) => {
-                            Ok(Some(ArrayPolicy::decode(text)?))
-                        }
-                        Some(Array(internal::ArrayInput::Decoded(field))) => {
-                            Ok(Some(field.map_err(serde::de::Error::custom)?))
-                        }
-                    }
+                    Option::<Array<'de, N>>::deserialize(deserializer)?
+                        .map(|Array(input)| input.finish::<ArrayPolicy, D::Error>())
+                        .transpose()
                 }
             }
         }
