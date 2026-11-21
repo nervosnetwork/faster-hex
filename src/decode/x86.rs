@@ -90,64 +90,62 @@ pub(crate) unsafe fn hex_check_sse_with_case(src: &[u8], case: CheckCase) -> boo
     true
 }
 
+// Add a wrapping bias so the accepted unsigned ASCII interval starts at -128.
+// A signed comparison then rejects both bytes below the interval and above it.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn valid_avx2(bytes: __m256i, case: CheckCase) -> __m256i {
+    let digit = _mm256_cmpgt_epi8(
+        _mm256_set1_epi8(-118),
+        _mm256_add_epi8(bytes, _mm256_set1_epi8(80)),
+    );
+    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+    let letters = _mm256_or_si256(bytes, _mm256_set1_epi8(fold));
+    let letter = _mm256_cmpgt_epi8(
+        _mm256_set1_epi8(-122),
+        _mm256_add_epi8(letters, _mm256_set1_epi8(128u8.wrapping_sub(first) as i8)),
+    );
+    _mm256_or_si256(digit, letter)
+}
+
 #[target_feature(enable = "avx2")]
 #[inline]
 pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 32 {
         return hex_check_sse_with_case(src, case);
     }
-    // The high nibble selects the required class. The low nibble permits
-    // digits at 0..=9 and letters at 1..=6. No low nibble permits INVALID.
-    const DIGIT: i8 = 1;
-    const LETTER: i8 = 2;
-    const BOTH: i8 = DIGIT | LETTER;
-    const INVALID: i8 = 4;
-    let upper = if case == CheckCase::Lower {
-        INVALID
-    } else {
-        LETTER
-    };
-    let lower = if case == CheckCase::Upper {
-        INVALID
-    } else {
-        LETTER
-    };
-    let required = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-        INVALID, INVALID, INVALID, DIGIT, upper, INVALID, lower, INVALID, INVALID, INVALID,
-        INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,
-    ));
-    let permitted = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-        DIGIT, BOTH, BOTH, BOTH, BOTH, BOTH, BOTH, DIGIT, DIGIT, DIGIT, 0, 0, 0, 0, 0, 0,
-    ));
-    let rejected = |block: &[u8; 32]| {
-        let bytes = _mm256_loadu_si256(block.as_ptr().cast());
-        let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), _mm256_set1_epi8(15));
-        _mm256_andnot_si256(
-            _mm256_shuffle_epi8(permitted, bytes),
-            _mm256_shuffle_epi8(required, high),
-        )
-    };
+    // Reduce four vectors together so long inputs need fewer mask tests.
     let (batches, rest) = src.as_chunks::<128>();
     for batch in batches {
-        let mut invalid = _mm256_setzero_si256();
+        let mut valid = _mm256_set1_epi8(-1);
         for block in batch.as_chunks::<32>().0 {
-            invalid = _mm256_or_si256(invalid, rejected(block));
+            valid = _mm256_and_si256(
+                valid,
+                valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case),
+            );
         }
-        if _mm256_testz_si256(invalid, invalid) == 0 {
+        if _mm256_movemask_epi8(valid) != -1 {
             return false;
         }
     }
     let (blocks, tail) = rest.as_chunks::<32>();
-    let mut invalid = _mm256_setzero_si256();
+    let mut valid = _mm256_set1_epi8(-1);
     for block in blocks {
-        invalid = _mm256_or_si256(invalid, rejected(block));
+        valid = _mm256_and_si256(
+            valid,
+            valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case),
+        );
     }
     if !tail.is_empty() {
         if let Some(last) = src.last_chunk::<32>() {
-            invalid = _mm256_or_si256(invalid, rejected(last));
+            valid = _mm256_and_si256(
+                valid,
+                valid_avx2(_mm256_loadu_si256(last.as_ptr().cast()), case),
+            );
         }
     }
-    _mm256_testz_si256(invalid, invalid) != 0
+    _mm256_movemask_epi8(valid) == -1
 }
 
 #[inline]

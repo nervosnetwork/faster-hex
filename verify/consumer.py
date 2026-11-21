@@ -148,6 +148,10 @@ if kernel=="mask":
         "check_first":[32,128,4096],"check_last":[32,127,128,4096]}
  if focused:cases={"decode":[32,96,97,256,4096],"check_mixed":[32,128,4096],
                    "check_lower":[128],"check_upper":[128],"check_last":[4096]}
+ if focused=="cases":
+  cases={"decode":[4,32,256,4096],"check_mixed":[31,32,63,128,4096],
+         "check_lower":[32,128,4096],"check_upper":[32,128,4096],
+         "check_first":[32,4096],"check_last":[4096]}
  ops={"decode":ops["decode"]}
  for name in cases:
   if name.startswith("check_"):
