@@ -187,7 +187,8 @@ mod internal {
             storage: &'a mut MaybeUninit<[u8; N]>,
         ) -> Field<&'a [u8; N]> {
             let payload = payload(text, Self::PREFIX, FieldError::Text)?;
-            crate::decode::decode_array_into(payload.as_bytes(), storage, Self::CASE)
+            hex_decode_array_with_case(payload.as_bytes(), Self::CASE)
+                .map(move |value| &*storage.write(value))
                 .map_err(FieldError::Hex)
         }
 
