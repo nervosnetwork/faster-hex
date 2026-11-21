@@ -13,6 +13,18 @@ struct TextPayload<'a> {
     bytes: &'a str,
 }
 
+fn array_field<const N: usize>(c: &mut Criterion, name: &str, read: impl Fn(&str) -> [u8; N]) {
+    let plain = format!(r#""0x{}""#, "ab".repeat(N));
+    let escaped = plain.replacen('a', r"\u0061", 1);
+    let mut group = c.benchmark_group(format!("serde_json/{name}"));
+    for (kind, json) in [("plain", plain), ("escaped", escaped)] {
+        assert_eq!(read(&json), [0xab; N]);
+        group.bench_with_input(BenchmarkId::new(kind, N), &json, |b, json| {
+            b.iter(|| read(black_box(json)));
+        });
+    }
+}
+
 fn serde(c: &mut Criterion) {
     let mut group = c.benchmark_group("serde_json");
     for len in [0, 10, 32, 64, 65, 66, 256, 4096] {
@@ -67,6 +79,22 @@ fn serde(c: &mut Criterion) {
         }
     }
     group.finish();
+
+    #[derive(Deserialize)]
+    struct Hash(#[serde(with = "faster_hex::array")] [u8; 32]);
+    #[derive(Deserialize)]
+    struct OptionalBlock(
+        #[serde(with = "faster_hex::option_withpfx_ignorecase::array")] Option<[u8; 4096]>,
+    );
+    array_field(c, "array", |json| {
+        serde_json::from_str::<Hash>(json).unwrap().0
+    });
+    array_field(c, "option_array", |json| {
+        serde_json::from_str::<OptionalBlock>(json)
+            .unwrap()
+            .0
+            .unwrap()
+    });
 }
 
 fn postcard(c: &mut Criterion) {
