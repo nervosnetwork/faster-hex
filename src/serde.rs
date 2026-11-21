@@ -5,7 +5,7 @@ use core::iter::FromIterator;
 mod internal {
     use crate::{decode::CheckCase, encode::encode};
     use alloc::vec::Vec;
-    use core::{fmt, mem::MaybeUninit};
+    use core::{convert::TryInto, fmt, mem::MaybeUninit};
     use serde::{
         de::{Error, Unexpected, Visitor},
         Deserializer, Serialize, Serializer,
@@ -172,16 +172,15 @@ mod internal {
         fn array_payload<const N: usize, E>(
             text: &str,
             error: impl Fn(FieldError) -> E,
-        ) -> Result<&[u8], E> {
+        ) -> Result<&[[u8; 2]; N], E> {
             let pairs = payload(text, Self::PREFIX, |s| error(FieldError::Text(s)))?;
             let actual = pairs.len();
-            if actual != N {
-                return Err(error(FieldError::Hex(crate::Error::LengthMismatch {
+            pairs.try_into().map_err(|_| {
+                error(FieldError::Hex(crate::Error::LengthMismatch {
                     expected: N,
                     actual,
-                })));
-            }
-            Ok(pairs.as_flattened())
+                }))
+            })
         }
 
         #[inline(always)]
@@ -189,8 +188,8 @@ mod internal {
             text: &str,
             error: impl Fn(FieldError) -> E,
         ) -> Result<[u8; N], E> {
-            let src = Self::array_payload::<N, _>(text, &error)?;
-            crate::hex_decode_array_with_case(src, Self::CASE)
+            let pairs = Self::array_payload::<N, _>(text, &error)?;
+            crate::hex_decode_array_with_case(pairs.as_flattened(), Self::CASE)
                 .map_err(|e| error(FieldError::Hex(e)))
         }
 
@@ -199,14 +198,14 @@ mod internal {
             text: &str,
             storage: &'out mut MaybeUninit<[u8; N]>,
         ) -> Field<&'out [u8; N]> {
-            let src = Self::array_payload::<N, _>(text, core::convert::identity)?;
+            let pairs = Self::array_payload::<N, _>(text, core::convert::identity)?;
             if N < 8 {
-                let bytes =
-                    crate::hex_decode_array_with_case(src, Self::CASE).map_err(FieldError::Hex)?;
+                let bytes = crate::hex_decode_array_with_case(pairs.as_flattened(), Self::CASE)
+                    .map_err(FieldError::Hex)?;
                 return Ok(storage.write(bytes));
             }
             let bytes = storage.write([0; N]);
-            crate::decode::decode_owned_exact(src, bytes, Self::CASE).map_err(FieldError::Hex)?;
+            crate::decode::decode_owned_exact(pairs, bytes, Self::CASE).map_err(FieldError::Hex)?;
             Ok(bytes)
         }
     }

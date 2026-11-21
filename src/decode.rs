@@ -469,8 +469,7 @@ pub(crate) fn decode_vec_pairs(
     case: CheckCase,
 ) -> Result<alloc::vec::Vec<u8>, Error> {
     let mut bytes = alloc::vec![0; pairs.len()];
-    // SAFETY: Each input pair supplies exactly one output byte.
-    unsafe { decode_owned(pairs.as_flattened(), &mut bytes, case) }?;
+    decode_owned_exact(pairs, &mut bytes, case)?;
     Ok(bytes)
 }
 
@@ -478,11 +477,12 @@ pub(crate) fn decode_vec_pairs(
 // The caller discards the destination if a later pair fails.
 #[cfg(feature = "alloc")]
 #[inline(always)]
-pub(crate) fn decode_owned_exact(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
-    }
-    let actual = src.len() / 2;
+pub(crate) fn decode_owned_exact(
+    pairs: &[[u8; 2]],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), Error> {
+    let actual = pairs.len();
     if actual != dst.len() {
         return Err(Error::LengthMismatch {
             expected: dst.len(),
@@ -490,7 +490,7 @@ pub(crate) fn decode_owned_exact(src: &[u8], dst: &mut [u8], case: CheckCase) ->
         });
     }
     // SAFETY: Each destination byte has exactly one two-byte input pair.
-    unsafe { decode_owned(src, dst, case) }
+    unsafe { decode_owned(pairs.as_flattened(), dst, case) }
 }
 
 /// Appends decoded bytes to `dst` and returns just the new suffix.
