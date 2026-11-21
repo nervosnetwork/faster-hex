@@ -41,8 +41,13 @@ if variant:=os.environ.get("ARRAY_VARIANT"):
  for n in [20,32,256,4095,4097,8192]:
   key=f"field{n}";cases[key]=[n]
   ops[key]=(ops["field4096"][0],ops["field4096"][1].replace("4096",str(n)))
+ for op,expr in {
+  "bad4096":'black_box(faster_hex::array::deserialize::<_,4096>(serde::de::value::BorrowedStrDeserializer::<serde::de::value::Error>::new(black_box("0x00")))).unwrap_err();',
+  "error4096":'black_box(faster_hex::array::deserialize::<_,4096>(serde::de::value::BorrowedStrDeserializer::<serde::de::value::Error>::new(black_box("0x00"))).unwrap_err());',
+ }.items():
+  cases[op]=[4096];ops[op]=("",expr)
  if os.environ.get("FOCUSED_FIELDS"):
-  covered={"option32","option4096","field4096","field4095","json32","json4096","transient32","transient4096"}
+  covered={"option32","option4096","field4096","field4095","json32","json4096","transient32","transient4096","bad4096","error4096"}
   cases={k:v for k,v in cases.items() if k in covered}
  ops={k:v for k,v in ops.items() if k in cases}
  shutil.rmtree(bins);bins.mkdir()
