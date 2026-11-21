@@ -111,6 +111,11 @@ if os.environ.get("MIXED_CALLER"):
  ops={k:(payload_type,operation) if k!="serialize" else ops[k] for k in cases}
  for f in bins.glob('*.rs'):
   if f.stem not in cases:f.unlink()
+if os.environ.get("RELEASE_COMMON"):
+ cases={'encode':[4,8,16,20,32,65,256,4096], 'owned_string':[32], 'decode':[4,32,256,4096], 'field4':[4],'field4096':[4096],'serialize':[32,4096],'deserialize':[32,4096]}
+ ops={k:v for k,v in ops.items() if k in cases}
+ for f in bins.glob('*.rs'):
+  if f.stem not in cases:f.unlink()
 if os.environ.get("FIELD_COST"):
  original=ops["field4096"][1]
  borrowed=original.split("black_box(",1)[1].rsplit(");",1)[0]
