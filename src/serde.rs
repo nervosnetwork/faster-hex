@@ -183,6 +183,7 @@ mod internal {
         const PREFIX: bool;
         const CASE: CheckCase;
 
+        #[inline(always)]
         fn parse<const N: usize>(text: &str) -> Field<[u8; N]> {
             let payload = payload(text, Self::PREFIX, FieldError::Text)?;
             hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(FieldError::Hex)
