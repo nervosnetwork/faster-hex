@@ -14,18 +14,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        family: [finish_outer, finish_outcome, finish_outer_thin, finish_outer_ref]
-        os: [ubuntu-22.04, ubuntu-24.04]
-        mode: [consumer]
-        lto: [thin]
         include:
-          - {family: finish_outer, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
-          - {family: finish_outer, mode: consumer, os: macos-15-intel, lto: thin}
-          - {family: finish_outcome, mode: consumer, os: macos-15-intel, lto: thin}
-          - {family: finish_outer_thin, mode: consumer, os: macos-15-intel, lto: thin}
-          - {family: finish_outer_ref, mode: consumer, os: macos-15-intel, lto: thin}
-          - {family: finish_outer, mode: regress, os: ubuntu-22.04, lto: thin}
-          - {family: finish_outer, mode: regress, os: ubuntu-24.04-arm, lto: thin}
+          - {family: return_visit, mode: consumer, os: ubuntu-22.04, lto: "thin"}
+          - {family: return_visit, mode: consumer, os: ubuntu-24.04, lto: "thin"}
+          - {family: return_visit, mode: consumer, os: macos-15-intel, lto: "thin"}
+          - {family: return_visit, mode: consumer, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: return_public, mode: consumer, os: ubuntu-22.04, lto: "thin"}
+          - {family: return_public, mode: consumer, os: ubuntu-24.04, lto: "thin"}
+          - {family: return_public, mode: consumer, os: macos-15-intel, lto: "thin"}
+          - {family: return_public, mode: consumer, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: return_unified, mode: consumer, os: ubuntu-22.04, lto: "thin"}
+          - {family: return_unified, mode: consumer, os: ubuntu-24.04, lto: "thin"}
+          - {family: return_unified, mode: consumer, os: macos-15-intel, lto: "thin"}
+          - {family: return_unified, mode: consumer, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: return_visit, mode: regress, os: ubuntu-22.04, lto: "false"}
+          - {family: return_visit, mode: regress, os: ubuntu-22.04, lto: "thin"}
+          - {family: return_visit, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: return_visit, mode: regress, os: macos-15-intel, lto: "false"}
+          - {family: return_visit, mode: regress, os: macos-15-intel, lto: "thin"}
+          - {family: return_visit, mode: existing, os: macos-15-intel, lto: "thin"}
+          - {family: return_visit, mode: regress, os: ubuntu-24.04-arm, lto: "false"}
+          - {family: return_visit, mode: regress, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: return_visit, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
+          - {family: return_public, mode: existing, os: ubuntu-22.04, lto: "thin"}
+          - {family: return_public, mode: existing, os: ubuntu-24.04-arm, lto: "thin"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -38,10 +50,9 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            finish_outer) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
-            finish_outcome) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
-            finish_outer_thin) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
-            finish_outer_ref) PRODUCT_REV=$(sed -n '4p' verify/targets) ;;
+            return_visit) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
+            return_public) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
+            return_unified) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
           esac
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = consumer ]; then
@@ -50,7 +61,9 @@ jobs:
               cc -O2 -fno-builtin-memcpy verify/spacing.c -o /tmp/copy-timing
               /tmp/copy-timing > results/copy-spacing.txt
             fi
-            FOCUSED_FIELDS=1 ARRAY_VARIANT=frozen python3 verify/consumer.py
+            ARRAY_VARIANT=frozen python3 verify/consumer.py
+          elif [ "${{ matrix.mode }}" = existing ]; then
+            EXISTING_CONTROLS=1 python3 verify/consumer.py
           else
             python3 verify/regress.py
           fi
