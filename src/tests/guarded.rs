@@ -163,7 +163,7 @@ fn conversions_and_checks_stop_at_guard_pages() {
             Some(backend) => backend.decode(src, dst, case),
             None => hex_decode_with_case(src, dst, case).is_ok(),
         };
-        for len in 0..=257 {
+        for len in (0..=257).chain([1023, 1024, 1025]) {
             let data: Vec<u8> = (0..len).map(|i| (i * 73 + i / 7) as u8).collect();
             for end in [false, true] {
                 source.slice_mut(len, end).copy_from_slice(&data);

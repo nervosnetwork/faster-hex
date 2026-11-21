@@ -127,7 +127,12 @@ macro_rules! array_policy_test {
             roundtrip([0xab]);
             roundtrip([0xcd; 32]);
             roundtrip([0x01; 64]);
-            roundtrip(core::array::from_fn::<_, 129, _>(|i| (i * 37) as u8));
+            // The 132-byte stack buffer fits 65 prefixed or 66 unprefixed bytes.
+            let byte = |i: usize| (i * 37) as u8;
+            roundtrip::<65>(core::array::from_fn(byte));
+            roundtrip::<66>(core::array::from_fn(byte));
+            roundtrip::<67>(core::array::from_fn(byte));
+            roundtrip::<129>(core::array::from_fn(byte));
 
             for (hex, actual) in [("", 0), ("abcd", 2)] {
                 for json in [

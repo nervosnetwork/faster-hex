@@ -117,7 +117,7 @@ impl Backend {
     }
 
     pub fn decode(self, src: &[u8], dst: &mut [u8], case: CheckCase) -> bool {
-        assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+        decode::assert_decode_lengths(src, dst);
         // This is the real dispatch minimum for SIMD loads, not a character
         // pre-check. Valid and damaged vector-sized inputs go straight through.
         if src.len() < 16 {
@@ -153,7 +153,7 @@ impl Backend {
     // On failure, earlier valid blocks may already be written. This adapter
     // checks the same memory/CPU preconditions without pre-validating text.
     pub fn decode_owned(self, src: &[u8], dst: &mut [u8], case: CheckCase) -> bool {
-        assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+        decode::assert_decode_lengths(src, dst);
         #[allow(unused_unsafe)] // Non-SIMD targets use the checked scalar path.
         // SAFETY: backends() checked the ISA; the slices have the exact 2:1 ratio.
         unsafe {

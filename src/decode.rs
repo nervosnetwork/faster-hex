@@ -505,6 +505,7 @@ fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error
     if dst.len() <= 1024 {
         return hex_decode_with_case(src, dst, case).map(|_| ());
     }
+    assert_decode_lengths(src, dst);
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
@@ -533,13 +534,22 @@ fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error
     Ok(())
 }
 
-// Call after establishing even input and the exact 2:1 source/output ratio.
-// Every path validates the complete input before writing; diagnostics stay at
-// the public boundary. Tests use the same operation after asserting its lengths.
+// SIMD loads and stores can use either slice's length once the ratio is exact.
+#[inline]
+pub(crate) fn assert_decode_lengths(src: &[u8], dst: &[u8]) {
+    assert!(
+        src.len().is_multiple_of(2) && dst.len() == src.len() / 2,
+        "expected two hex digits per output byte"
+    );
+}
+
+// Every path validates the complete input before writing. Diagnostics stay at
+// the public boundary.
 // Inline the boundary and dispatch together so short decodes can keep their
 // result and SIMD constants in the caller instead of a separate stack frame.
 #[inline(always)]
 pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
+    assert_decode_lengths(src, dst);
     if dst.len() < 8 {
         return hex_decode_short_scalar(src, dst, check_case);
     }
