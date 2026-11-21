@@ -105,12 +105,8 @@ mod internal {
         }
         encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
             .map_err(serde::ser::Error::custom)?;
-        // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
-        // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
-        // backing stack buffer or allocation stays live throughout serialization.
-        serializer.serialize_str(unsafe {
-            core::str::from_utf8_unchecked(core::slice::from_raw_parts(dst.as_ptr().cast(), len))
-        })
+        // SAFETY: The prefix and encoder initialized the entire slice with ASCII.
+        serializer.serialize_str(unsafe { core::str::from_utf8_unchecked(dst.assume_init_ref()) })
     }
 
     fn payload<E: Error>(text: &str, with_prefix: bool) -> Result<&str, E> {
