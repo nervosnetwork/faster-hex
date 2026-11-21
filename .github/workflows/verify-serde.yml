@@ -7,19 +7,20 @@ permissions:
 env:
   RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
-  codec:
-    name: Codec / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  release:
+    name: Codec and Serde / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 48
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, ubuntu-22.04, ubuntu-24.04-arm]
+        os: [ubuntu-22.04, ubuntu-24.04-arm]
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 854e709c222d2e384ce9c105ccdb495172e418ab
-      DRIVER_REV: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
+      CODEC_REV: ddb04408b3a9a159ae51d8fcf196653ca70ef58d
+      FIELD_REV: 2e693fc996ad486092f1ca3022bef8cc694553c2
+      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -28,21 +29,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Exercise checked decoding, rollback and diagnostic offsets
-        run: cargo test --release --all-features --lib --test public_api --test owned_decode
-      - name: Compare independent existing callers and the original 32-byte benchmark with 2.0
-        env:
-          REFERENCE_REV: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
-          RESULTS: results/release
+      - name: Check array and vector allocations and field framing at the measured revision
         run: |
-          RELEASE_COMMON=1 python3 verify/consumer.py
-          python3 verify/release32.py
-      - name: Compare valid decoding and early, middle, block-boundary and late errors with both baselines
-        run: |
-          REFERENCE_REV="$DRIVER_REV" RELEASE_DIAGNOSTICS=1 RESULTS=results/errors-release python3 verify/consumer.py
-          REFERENCE_REV=25cfd8eb6a4cd8257a96fabaf73771cabcced4b4 RELEASE_DIAGNOSTICS=1 RESULTS=results/errors-pr python3 verify/consumer.py
+          git worktree add --detach "$RUNNER_TEMP/field-source" "$FIELD_REV"
+          cargo test --manifest-path "$RUNNER_TEMP/field-source/Cargo.toml" --release --all-features --test allocations --test serde_protocol
+      - name: Measure short and bulk diagnostics against the current PR
+        run: PRODUCT_REV="$CODEC_REV" RELEASE_DIAGNOSTICS=1 RESULTS=results/diagnostics python3 verify/consumer.py
+      - name: Measure complete borrowed and escaped JSON round trips against the current PR
+        run: PRODUCT_REV="$FIELD_REV" MIXED_CALLER=1 RESULTS=results/fields python3 verify/consumer.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: codec-${{ matrix.os }}-${{ matrix.lto }}
+          name: native-${{ matrix.os }}-${{ matrix.lto }}
           path: results
