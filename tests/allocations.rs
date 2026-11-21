@@ -174,6 +174,40 @@ fn documented_allocation_free_operations_remain_allocation_free() {
 
 #[cfg(feature = "serde")]
 #[test]
+fn transient_serde_text_costs_no_extra_allocation() {
+    use serde::de::value::{BorrowedStrDeserializer, Error, StrDeserializer};
+
+    let text = format!("0x{}", "ab".repeat(32));
+    let borrowed = || BorrowedStrDeserializer::<Error>::new(&text);
+    let transient = || StrDeserializer::<Error>::new(&text);
+
+    let array = measure(|| faster_hex::array::deserialize::<_, 32>(transient()).unwrap());
+    assert_eq!(array, ([0xab; 32], 0));
+    assert_eq!(
+        array,
+        measure(|| faster_hex::array::deserialize(borrowed()).unwrap())
+    );
+
+    let bytes = measure(|| faster_hex::deserialize_bounded::<32, _, Vec<u8>>(transient()).unwrap());
+    assert_eq!(bytes, (vec![0xab; 32], 1));
+    assert_eq!(
+        bytes,
+        measure(|| faster_hex::deserialize_bounded::<32, _, Vec<u8>>(borrowed()).unwrap())
+    );
+
+    // The format may allocate its error message. Neither path should copy the input.
+    let rejected =
+        measure(|| faster_hex::deserialize_bounded::<1, _, Vec<u8>>(transient()).unwrap_err());
+    let control =
+        measure(|| faster_hex::deserialize_bounded::<1, _, Vec<u8>>(borrowed()).unwrap_err());
+    assert_eq!(
+        (rejected.0.to_string(), rejected.1),
+        (control.0.to_string(), control.1)
+    );
+}
+
+#[cfg(feature = "serde")]
+#[test]
 fn a_rejected_borrowed_option_does_not_allocate_its_decoded_bytes() {
     use serde::de::{
         value::BorrowedStrDeserializer, value::Error, Deserializer, Error as _, Visitor,
