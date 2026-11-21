@@ -156,6 +156,15 @@ if kernel=="mask":
 if kernel:
  for f in bins.glob("*.rs"):
   if f.stem not in cases:f.unlink()
+diagnostics = os.environ.get("RELEASE_DIAGNOSTICS")
+if diagnostics:
+ cases = {"decode": [32, 256, 4096]}
+ ops = {"decode": ops["decode"]}
+ for name in ("first", "middle", "last"):
+  cases[name] = [1, 32, 4096]
+  ops[name] = ("", "black_box(faster_hex::hex_decode(black_box(&malformed),black_box(&mut dst[..n])).unwrap_err());")
+ for f in bins.glob("*.rs"):
+  if f.stem not in cases: f.unlink()
 if os.environ.get("OWNED_VECTORS"):
  ops['raw_vec']=('', 'black_box(faster_hex::hex_decode_vec(black_box(&hex)).unwrap());')
  cases['raw_vec']=[0,4,32,256,1024,1025,4096]
@@ -168,6 +177,16 @@ for k,(defs,op) in ops.items():
  if kernel=="mask" and k.startswith("check_"):
   method={"check_upper":"checked.make_ascii_uppercase();","check_lower":"checked.make_ascii_lowercase();","check_first":"checked[0]=255;","check_last":"checked[n-1]=255;"}.get(k,"")
   prepare="let mut checked=hex[..n].to_vec();"+method+"assert_eq!("+op.split("black_box(",1)[1].rsplit(");",1)[0]+","+("false" if k in ("check_first","check_last") else "true")+");"
+ if diagnostics and k in ("first","middle","last"):
+  index={"first":"0","middle":"n","last":"2*n-1"}[k]
+  prepare=f'''
+   let mut malformed=hex.clone();
+   let index={index};
+   malformed[index]=0xff;
+   dst.fill(0xa5);
+   let error=faster_hex::hex_decode(&malformed,&mut dst[..n]).unwrap_err();
+   assert!(matches!(error,faster_hex::Error::InvalidChar{{index:i,byte:0xff,..}} if i==index));
+   assert!(dst.iter().all(|b|*b==0xa5));'''
  code='''#![allow(unused_variables,unused_mut,dead_code)]
 use std::{hint::black_box,time::Instant};
 DEFS

@@ -1,4 +1,4 @@
-name: Native codec release checks
+name: Native 2.1 release checks
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -7,16 +7,19 @@ permissions:
 env:
   RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
-  native:
-    name: Released codec and isolated changes / Intel / LTO ${{ matrix.lto }}
-    runs-on: macos-15-intel
-    timeout-minutes: 35
+  codec:
+    name: Codec / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 42
     strategy:
       fail-fast: false
       matrix:
+        os: [macos-15-intel, ubuntu-22.04, ubuntu-24.04-arm]
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
+      PRODUCT_REV: ff45c930b5460dce2627393cb5fbe22ef905d54a
+      DRIVER_REV: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -25,10 +28,57 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Isolate the encoder, decoder, error scan and owned result path
-        run: python3 verify/components.py
+      - name: Compare independent existing callers and the original 32-byte benchmark with 2.0
+        env:
+          REFERENCE_REV: 6d84260fe321669e7f93ecfb8aecb4db0f582f14
+          RESULTS: results/release
+        run: |
+          RELEASE_COMMON=1 python3 verify/consumer.py
+          python3 verify/release32.py
+      - name: Compare valid decoding and first, middle and last errors with both baselines
+        run: |
+          REFERENCE_REV="$DRIVER_REV" RELEASE_DIAGNOSTICS=1 RESULTS=results/errors-release python3 verify/consumer.py
+          REFERENCE_REV=25cfd8eb6a4cd8257a96fabaf73771cabcced4b4 RELEASE_DIAGNOSTICS=1 RESULTS=results/errors-pr python3 verify/consumer.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: release-source-components-intel-${{ matrix.lto }}
+          name: codec-${{ matrix.os }}-${{ matrix.lto }}
+          path: results
+  serde:
+    name: Serde / ${{ matrix.mode }} / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 42
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04-arm]
+        lto: ["false", "thin"]
+        mode: [fields, mixed]
+    env:
+      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
+      PRODUCT_REV: e5a3cc5341b8af1e361f4722949f35ace301a2ba
+      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - name: Check field allocations and Serde protocol contracts
+        run: cargo test --release --all-features --test allocations --test serde_protocol
+      - name: Compare ordinary downstream Serde calls
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          if [ "$MODE" = mixed ]; then
+            MIXED_CALLER=1 python3 verify/consumer.py
+          else
+            RELEASE_FIELDS=1 ARRAY_VARIANT=frozen OWNED_VECTORS=1 python3 verify/consumer.py
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: serde-${{ matrix.mode }}-${{ matrix.os }}-${{ matrix.lto }}
           path: results
