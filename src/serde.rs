@@ -54,27 +54,39 @@ mod internal {
         }
     }
 
+    impl Text<'_, &str> {
+        fn as_str(&self) -> &str {
+            match *self {
+                Self::Borrowed(s) => s,
+                Self::Transient(s) => s,
+            }
+        }
+    }
+
     struct TextVisitor<F>(F);
-    impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for TextVisitor<F> {
-        type Value = Text<'de, T>;
+    impl<'de, F, T> Visitor<'de> for TextVisitor<F>
+    where
+        F: for<'s> FnOnce(Text<'de, &'s str>) -> T,
+    {
+        type Value = T;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
         #[inline(always)]
-        fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            Ok(Text::Transient((self.0)(text)))
+        fn visit_str<E: Error>(self, text: &str) -> Result<T, E> {
+            Ok((self.0)(Text::Transient(text)))
         }
         #[inline(always)]
-        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(Text::Borrowed(text))
+        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<T, E> {
+            Ok((self.0)(Text::Borrowed(text)))
         }
-        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<T, E> {
             match core::str::from_utf8(bytes) {
                 Ok(s) => self.visit_str(s),
                 Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
             }
         }
-        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
+        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<T, E> {
             match core::str::from_utf8(bytes) {
                 Ok(s) => self.visit_borrowed_str(s),
                 Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
@@ -143,12 +155,9 @@ mod internal {
     #[inline]
     pub(super) fn read<'de, D: Deserializer<'de>, T>(
         d: D,
-        decode: impl Fn(&str) -> T,
+        decode: impl FnOnce(&str) -> T,
     ) -> Result<T, D::Error> {
-        match d.deserialize_string(TextVisitor(&decode))? {
-            Text::Borrowed(text) => Ok(decode(text)),
-            Text::Transient(field) => Ok(field),
-        }
+        d.deserialize_string(TextVisitor(|input: Text<'de, &str>| decode(input.as_str())))
     }
 
     #[inline]
@@ -187,8 +196,7 @@ mod internal {
             storage: &'a mut MaybeUninit<[u8; N]>,
         ) -> Field<&'a [u8; N]> {
             let payload = payload(text, Self::PREFIX, FieldError::Text)?;
-            hex_decode_array_with_case(payload.as_bytes(), Self::CASE)
-                .map(move |value| &*storage.write(value))
+            crate::decode::decode_array_into(payload.as_bytes(), storage, Self::CASE)
                 .map_err(FieldError::Hex)
         }
 
@@ -212,9 +220,9 @@ mod internal {
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
         let slot = &mut storage;
-        let input = d.deserialize_string(TextVisitor(move |s: &str| {
+        let input = d.deserialize_string(TextVisitor(move |text: Text<'de, &str>| {
             let slot = slot;
-            P::fill::<N>(s, slot)
+            text.map(move |s| P::fill::<N>(s, slot))
         }))?;
         finish(input)
     }
@@ -484,7 +492,11 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
             pub(super) fn read_bytes<'de, const MAX: usize, D: serde::Deserializer<'de>>(
                 d: D,
             ) -> Result<internal::Field<alloc::vec::Vec<u8>>, D::Error> {
-                internal::read(d, |text| internal::decode_bytes(text, $with_pfx, $check_case, MAX))
+                let mut bytes = Ok(alloc::vec::Vec::new());
+                internal::read(d, |text| {
+                    bytes = internal::decode_bytes(text, $with_pfx, $check_case, MAX);
+                })?;
+                Ok(bytes)
             }
 
             /// Serializes a byte view using this module's prefix and case policy.
