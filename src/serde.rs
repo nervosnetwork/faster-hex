@@ -54,39 +54,27 @@ mod internal {
         }
     }
 
-    impl Text<'_, &str> {
-        fn as_str(&self) -> &str {
-            match *self {
-                Self::Borrowed(s) => s,
-                Self::Transient(s) => s,
-            }
-        }
-    }
-
     struct TextVisitor<F>(F);
-    impl<'de, F, T> Visitor<'de> for TextVisitor<F>
-    where
-        F: for<'s> FnOnce(Text<'de, &'s str>) -> T,
-    {
-        type Value = T;
+    impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for TextVisitor<F> {
+        type Value = Text<'de, T>;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
         #[inline(always)]
-        fn visit_str<E: Error>(self, text: &str) -> Result<T, E> {
-            Ok((self.0)(Text::Transient(text)))
+        fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
+            Ok(Text::Transient((self.0)(text)))
         }
         #[inline(always)]
-        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<T, E> {
-            Ok((self.0)(Text::Borrowed(text)))
+        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
+            Ok(Text::Borrowed(text))
         }
-        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<T, E> {
+        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
             match core::str::from_utf8(bytes) {
                 Ok(s) => self.visit_str(s),
                 Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
             }
         }
-        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<T, E> {
+        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
             match core::str::from_utf8(bytes) {
                 Ok(s) => self.visit_borrowed_str(s),
                 Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
@@ -155,9 +143,12 @@ mod internal {
     #[inline]
     pub(super) fn read<'de, D: Deserializer<'de>, T>(
         d: D,
-        decode: impl FnOnce(&str) -> T,
+        decode: impl Fn(&str) -> T,
     ) -> Result<T, D::Error> {
-        d.deserialize_string(TextVisitor(|input: Text<'de, &str>| decode(input.as_str())))
+        match d.deserialize_string(TextVisitor(&decode))? {
+            Text::Borrowed(text) => Ok(decode(text)),
+            Text::Transient(field) => Ok(field),
+        }
     }
 
     #[inline]
@@ -186,6 +177,14 @@ mod internal {
         hex_decode_vec_with_case(src, case).map_err(FieldError::Hex)
     }
 
+    #[cold]
+    #[inline(never)]
+    fn wrong_array_length<E: Error>(expected: usize, actual: usize) -> E {
+        E::custom(format_args!(
+            "expected {expected} decoded bytes, got {actual}"
+        ))
+    }
+
     pub(super) trait Policy {
         const PREFIX: bool;
         const CASE: CheckCase;
@@ -205,9 +204,7 @@ mod internal {
             let payload = payload(text, Self::PREFIX, E::custom)?;
             let actual = payload.len() / 2;
             if actual != N {
-                return Err(E::custom(format_args!(
-                    "expected {N} decoded bytes, got {actual}"
-                )));
+                return Err(wrong_array_length(N, actual));
             }
             hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(E::custom)
         }
@@ -220,9 +217,9 @@ mod internal {
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
         let slot = &mut storage;
-        let input = d.deserialize_string(TextVisitor(move |text: Text<'de, &str>| {
+        let input = d.deserialize_string(TextVisitor(move |s: &str| {
             let slot = slot;
-            text.map(move |s| P::fill::<N>(s, slot))
+            P::fill::<N>(s, slot)
         }))?;
         finish(input)
     }
@@ -492,11 +489,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
             pub(super) fn read_bytes<'de, const MAX: usize, D: serde::Deserializer<'de>>(
                 d: D,
             ) -> Result<internal::Field<alloc::vec::Vec<u8>>, D::Error> {
-                let mut bytes = Ok(alloc::vec::Vec::new());
-                internal::read(d, |text| {
-                    bytes = internal::decode_bytes(text, $with_pfx, $check_case, MAX);
-                })?;
-                Ok(bytes)
+                internal::read(d, |text| internal::decode_bytes(text, $with_pfx, $check_case, MAX))
             }
 
             /// Serializes a byte view using this module's prefix and case policy.
