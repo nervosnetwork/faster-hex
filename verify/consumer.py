@@ -113,10 +113,10 @@ if os.environ.get("MIXED_CALLER"):
  for f in bins.glob('*.rs'):
   if f.stem not in cases:f.unlink()
 if os.environ.get("MIXED_CALLER") and os.environ.get("FIELD_OBJECTS"):
- root='#[derive(serde::Deserialize,serde::Serialize)] struct StateRoot(#[serde(with="faster_hex")] Vec<u8>);'
+ root_type='#[derive(serde::Deserialize,serde::Serialize)] struct StateRoot(#[serde(with="faster_hex")] Vec<u8>);'
  for name,read in [('hash_slice','from_slice'),('hash_reader','from_reader')]:
   present='let root:Option<StateRoot>=serde_json::'+read+'(black_box(optional_json.as_bytes())).unwrap();'
-  ops[name]=(root,present+'dst.clear();serde_json::to_writer(&mut dst,&root).unwrap();black_box(dst.as_slice());')
+  ops[name]=(root_type,present+'dst.clear();serde_json::to_writer(&mut dst,&root).unwrap();black_box(dst.as_slice());')
   cases[name]=[32]
 if os.environ.get("RELEASE_FIELDS") and os.environ.get("FIELD_OBJECTS"):
  ops["array32"]=("",'black_box(faster_hex::hex_decode_array::<32>(black_box(&hex)).unwrap());')
