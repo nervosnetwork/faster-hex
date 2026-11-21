@@ -93,16 +93,14 @@ fn independent_decode_lengths_stop_at_guard_pages() {
     // The old unchecked entry could load 64 source bytes solely because dst
     // held 32 bytes. Keep source and destination lengths independent here;
     // exact-ratio kernel adapters intentionally cannot exercise that boundary.
-    let lengths = [
-        0, 1, 2, 4, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
-    ];
+    let lengths = (0..=66).chain(127..=129);
     let mut source = Guarded::new();
     let mut destination = Guarded::new();
-    for source_len in lengths {
+    for source_len in lengths.clone() {
         for source_end in [false, true] {
             source.slice_mut(source_len, source_end).fill(b'a');
             let input = source.slice(source_len, source_end);
-            for destination_len in lengths {
+            for destination_len in lengths.clone() {
                 for destination_end in [false, true] {
                     let output = destination.slice_mut(destination_len, destination_end);
                     output.fill(0xa5);
@@ -135,6 +133,43 @@ fn independent_decode_lengths_stop_at_guard_pages() {
     }
 }
 
+#[cfg(feature = "alloc")]
+#[test]
+fn owned_decode_tails_and_append_rollback_at_guard_pages() {
+    use crate::{hex_decode_append, hex_decode_vec};
+
+    let mut source = Guarded::new();
+    let prefix = [0xde, 0xad, 0x42];
+    // Above 1024 decoded bytes, cover every remainder of the widest (64-byte) output block.
+    for len in 1025..=1088 {
+        let bytes: Vec<_> = (0..len).map(|i| (i * 73 + i / 7) as u8).collect();
+        let digits = hex::encode(&bytes).into_bytes();
+        for end in [false, true] {
+            let input = source.slice_mut(digits.len(), end);
+            input.copy_from_slice(&digits);
+            let mut dst = prefix.to_vec();
+
+            let last = input.len() - 1;
+            input[last] = b'!';
+            let error = Error::InvalidChar {
+                index: last,
+                byte: b'!',
+            };
+            assert_eq!(hex_decode_vec(input).unwrap_err(), error);
+            assert_eq!(hex_decode_append(input, &mut dst).unwrap_err(), error);
+            assert_eq!(dst, prefix);
+
+            input[last] = digits[last];
+            assert_eq!(hex_decode_vec(input).unwrap(), bytes);
+            assert_eq!(hex_decode_append(input, &mut dst).unwrap(), bytes);
+            assert_eq!(
+                dst.split_at(prefix.len()),
+                (prefix.as_slice(), bytes.as_slice())
+            );
+        }
+    }
+}
+
 #[test]
 fn conversions_and_checks_stop_at_guard_pages() {
     // None exercises the public boundary; Some directly exercises a kernel.
@@ -163,7 +198,7 @@ fn conversions_and_checks_stop_at_guard_pages() {
             Some(backend) => backend.decode(src, dst, case),
             None => hex_decode_with_case(src, dst, case).is_ok(),
         };
-        for len in 0..=257 {
+        for len in (0..=257).chain([1023, 1024, 1025]) {
             let data: Vec<u8> = (0..len).map(|i| (i * 73 + i / 7) as u8).collect();
             for end in [false, true] {
                 source.slice_mut(len, end).copy_from_slice(&data);

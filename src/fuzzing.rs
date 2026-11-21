@@ -123,7 +123,7 @@ impl Backend {
         if src.len() < 16 {
             return decode::hex_decode_short_scalar(src, dst, case).is_ok();
         }
-        #[allow(unused_unsafe)] // The NEON dispatcher and scalar path are safe.
+        #[allow(unused_unsafe)] // Scalar-only targets compile no SIMD call.
         // SAFETY: backends() checked the ISA and the assertion guarantees even
         // input and the exact 2:1 ratio. The checked kernels accept invalid text
         // and must reject it before writing; do not pre-check characters here.
