@@ -37,29 +37,53 @@ mod internal {
         }
     }
 
-    // Serde forwards borrowed and owned strings and bytes to these two visits.
-    struct HexVisitor<F>(F);
+    enum Text<'de, 'transient> {
+        Borrowed(&'de str),
+        Transient(&'transient str),
+    }
 
-    impl<'de, F, T> Visitor<'de> for HexVisitor<F>
+    impl Text<'_, '_> {
+        fn as_str(&self) -> &str {
+            match *self {
+                Self::Borrowed(text) => text,
+                Self::Transient(text) => text,
+            }
+        }
+    }
+
+    struct TextVisitor<F>(F);
+
+    impl<'de, F, T> Visitor<'de> for TextVisitor<F>
     where
-        F: FnOnce(&str) -> T,
+        F: for<'s> FnOnce(Text<'de, 's>) -> T,
     {
         type Value = T;
-
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
 
-        // Let the format call the collection decoder directly.
         #[inline(always)]
         fn visit_str<E: Error>(self, text: &str) -> Result<T, E> {
-            Ok((self.0)(text))
+            Ok((self.0)(Text::Transient(text)))
+        }
+
+        #[inline(always)]
+        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<T, E> {
+            Ok((self.0)(Text::Borrowed(text)))
         }
 
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<T, E> {
-            let text = core::str::from_utf8(bytes)
-                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
-            self.visit_str(text)
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
+        }
+
+        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<T, E> {
+            match core::str::from_utf8(bytes) {
+                Ok(s) => self.visit_borrowed_str(s),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
         }
     }
 
@@ -126,7 +150,7 @@ mod internal {
         d: D,
         decode: impl FnOnce(&str) -> T,
     ) -> Result<T, D::Error> {
-        d.deserialize_string(HexVisitor(decode))
+        d.deserialize_string(TextVisitor(|value: Text<'de, '_>| decode(value.as_str())))
     }
 
     #[inline]
@@ -159,7 +183,6 @@ mod internal {
         const PREFIX: bool;
         const CASE: CheckCase;
 
-        #[inline(always)]
         fn parse<const N: usize>(text: &str) -> Field<[u8; N]> {
             let payload = payload(text, Self::PREFIX, FieldError::Text)?;
             hex_decode_array_with_case(payload.as_bytes(), Self::CASE).map_err(FieldError::Hex)
@@ -178,47 +201,18 @@ mod internal {
         Decoded(T),
     }
 
-    // The text lives until completion only when the format lends it. With a transient
-    // value the callback stores the decoded field before this visitor returns.
-    struct BorrowText<F>(F);
-    impl<'de, F: FnOnce(&str)> Visitor<'de> for BorrowText<F> {
-        type Value = &'de str;
-        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("a string")
-        }
-        fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            (self.0)(text);
-            Ok("")
-        }
-        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(text)
-        }
-        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
-            match core::str::from_utf8(bytes) {
-                Ok(s) => self.visit_str(s),
-                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-            }
-        }
-        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
-            match core::str::from_utf8(bytes) {
-                Ok(s) => self.visit_borrowed_str(s),
-                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-            }
-        }
-    }
     #[inline(always)]
     pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<ArrayInput<'de, Field<[u8; N]>>, D::Error> {
-        let mut transient = ArrayInput::Borrowed("");
-        let borrowed = d.deserialize_string(BorrowText(|s: &str| {
-            transient = ArrayInput::Decoded(P::parse::<N>(s));
+        let mut field = ArrayInput::Borrowed("");
+        d.deserialize_string(TextVisitor(|text: Text<'de, '_>| {
+            field = match text {
+                Text::Borrowed(text) => ArrayInput::Borrowed(text),
+                Text::Transient(text) => ArrayInput::Decoded(P::parse::<N>(text)),
+            };
         }))?;
-        Ok(if borrowed.is_empty() {
-            transient
-        } else {
-            ArrayInput::Borrowed(borrowed)
-        })
+        Ok(field)
     }
     impl<const N: usize> ArrayInput<'_, Field<[u8; N]>> {
         #[inline(always)]
