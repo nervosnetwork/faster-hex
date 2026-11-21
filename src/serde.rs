@@ -767,11 +767,18 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 where
                     D: serde::Deserializer<'de>,
                 {
+                    use internal::Policy;
                     use serde::Deserialize;
 
-                    Option::<Array<'de, N>>::deserialize(deserializer)?
-                        .map(|Array(input)| input.finish::<ArrayPolicy, D::Error>())
-                        .transpose()
+                    match Option::<Array<'de, N>>::deserialize(deserializer)? {
+                        None => Ok(None),
+                        Some(Array(internal::ArrayInput::Borrowed(text))) => {
+                            Ok(Some(ArrayPolicy::decode(text)?))
+                        }
+                        Some(Array(internal::ArrayInput::Decoded(field))) => {
+                            Ok(Some(field.map_err(serde::de::Error::custom)?))
+                        }
+                    }
                 }
             }
         }
