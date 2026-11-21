@@ -188,34 +188,31 @@ mod internal {
         Decoded(T),
     }
 
-    // The text lives until completion only when the format lends it. With a transient
-    // value the callback stores the decoded field before this visitor returns.
-    struct BorrowText<F>(F);
-    impl<'de, F: FnOnce(&str)> Visitor<'de> for BorrowText<F> {
-        type Value = &'de str;
+    struct ArrayReader<F>(F);
+
+    impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for ArrayReader<F> {
+        type Value = ArrayInput<'de, T>;
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            (self.0)(text);
-            Ok("")
+            Ok(ArrayInput::Decoded((self.0)(text)))
         }
         fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(text)
+            Ok(ArrayInput::Borrowed(text))
         }
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
-            match core::str::from_utf8(bytes) {
-                Ok(s) => self.visit_str(s),
-                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-            }
+            let text = core::str::from_utf8(bytes)
+                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
+            self.visit_str(text)
         }
         fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
-            match core::str::from_utf8(bytes) {
-                Ok(s) => self.visit_borrowed_str(s),
-                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-            }
+            let text = core::str::from_utf8(bytes)
+                .map_err(|_| E::invalid_value(Unexpected::Bytes(bytes), &self))?;
+            self.visit_borrowed_str(text)
         }
     }
+
     #[inline(always)]
     fn with_array<'de, D: Deserializer<'de>, P: Policy, R, const N: usize>(
         d: D,
@@ -223,35 +220,16 @@ mod internal {
         transient: impl FnOnce(Field<&[u8; N]>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut storage = MaybeUninit::uninit();
-        let mut decoded = None;
         let slot = &mut storage;
-        let result = &mut decoded;
-        let text = d.deserialize_string(BorrowText(move |text: &str| {
+        let input = d.deserialize_string(ArrayReader(move |text: &str| {
             let slot = slot;
-            *result = Some(P::fill::<N>(text, slot));
+            P::fill::<N>(text, slot)
         }))?;
-        if text.is_empty() {
-            if let Some(field) = decoded {
-                return transient(field);
-            }
+        match input {
+            ArrayInput::Borrowed(text) => borrowed(text),
+            ArrayInput::Decoded(field) => transient(field),
         }
-        borrowed(text)
     }
-    fn bulk_borrowed<E: Error, const N: usize>(
-        text: &str,
-        prefix: bool,
-        case: CheckCase,
-    ) -> Result<[u8; N], E> {
-        let src = payload(text, prefix, E::custom)?;
-        let actual = src.len() / 2;
-        if actual != N {
-            return Err(E::custom(format_args!(
-                "expected {N} decoded bytes, got {actual}"
-            )));
-        }
-        hex_decode_array_with_case(src.as_bytes(), case).map_err(E::custom)
-    }
-
     #[inline(always)]
     pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
@@ -276,17 +254,9 @@ mod internal {
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
-        with_array::<D, P, _, N>(
-            d,
-            |text| {
-                if N > 1024 {
-                    bulk_borrowed(text, P::PREFIX, P::CASE)
-                } else {
-                    P::decode(text)
-                }
-            },
-            |v| v.copied().map_err(D::Error::custom),
-        )
+        with_array::<D, P, _, N>(d, P::decode::<D::Error, N>, |v| {
+            v.copied().map_err(D::Error::custom)
+        })
     }
 
     pub(crate) fn serialize_option<S, T>(
