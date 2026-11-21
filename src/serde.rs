@@ -227,6 +227,7 @@ mod internal {
         finish(input)
     }
 
+    #[inline(never)]
     fn bulk_borrowed<E: Error, const N: usize>(
         text: &str,
         prefix: bool,
