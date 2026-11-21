@@ -758,16 +758,6 @@ impl<'a, const N: usize> ArrayPairs<'a, N> {
     }
 
     #[inline(always)]
-    pub(crate) fn decode(self, case: CheckCase) -> Result<[u8; N], Error> {
-        if N < 8 {
-            self.decode_into(&mut core::mem::MaybeUninit::uninit(), case)
-                .copied()
-        } else {
-            hex_decode_array_with_case(self.0.as_flattened(), case)
-        }
-    }
-
-    #[inline(always)]
     pub(crate) fn decode_into<'out>(
         self,
         storage: &'out mut core::mem::MaybeUninit<[u8; N]>,
