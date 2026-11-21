@@ -34,25 +34,19 @@ mod internal {
         }
     }
 
-    // Borrowed text can be decoded after the format returns. Temporary text
-    // must yield its bytes now. Keep diagnostics out of the visitor's return
-    // value so either success path carries only its text or decoded output.
-    enum Input<'de, 'error, T> {
+    // A format may lend its input or supply text valid only during the visit.
+    enum Text<'de, T> {
         Borrowed(&'de str),
-        Decoded(T),
-        Invalid(&'error FieldError),
+        Temporary(T),
     }
 
-    struct TextVisitor<'error, F> {
-        decode: F,
-        rejection: &'error mut MaybeUninit<FieldError>,
-    }
+    struct TextVisitor<F>(F);
 
-    impl<'de, 'error, F, T> Visitor<'de> for TextVisitor<'error, F>
+    impl<'de, F, T> Visitor<'de> for TextVisitor<F>
     where
-        F: FnOnce(&str) -> Field<T>,
+        F: FnOnce(&str) -> T,
     {
-        type Value = Input<'de, 'error, T>;
+        type Value = Text<'de, T>;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
@@ -60,15 +54,12 @@ mod internal {
 
         #[inline(always)]
         fn visit_str<E: Error>(self, s: &str) -> Result<Self::Value, E> {
-            Ok(match (self.decode)(s) {
-                Ok(bytes) => Input::Decoded(bytes),
-                Err(error) => Input::Invalid(self.rejection.write(error)),
-            })
+            Ok(Text::Temporary((self.0)(s)))
         }
 
         #[inline(always)]
         fn visit_borrowed_str<E: Error>(self, s: &'de str) -> Result<Self::Value, E> {
-            Ok(Input::Borrowed(s))
+            Ok(Text::Borrowed(s))
         }
 
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
@@ -151,15 +142,12 @@ mod internal {
         max: usize,
         error: impl Fn(FieldError) -> E,
     ) -> Result<Result<Vec<u8>, E>, D::Error> {
-        let mut rejection = MaybeUninit::uninit();
-        let input = d.deserialize_string(TextVisitor {
-            decode: |s: &str| decode_bytes(s, with_prefix, case, max, core::convert::identity),
-            rejection: &mut rejection,
-        })?;
+        let input = d.deserialize_string(TextVisitor(|s: &str| {
+            decode_bytes(s, with_prefix, case, max, core::convert::identity)
+        }))?;
         Ok(match input {
-            Input::Borrowed(s) => decode_bytes(s, with_prefix, case, max, error),
-            Input::Decoded(bytes) => Ok(bytes),
-            Input::Invalid(reason) => Err(error(*reason)),
+            Text::Borrowed(s) => decode_bytes(s, with_prefix, case, max, error),
+            Text::Temporary(bytes) => bytes.map_err(error),
         })
     }
 
@@ -230,18 +218,15 @@ mod internal {
     #[inline(always)]
     fn with_array<'de, D: Deserializer<'de>, P: Policy, const N: usize, R>(
         d: D,
-        finish: impl FnOnce(Input<'de, '_, &[u8; N]>) -> Result<R, D::Error>,
+        finish: impl FnOnce(Text<'de, Result<&[u8; N], &FieldError>>) -> Result<R, D::Error>,
     ) -> Result<R, D::Error> {
         let mut output = MaybeUninit::uninit();
         let slot = &mut output;
         let mut rejection = MaybeUninit::uninit();
-        let input = d.deserialize_string(TextVisitor {
-            decode: move |s: &str| {
-                let slot = slot;
-                P::fill(s, slot)
-            },
-            rejection: &mut rejection,
-        })?;
+        let rejected = &mut rejection;
+        let input = d.deserialize_string(TextVisitor(move |s: &str| {
+            P::fill(s, slot).map_err(move |error| &*rejected.write(error))
+        }))?;
         finish(input)
     }
 
@@ -251,9 +236,9 @@ mod internal {
     ) -> Result<Field<[u8; N]>, D::Error> {
         with_array::<D, P, N, _>(d, |input| {
             Ok(match input {
-                Input::Borrowed(text) => P::decode(text, core::convert::identity),
-                Input::Decoded(bytes) => Ok(*bytes),
-                Input::Invalid(error) => Err(*error),
+                Text::Borrowed(text) => P::decode(text, core::convert::identity),
+                Text::Temporary(Ok(bytes)) => Ok(*bytes),
+                Text::Temporary(Err(error)) => Err(*error),
             })
         })
     }
@@ -279,9 +264,9 @@ mod internal {
     ) -> Result<[u8; N], D::Error> {
         array_result::<N, _>(|| {
             with_array::<D, P, N, _>(d, |input| match input {
-                Input::Borrowed(text) => P::decode(text, FieldError::into_format),
-                Input::Decoded(bytes) => Ok(*bytes),
-                Input::Invalid(error) => Err(error.into_format()),
+                Text::Borrowed(text) => P::decode(text, FieldError::into_format),
+                Text::Temporary(Ok(bytes)) => Ok(*bytes),
+                Text::Temporary(Err(error)) => Err(error.into_format()),
             })
         })
     }
