@@ -40,7 +40,7 @@ mod internal {
     pub(super) trait Destination {
         type Value;
         const MAX: usize = usize::MAX;
-        fn decode(digits: &[u8], case: CheckCase) -> Result<Self::Value, crate::Error>;
+        fn decode(pairs: &[[u8; 2]], case: CheckCase) -> Result<Self::Value, crate::Error>;
         fn take(value: &mut Self::Value) -> Self::Value;
     }
 
@@ -55,8 +55,10 @@ mod internal {
         }
 
         #[inline(always)]
-        fn decode(digits: &[u8], case: CheckCase) -> Result<Vec<u8>, crate::Error> {
-            crate::hex_decode_vec_with_case(digits, case)
+        fn decode(pairs: &[[u8; 2]], case: CheckCase) -> Result<Vec<u8>, crate::Error> {
+            let mut bytes = alloc::vec![0; pairs.len()];
+            crate::hex_decode_with_case(pairs.as_flattened(), &mut bytes, case)?;
+            Ok(bytes)
         }
     }
 
@@ -68,8 +70,8 @@ mod internal {
         }
 
         #[inline(always)]
-        fn decode(digits: &[u8], case: CheckCase) -> Result<[u8; N], crate::Error> {
-            crate::hex_decode_array_with_case(digits, case)
+        fn decode(pairs: &[[u8; 2]], case: CheckCase) -> Result<[u8; N], crate::Error> {
+            crate::decode::decode_array_pairs(pairs, case)
         }
     }
 
@@ -148,17 +150,18 @@ mod internal {
             } else {
                 text
             };
-            if !digits.len().is_multiple_of(2) {
+            let (pairs, tail) = digits.as_bytes().as_chunks::<2>();
+            if !tail.is_empty() {
                 return invalid(FieldError::Odd);
             }
-            let actual = digits.len() / 2;
+            let actual = pairs.len();
             if actual > T::MAX {
                 return invalid(FieldError::Limit {
                     max: T::MAX,
                     actual,
                 });
             }
-            match T::decode(digits.as_bytes(), P::CASE) {
+            match T::decode(pairs, P::CASE) {
                 Ok(value) => ready(value),
                 Err(error) => invalid(FieldError::Hex(error)),
             }
