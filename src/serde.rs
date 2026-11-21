@@ -44,16 +44,6 @@ mod internal {
         Transient(T),
     }
 
-    impl<'de, T> Text<'de, T> {
-        #[inline(always)]
-        fn map<U>(self, f: impl FnOnce(T) -> U) -> Text<'de, U> {
-            match self {
-                Self::Borrowed(s) => Text::Borrowed(s),
-                Self::Transient(value) => Text::Transient(f(value)),
-            }
-        }
-    }
-
     struct TextVisitor<F>(F);
     impl<'de, F: FnOnce(&str) -> T, T> Visitor<'de> for TextVisitor<F> {
         type Value = Text<'de, T>;
@@ -232,19 +222,10 @@ mod internal {
     }
 
     #[inline(always)]
-    pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+    pub(super) fn array_field<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
-    ) -> Result<Text<'de, Field<[u8; N]>>, D::Error> {
-        with_array::<D, P, _, N>(d, |input| Ok(input.map(|value| value.copied())))
-    }
-    impl<const N: usize> Text<'_, Field<[u8; N]>> {
-        #[inline(always)]
-        pub(super) fn finish<P: Policy, E: Error>(self) -> Result<[u8; N], E> {
-            match self {
-                Self::Borrowed(text) => P::decode(text),
-                Self::Transient(field) => field.map_err(E::custom),
-            }
-        }
+    ) -> Result<Field<[u8; N]>, D::Error> {
+        read(d, |text| P::fill(text, &mut MaybeUninit::uninit()).copied())
     }
     #[inline(always)]
     fn read_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
@@ -256,23 +237,26 @@ mod internal {
         })
     }
 
-    // An out-of-line return keeps the format from copying large array results in pieces.
+    // Keep a large returned array in one piece across the format boundary.
     #[inline(never)]
-    fn read_large_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
-        d: D,
-    ) -> Result<[u8; N], D::Error> {
-        read_array::<D, P, N>(d)
+    fn read_large<T>(read: impl FnOnce() -> T) -> T {
+        read()
+    }
+
+    #[inline(always)]
+    pub(super) fn array_result<const N: usize, T>(read: impl FnOnce() -> T) -> T {
+        if N > 1024 {
+            read_large(read)
+        } else {
+            read()
+        }
     }
 
     #[inline(always)]
     pub(crate) fn deserialize_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
     ) -> Result<[u8; N], D::Error> {
-        if N > 1024 {
-            read_large_array::<D, P, N>(d)
-        } else {
-            read_array::<D, P, N>(d)
-        }
+        array_result::<N, _>(|| read_array::<D, P, N>(d))
     }
 
     pub(crate) fn serialize_option<S, T, P: Policy>(
@@ -478,9 +462,9 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
             use crate::serde::internal;
             use core::iter::FromIterator;
 
-            pub(super) struct ArrayPolicy;
+            pub(super) struct Format;
 
-            impl internal::Policy for ArrayPolicy {
+            impl internal::Policy for Format {
                 const PREFIX: bool = $with_pfx;
                 const CASE: CheckCase = $check_case;
             }
@@ -512,7 +496,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                internal::serialize::<_, _, ArrayPolicy>(data, serializer)
+                internal::serialize::<_, _, Format>(data, serializer)
             }
 
             /// Deserializes a hex string using this module's prefix and case policy.
@@ -618,7 +602,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 where
                     D: serde::Deserializer<'de>,
                 {
-                    internal::deserialize_array::<D, super::ArrayPolicy, N>(deserializer)
+                    internal::deserialize_array::<D, super::Format, N>(deserializer)
                 }
             }
         }
@@ -652,7 +636,6 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                                 )]
         #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
         pub mod $option_name {
-            use crate::decode::CheckCase;
             use crate::serde::internal;
             use core::iter::FromIterator;
 
@@ -679,7 +662,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 S: serde::Serializer,
                 T: AsRef<[u8]>,
             {
-                internal::serialize_option::<_, _, super::$mod_name::ArrayPolicy>(data, serializer)
+                internal::serialize_option::<_, _, super::$mod_name::Format>(data, serializer)
             }
 
             /// Deserializes an optional hex string into a byte collection.
@@ -765,14 +748,14 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
                 pub use super::serialize;
 
-                use super::super::$mod_name::ArrayPolicy;
+                use super::super::$mod_name::Format;
 
-                struct Array<'de, const N: usize>(internal::Text<'de, internal::Field<[u8; N]>>);
+                struct Array<const N:usize>(internal::Field<[u8;N]>);
 
-                impl<'de, const N: usize> serde::Deserialize<'de> for Array<'de, N> {
+                impl<'de,const N:usize> serde::Deserialize<'de> for Array<N>{
                     #[inline(always)]
-                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                        internal::array_input::<D, ArrayPolicy, N>(d).map(Self)
+                    fn deserialize<D:serde::Deserializer<'de>>(d:D)->Result<Self,D::Error>{
+                        internal::array_field::<D,Format,N>(d).map(Self)
                     }
                 }
 
@@ -799,9 +782,11 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 {
                     use serde::Deserialize;
 
-                    Option::<Array<'de, N>>::deserialize(deserializer)?
-                        .map(|Array(input)| input.finish::<ArrayPolicy, D::Error>())
+                    internal::array_result::<N,_>(|| {
+                    Option::<Array<N>>::deserialize(deserializer)?
+                        .map(|Array(input)| input.map_err(serde::de::Error::custom))
                         .transpose()
+                    })
                 }
             }
         }

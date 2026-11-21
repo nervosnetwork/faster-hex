@@ -363,21 +363,37 @@ pub fn hex_decode_array_with_case<const N: usize>(
     src: &[u8],
     check_case: CheckCase,
 ) -> Result<[u8; N], Error> {
-    let pairs = array_pairs::<N>(src)?;
-    let mut storage = core::mem::MaybeUninit::uninit();
-    decode_pairs(pairs, &mut storage, check_case).copied()
+    check_array_length::<N>(src)?;
+    let mut bytes = [0; N];
+    #[cfg(target_arch = "aarch64")]
+    if N == 4 && crate::vectorization_support() == crate::Vectorization::Neon {
+        // A fixed short array can inline the existing NEON block by padding
+        // with valid digits, without reading beyond the source slice.
+        let mut input = [b'0'; 16];
+        input[..src.len()].copy_from_slice(src);
+        let mut output = [0; 8];
+        hex_decode_with_case(&input, &mut output, check_case)?;
+        bytes.copy_from_slice(&output[..N]);
+        return Ok(bytes);
+    }
+    // SAFETY: The length check above matched the number of input pairs to N.
+    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    Ok(bytes)
 }
+
 #[inline(always)]
-fn array_pairs<const N: usize>(src: &[u8]) -> Result<&[[u8; 2]; N], Error> {
-    use core::convert::TryInto;
-    let (pairs, tail) = src.as_chunks::<2>();
-    if !tail.is_empty() {
+fn check_array_length<const N: usize>(src: &[u8]) -> Result<(), Error> {
+    if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
-    pairs.try_into().map_err(|_| Error::LengthMismatch {
-        expected: N,
-        actual: pairs.len(),
-    })
+    let actual = src.len() / 2;
+    if actual != N {
+        return Err(Error::LengthMismatch {
+            expected: N,
+            actual,
+        });
+    }
+    Ok(())
 }
 
 // A Serde visitor can initialize its field before the input text expires.
@@ -388,15 +404,8 @@ pub(crate) fn decode_array_into<'a, const N: usize>(
     storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
     check_case: CheckCase,
 ) -> Result<&'a [u8; N], Error> {
-    decode_pairs(array_pairs::<N>(src)?, storage, check_case)
-}
-#[inline(always)]
-fn decode_pairs<'a, const N: usize>(
-    pairs: &[[u8; 2]; N],
-    storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
-    check_case: CheckCase,
-) -> Result<&'a [u8; N], Error> {
-    let src = pairs.as_flattened();
+    check_array_length::<N>(src)?;
+    let pairs = src.as_chunks::<2>().0;
     let bytes = storage.write([0; N]);
     if N < 8 {
         let digits = match check_case {
