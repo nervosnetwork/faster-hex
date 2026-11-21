@@ -6,8 +6,14 @@ fn byte_order_and_case_at_vector_boundaries() {
         let src: Vec<u8> = (0..len).map(|i| (i * 151 + 37) as u8).collect();
         let base: String = src.iter().map(|b| format!("{b:02x}")).collect();
         let mut out = vec![0xa5; len * 2 + 1];
-        assert_eq!(hex_encode(&src, &mut out).unwrap(), base);
-        assert_eq!(hex_encode_upper(&src, &mut out).unwrap(), base.to_ascii_uppercase());
+        assert_eq!(
+            hex_encode(&src, &mut out).unwrap().as_bytes(),
+            base.as_bytes()
+        );
+        assert_eq!(
+            hex_encode_upper(&src, &mut out).unwrap().as_bytes(),
+            base.to_ascii_uppercase().as_bytes(),
+        );
         assert_eq!(out.last(), Some(&0xa5));
     }
 }
@@ -21,8 +27,14 @@ fn every_digit_and_location_matches_the_ascii_policy() {
                 src[pos] = byte;
                 for (mode, valid) in [
                     (CheckCase::None, byte.is_ascii_hexdigit()),
-                    (CheckCase::Upper, byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte)),
-                    (CheckCase::Lower, byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+                    (
+                        CheckCase::Upper,
+                        byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte),
+                    ),
+                    (
+                        CheckCase::Lower,
+                        byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+                    ),
                 ] {
                     assert_eq!(hex_check_with_case(&src, mode), valid, "{len} {pos} {byte}");
                 }
