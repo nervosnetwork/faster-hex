@@ -328,6 +328,27 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
     case: CheckCase,
 ) -> Result<(), ()> {
     debug_assert!(src.len() >= 16);
+    if src.len() <= 192 {
+        return decode_avx2_bounded(src, dst, case);
+    }
+    // The prefix contains complete validation batches. The final 64..=190
+    // digits fit the checked register kernel, including a partial last batch.
+    let split = (src.len() - 64) / 128 * 128;
+    let (bulk, tail) = src.split_at(split);
+    let (bulk_dst, tail_dst) = dst.split_at_mut(split / 2);
+    if !hex_check_avx2_with_case(bulk, case) {
+        return Err(());
+    }
+    // The tail checks every digit before storing. Its success means the
+    // entire input is valid, so conversion of the prefix cannot fail.
+    decode_avx2_bounded(tail, tail_dst, case)?;
+    hex_decode_avx2(bulk, bulk_dst);
+    Ok(())
+}
+
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn decode_avx2_bounded(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
     // Common fixed sizes use constant offsets and avoid duplicate tail loads.
     // Every branch validates the complete input before its first store.
     if src.len() == 64 {
@@ -390,7 +411,7 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
         _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(c, d));
-    } else if src.len() <= 192 {
+    } else {
         let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
         let (b, b_checked) =
             decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
@@ -419,11 +440,6 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
         _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx2(c, d));
         _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(e, f));
-    } else {
-        if !hex_check_avx2_with_case(src, case) {
-            return Err(());
-        }
-        hex_decode_avx2(src, dst);
     }
     Ok(())
 }
