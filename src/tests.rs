@@ -51,20 +51,6 @@ fn internal_conversion_never_reads_past_short_source() {
 }
 
 #[test]
-fn checked_decode_requires_two_digits_per_byte() {
-    for (src, len) in [(b"0".as_slice(), 0), (b"12", 0), (b"", 1)] {
-        let result = std::panic::catch_unwind(|| {
-            crate::decode::decode_checked(src, &mut [0; 1][..len], CheckCase::None)
-        });
-        assert!(
-            result.is_err(),
-            "accepted {} digits for {len} bytes",
-            src.len()
-        );
-    }
-}
-
-#[test]
 fn scalar_encoder_preserves_incomplete_destination_pairs() {
     for source_len in 0..18 {
         let source = vec![0xaf; source_len];

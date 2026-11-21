@@ -93,16 +93,14 @@ fn independent_decode_lengths_stop_at_guard_pages() {
     // The old unchecked entry could load 64 source bytes solely because dst
     // held 32 bytes. Keep source and destination lengths independent here;
     // exact-ratio kernel adapters intentionally cannot exercise that boundary.
-    let lengths = [
-        0, 1, 2, 4, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
-    ];
+    let lengths = (0..=66).chain(127..=129);
     let mut source = Guarded::new();
     let mut destination = Guarded::new();
-    for source_len in lengths {
+    for source_len in lengths.clone() {
         for source_end in [false, true] {
             source.slice_mut(source_len, source_end).fill(b'a');
             let input = source.slice(source_len, source_end);
-            for destination_len in lengths {
+            for destination_len in lengths.clone() {
                 for destination_end in [false, true] {
                     let output = destination.slice_mut(destination_len, destination_end);
                     output.fill(0xa5);

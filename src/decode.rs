@@ -298,7 +298,8 @@ pub fn hex_decode_with_case<'a>(
     let dst = dst
         .get_mut(..len)
         .ok_or(Error::OutputTooSmall { required: len })?;
-    if decode_checked(src, dst, check_case).is_err() {
+    // SAFETY: The input is even and dst is the exact output prefix checked above.
+    if unsafe { decode_checked(src, dst, check_case) }.is_err() {
         decode_diagnosed(src, dst, check_case)?;
     }
     Ok(dst)
@@ -384,7 +385,8 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    decode_owned(src, &mut bytes, check_case)?;
+    // SAFETY: The length check above matched the number of input pairs to N.
+    unsafe { decode_owned(src, &mut bytes, check_case) }?;
     Ok(bytes)
 }
 
@@ -450,7 +452,8 @@ pub fn hex_decode_vec_with_case(
         return Err(Error::OddLength);
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
-    decode_owned(src, &mut bytes, check_case)?;
+    // SAFETY: The vector has one byte for each pair of the even input.
+    unsafe { decode_owned(src, &mut bytes, check_case) }?;
     Ok(bytes)
 }
 
@@ -488,24 +491,27 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
-    if let Err(error) = decode_owned(src, &mut dst[start..], CheckCase::None) {
+    // SAFETY: resize added one byte for each pair of the even input.
+    if let Err(error) = unsafe { decode_owned(src, &mut dst[start..], CheckCase::None) } {
         dst.truncate(start);
         return Err(error);
     }
     Ok(&mut dst[start..])
 }
 
-// Owned callers discard this initialized, exact-size buffer on error. Large
-// inputs can commit one checked block at a time without re-reading valid input.
-// Inline dispatch to preserve array return/copy code generation. The SIMD block
-// loops remain in their target-feature functions.
+/// Decodes into private output that the caller discards on error. Large inputs
+/// can commit a checked block at a time without re-reading valid input.
+///
+/// # Safety
+/// `src.len()` must be twice `dst.len()`, as for [`decode_checked`].
+// Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
-fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     // Short outputs share the slice decoder's bounded kernels.
     if dst.len() <= 1024 {
         return hex_decode_with_case(src, dst, case).map(|_| ());
     }
-    assert_decode_lengths(src, dst);
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
@@ -534,22 +540,21 @@ fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error
     Ok(())
 }
 
-// SIMD loads and stores can use either slice's length once the ratio is exact.
-#[inline]
-pub(crate) fn assert_decode_lengths(src: &[u8], dst: &[u8]) {
-    assert!(
-        src.len().is_multiple_of(2) && dst.len() == src.len() / 2,
-        "expected two hex digits per output byte"
-    );
-}
-
-// Every path validates the complete input before writing. Diagnostics stay at
-// the public boundary.
+/// Checks every digit before writing anything.
+///
+/// # Safety
+/// `src.len()` must be twice `dst.len()`. The input bytes may have any value.
+/// SIMD kernels use both lengths to address complete vectors. Call
+/// [`hex_decode_with_case`] with independently sized buffers.
 // Inline the boundary and dispatch together so short decodes can keep their
 // result and SIMD constants in the caller instead of a separate stack frame.
 #[inline(always)]
-pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
-    assert_decode_lengths(src, dst);
+pub(crate) unsafe fn decode_checked(
+    src: &[u8],
+    dst: &mut [u8],
+    check_case: CheckCase,
+) -> Result<(), ()> {
+    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     if dst.len() < 8 {
         return hex_decode_short_scalar(src, dst, check_case);
     }

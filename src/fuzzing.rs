@@ -117,13 +117,13 @@ impl Backend {
     }
 
     pub fn decode(self, src: &[u8], dst: &mut [u8], case: CheckCase) -> bool {
-        decode::assert_decode_lengths(src, dst);
+        assert_eq!(dst.len().checked_mul(2), Some(src.len()));
         // This is the real dispatch minimum for SIMD loads, not a character
         // pre-check. Valid and damaged vector-sized inputs go straight through.
         if src.len() < 16 {
             return decode::hex_decode_short_scalar(src, dst, case).is_ok();
         }
-        #[allow(unused_unsafe)] // The NEON dispatcher and scalar path are safe.
+        #[allow(unused_unsafe)] // Scalar-only targets compile no SIMD call.
         // SAFETY: backends() checked the ISA and the assertion guarantees even
         // input and the exact 2:1 ratio. The checked kernels accept invalid text
         // and must reject it before writing; do not pre-check characters here.
@@ -153,7 +153,7 @@ impl Backend {
     // On failure, earlier valid blocks may already be written. This adapter
     // checks the same memory/CPU preconditions without pre-validating text.
     pub fn decode_owned(self, src: &[u8], dst: &mut [u8], case: CheckCase) -> bool {
-        decode::assert_decode_lengths(src, dst);
+        assert_eq!(dst.len().checked_mul(2), Some(src.len()));
         #[allow(unused_unsafe)] // Non-SIMD targets use the checked scalar path.
         // SAFETY: backends() checked the ISA; the slices have the exact 2:1 ratio.
         unsafe {
