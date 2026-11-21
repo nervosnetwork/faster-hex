@@ -738,41 +738,69 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
     }
 }
 
-// A temporary Serde string can initialize its field before the visit returns.
-// Each pair supplies two input bytes for one output byte, including for SIMD.
+// The number of input pairs and the output array share N. Keep the input as
+// a slice so even an array too large to encode can still report a length error.
 #[cfg(feature = "serde")]
-#[inline(always)]
-pub(crate) fn decode_array_into<'a, const N: usize>(
-    pairs: &[[u8; 2]; N],
-    storage: &'a mut core::mem::MaybeUninit<[u8; N]>,
-    check_case: CheckCase,
-) -> Result<&'a [u8; N], Error> {
-    let src = pairs.as_flattened();
-    #[cfg(target_arch = "aarch64")]
-    if N == 4 {
-        // The returned-array decoder already has a bounded four-byte NEON kernel.
-        return Ok(storage.write(hex_decode_array_with_case(src, check_case)?));
-    }
-    let bytes = storage.write([0; N]);
-    if N < 8 {
-        let digits = match check_case {
-            CheckCase::None => &UNHEX,
-            CheckCase::Lower => &UNHEX_LOWER,
-            CheckCase::Upper => &UNHEX_UPPER,
-        };
-        let mut invalid = 0;
-        for (out, &[high, low]) in bytes.iter_mut().zip(pairs) {
-            let hi = digits[usize::from(high)];
-            let lo = digits[usize::from(low)];
-            invalid |= hi | lo;
-            *out = (hi << 4) | lo;
+pub(crate) struct ArrayPairs<'a, const N: usize>(&'a [[u8; 2]]);
+
+#[cfg(feature = "serde")]
+impl<'a, const N: usize> ArrayPairs<'a, N> {
+    #[inline(always)]
+    pub(crate) fn new(pairs: &'a [[u8; 2]]) -> Result<Self, Error> {
+        let actual = pairs.len();
+        if actual != N {
+            return Err(Error::LengthMismatch {
+                expected: N,
+                actual,
+            });
         }
-        if invalid == NIL {
-            diagnose_invalid(src, check_case)?;
-        }
-        return Ok(bytes);
+        Ok(Self(pairs))
     }
-    // SAFETY: Each of the N output bytes has exactly one input pair.
-    unsafe { decode_owned(src, bytes, check_case) }?;
-    Ok(bytes)
+
+    #[inline(always)]
+    pub(crate) fn decode(self, case: CheckCase) -> Result<[u8; N], Error> {
+        if N < 8 {
+            self.decode_into(&mut core::mem::MaybeUninit::uninit(), case)
+                .copied()
+        } else {
+            hex_decode_array_with_case(self.0.as_flattened(), case)
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn decode_into<'out>(
+        self,
+        storage: &'out mut core::mem::MaybeUninit<[u8; N]>,
+        check_case: CheckCase,
+    ) -> Result<&'out [u8; N], Error> {
+        let pairs = self.0;
+        let src = pairs.as_flattened();
+        #[cfg(target_arch = "aarch64")]
+        if N == 4 {
+            // The returned-array decoder already has a bounded four-byte NEON kernel.
+            return Ok(storage.write(hex_decode_array_with_case(src, check_case)?));
+        }
+        let bytes = storage.write([0; N]);
+        if N < 8 {
+            let digits = match check_case {
+                CheckCase::None => &UNHEX,
+                CheckCase::Lower => &UNHEX_LOWER,
+                CheckCase::Upper => &UNHEX_UPPER,
+            };
+            let mut invalid = 0;
+            for (out, &[high, low]) in bytes.iter_mut().zip(pairs) {
+                let hi = digits[usize::from(high)];
+                let lo = digits[usize::from(low)];
+                invalid |= hi | lo;
+                *out = (hi << 4) | lo;
+            }
+            if invalid == NIL {
+                diagnose_invalid(src, check_case)?;
+            }
+            return Ok(bytes);
+        }
+        // SAFETY: Each of the N output bytes has exactly one input pair.
+        unsafe { decode_owned(src, bytes, check_case) }?;
+        Ok(bytes)
+    }
 }

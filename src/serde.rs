@@ -4,7 +4,7 @@ use core::iter::FromIterator;
 
 mod internal {
     use crate::{
-        decode::{hex_decode_vec_with_case, CheckCase},
+        decode::{hex_decode_vec_with_case, ArrayPairs, CheckCase},
         encode::encode,
     };
     use alloc::vec::Vec;
@@ -39,19 +39,9 @@ mod internal {
 
     // The format determines how long each string lives. Short-lived values
     // must be consumed before their visit returns.
-    pub(super) enum Text<'de, T> {
+    enum Text<'de, T> {
         Borrowed(&'de str),
         Transient(T),
-    }
-
-    impl<'de, T> Text<'de, T> {
-        #[inline(always)]
-        fn map<U>(self, f: impl FnOnce(T) -> U) -> Text<'de, U> {
-            match self {
-                Self::Borrowed(s) => Text::Borrowed(s),
-                Self::Transient(value) => Text::Transient(f(value)),
-            }
-        }
     }
 
     struct TextVisitor<F>(F);
@@ -84,13 +74,28 @@ mod internal {
         }
     }
 
-    pub(crate) fn serialize<S, T, P: Policy>(data: T, serializer: S) -> Result<S::Ok, S::Error>
+    pub(crate) fn serialize<S: Serializer, T: AsRef<[u8]>, P: Policy>(
+        data: T,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        write_hex(data, serializer, P::PREFIX, P::CASE)
+    }
+
+    // ARM benefits from folding the prefix and case into each policy's encoder.
+    #[cfg_attr(target_arch = "aarch64", inline(always))]
+    #[cfg_attr(not(target_arch = "aarch64"), inline(never))]
+    fn write_hex<S, T>(
+        data: T,
+        serializer: S,
+        with_prefix: bool,
+        case: CheckCase,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
         T: AsRef<[u8]>,
     {
         let src = data.as_ref();
-        let prefix: &[u8] = if P::PREFIX { b"0x" } else { b"" };
+        let prefix: &[u8] = if with_prefix { b"0x" } else { b"" };
         let len = src
             .len()
             .checked_mul(2)
@@ -111,7 +116,7 @@ mod internal {
         for (slot, &byte) in prefix_dst.iter_mut().zip(prefix) {
             slot.write(byte);
         }
-        encode(src, body, P::CASE == CheckCase::Upper).map_err(serde::ser::Error::custom)?;
+        encode(src, body, case == CheckCase::Upper).map_err(serde::ser::Error::custom)?;
         // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
         // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
         // backing stack buffer or allocation stays live throughout serialization.
@@ -137,15 +142,6 @@ mod internal {
         } else {
             Err(custom("invalid length"))
         }
-    }
-
-    #[inline(always)]
-    fn fixed_pairs<const N: usize>(pairs: &[[u8; 2]]) -> Result<&[[u8; 2]; N], crate::Error> {
-        use core::convert::TryInto;
-        pairs.try_into().map_err(|_| crate::Error::LengthMismatch {
-            expected: N,
-            actual: pairs.len(),
-        })
     }
 
     #[inline]
@@ -196,20 +192,18 @@ mod internal {
             storage: &'a mut MaybeUninit<[u8; N]>,
         ) -> Field<&'a [u8; N]> {
             let pairs = payload(text, Self::PREFIX, FieldError::Text)?;
-            let pairs = fixed_pairs::<N>(pairs).map_err(FieldError::Hex)?;
-            crate::decode::decode_array_into(pairs, storage, Self::CASE).map_err(FieldError::Hex)
+            let pairs = ArrayPairs::<N>::new(pairs).map_err(FieldError::Hex)?;
+            pairs
+                .decode_into(storage, Self::CASE)
+                .map_err(FieldError::Hex)
         }
 
         #[inline(always)]
         fn decode<E: Error, const N: usize>(text: &str) -> Result<[u8; N], E> {
             let pairs =
-                fixed_pairs::<N>(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
-            // Keep storage for a large valid value off the error path.
-            array_result::<N, _>(|| {
-                crate::decode::decode_array_into(pairs, &mut MaybeUninit::uninit(), Self::CASE)
-                    .copied()
-                    .map_err(E::custom)
-            })
+                ArrayPairs::<N>::new(payload(text, Self::PREFIX, E::custom)?).map_err(E::custom)?;
+            // Allocate the returned array only after its decoded length is known.
+            array_result::<N, _>(|| pairs.decode(Self::CASE).map_err(E::custom))
         }
     }
 
@@ -229,19 +223,15 @@ mod internal {
     }
 
     #[inline(always)]
-    pub(super) fn array_input<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
+    pub(super) fn array_field<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
         d: D,
-    ) -> Result<Text<'de, Field<[u8; N]>>, D::Error> {
-        with_array::<D, P, _, N>(d, |input| Ok(input.map(|value| value.copied())))
-    }
-    impl<const N: usize> Text<'_, Field<[u8; N]>> {
-        #[inline(always)]
-        pub(super) fn finish<P: Policy, E: Error>(self) -> Result<[u8; N], E> {
-            match self {
-                Self::Borrowed(text) => P::decode(text),
-                Self::Transient(field) => field.map_err(E::custom),
-            }
-        }
+    ) -> Result<Field<[u8; N]>, D::Error> {
+        with_array::<D, P, _, N>(d, |input| {
+            Ok(match input {
+                Text::Borrowed(text) => P::fill(text, &mut MaybeUninit::uninit()).copied(),
+                Text::Transient(field) => field.copied(),
+            })
+        })
     }
     #[inline(always)]
     fn read_array<'de, D: Deserializer<'de>, P: Policy, const N: usize>(
@@ -765,12 +755,12 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
 
                 pub use super::serialize;
 
-                struct Array<'de, const N: usize>(internal::Text<'de, internal::Field<[u8; N]>>);
+                struct Array<const N: usize>(internal::Field<[u8; N]>);
 
-                impl<'de, const N: usize> serde::Deserialize<'de> for Array<'de, N> {
+                impl<'de, const N: usize> serde::Deserialize<'de> for Array<N> {
                     #[inline(always)]
                     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                        internal::array_input::<D, Format, N>(d).map(Self)
+                        internal::array_field::<D, Format, N>(d).map(Self)
                     }
                 }
 
@@ -798,8 +788,8 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                     use serde::Deserialize;
 
                     internal::array_result::<N, _>(|| {
-                        Option::<Array<'de, N>>::deserialize(deserializer)?
-                            .map(|Array(input)| input.finish::<Format, D::Error>())
+                        Option::<Array<N>>::deserialize(deserializer)?
+                            .map(|Array(field)| field.map_err(serde::de::Error::custom))
                             .transpose()
                     })
                 }
