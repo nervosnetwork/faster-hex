@@ -232,7 +232,16 @@ mod internal {
         with_prefix: bool,
         case: CheckCase,
     ) -> Result<[u8; N], D::Error> {
-        array_input(d, with_prefix, case)?.finish(with_prefix, case)
+        let mut slot = MaybeUninit::uninit();
+        let slot = &mut slot;
+        let input = d.deserialize_string(ArrayReader(move |text: &str| {
+            let slot = slot;
+            slot.write(parse_array::<N>(text, with_prefix, case))
+        }))?;
+        match input {
+            ArrayInput::Borrowed(text) => decode_array(text, with_prefix, case),
+            ArrayInput::Decoded(value) => (*value).map_err(D::Error::custom),
+        }
     }
 
     pub(crate) fn serialize_option<S, T>(
