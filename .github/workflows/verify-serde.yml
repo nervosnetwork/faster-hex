@@ -14,15 +14,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        family: [text_bulk, large_place, large_place_outline]
+        family: [finish_outer, finish_outcome, finish_outer_thin, finish_outer_ref]
         os: [ubuntu-22.04, ubuntu-24.04]
         mode: [consumer]
         lto: [thin]
         include:
-          - {family: text_bulk, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
-          - {family: text_bulk, mode: consumer, os: macos-15-intel, lto: thin}
-          - {family: text_bulk, mode: regress, os: ubuntu-22.04, lto: thin}
-          - {family: text_bulk, mode: regress, os: ubuntu-24.04-arm, lto: thin}
+          - {family: finish_outer, mode: consumer, os: ubuntu-24.04-arm, lto: thin}
+          - {family: finish_outer, mode: consumer, os: macos-15-intel, lto: thin}
+          - {family: finish_outcome, mode: consumer, os: macos-15-intel, lto: thin}
+          - {family: finish_outer_thin, mode: consumer, os: macos-15-intel, lto: thin}
+          - {family: finish_outer_ref, mode: consumer, os: macos-15-intel, lto: thin}
+          - {family: finish_outer, mode: regress, os: ubuntu-22.04, lto: thin}
+          - {family: finish_outer, mode: regress, os: ubuntu-24.04-arm, lto: thin}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -35,9 +38,10 @@ jobs:
           toolchain: 1.95.0
       - run: |
           case "${{ matrix.family }}" in
-            text_bulk) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
-            large_place) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
-            large_place_outline) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
+            finish_outer) PRODUCT_REV=$(sed -n '1p' verify/targets) ;;
+            finish_outcome) PRODUCT_REV=$(sed -n '2p' verify/targets) ;;
+            finish_outer_thin) PRODUCT_REV=$(sed -n '3p' verify/targets) ;;
+            finish_outer_ref) PRODUCT_REV=$(sed -n '4p' verify/targets) ;;
           esac
           export PRODUCT_REV
           if [ "${{ matrix.mode }}" = consumer ]; then
