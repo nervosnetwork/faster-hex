@@ -115,15 +115,33 @@ pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bo
     if src.len() < 32 {
         return hex_check_sse_with_case(src, case);
     }
-    // Reduce four vectors together so long inputs need fewer mask tests.
+    // In mixed-case batches, low nibbles 1..=6 fit digits or letters,
+    // 0 and 7..=9 fit only digits, and 10..=15 fit neither. The high
+    // nibble selects how many of these classes the ASCII range accepts.
+    let mixed = |bytes| {
+        let rank = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+            1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2,
+        ));
+        let limit = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+            0, 0, 0, 2, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ));
+        let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), _mm256_set1_epi8(15));
+        _mm256_cmpgt_epi8(
+            _mm256_shuffle_epi8(limit, high),
+            _mm256_shuffle_epi8(rank, bytes),
+        )
+    };
     let (batches, rest) = src.as_chunks::<128>();
     for batch in batches {
         let mut valid = _mm256_set1_epi8(-1);
         for block in batch.as_chunks::<32>().0 {
-            valid = _mm256_and_si256(
-                valid,
-                valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case),
-            );
+            let bytes = _mm256_loadu_si256(block.as_ptr().cast());
+            let accepted = if case == CheckCase::None {
+                mixed(bytes)
+            } else {
+                valid_avx2(bytes, case)
+            };
+            valid = _mm256_and_si256(valid, accepted);
         }
         if _mm256_movemask_epi8(valid) != -1 {
             return false;
