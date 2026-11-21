@@ -121,11 +121,11 @@ if os.environ.get("FIELD_COST"):
   ops[name]=('',f'black_box({expr});')
   ops[name+'_ref']=('',f'let value={expr}; black_box(&value);')
  cases={k:[4096] for k in ops}
- if os.environ.get("OWNED_VECTORS"):
-  ops['raw_vec']=('', 'black_box(faster_hex::hex_decode_vec(black_box(&hex)).unwrap());')
-  cases['raw_vec']=[0,4,32,256,1024,1025,4096]
  for f in bins.glob('*.rs'):
   if f.stem not in cases: f.unlink()
+if os.environ.get("OWNED_VECTORS"):
+ ops['raw_vec']=('', 'black_box(faster_hex::hex_decode_vec(black_box(&hex)).unwrap());')
+ cases['raw_vec']=[0,4,32,256,1024,1025,4096]
 (driver/'Cargo.toml').write_text('[package]\nname="consumer-timing"\nversion="0.1.0"\nedition="2021"\n[dependencies]\nfaster-hex={path="../codec"}\nserde={version="1",features=["derive"]}\nserde_json="1"\n[workspace]\n')
 for k,(defs,op) in ops.items():
  prepare="let payload=Payload{bytes:bytes.clone()};" if k=="serialize" else ""
@@ -182,6 +182,10 @@ for role,rev in [('base',base),('head',head)]:
   exe=dest/k;shutil.copy2(work/'target/release'/k,exe)
   addr,t=text_segment(exe)
   info[role+'/'+k]={'address':hex(addr),'bytes':len(t),'sha256':hashlib.sha256(t).hexdigest()}
+ if os.environ.get("FIELD_ASSEMBLY") and sys.platform=="linux":
+  # Keep the ordinary binaries untouched. Inspect the final linked caller.
+  for name in ("field4096","transient4096","rawoption4096","raw_vec"):
+   (out/(role+"-"+name+".asm")).write_text(output(["objdump","-d","-C","--disassemble=run_sample",dest/name]))
 (out/'sections.json').write_text(json.dumps(info,indent=2))
 if os.environ.get("CHECK_UNCHANGED") and all(info["base/"+k]==info["head/"+k] for k in cases):
  print(f"All {len(cases)} downstream executables have identical .text address, length and bytes.")
