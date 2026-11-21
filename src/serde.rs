@@ -193,8 +193,24 @@ mod internal {
             error: impl Fn(FieldError) -> E,
         ) -> Result<[u8; N], E> {
             let text = payload(text, Self::PREFIX, |s| error(FieldError::Text(s)))?;
-            crate::hex_decode_array_with_case(text.as_bytes(), Self::CASE)
-                .map_err(|e| error(FieldError::Hex(e)))
+            if N <= 1024 {
+                return crate::hex_decode_array_with_case(text.as_bytes(), Self::CASE)
+                    .map_err(|e| error(FieldError::Hex(e)));
+            }
+            let actual = text.len() / 2;
+            let mut field = if actual == N {
+                Ok([0; N])
+            } else {
+                Err(error(FieldError::Hex(crate::Error::LengthMismatch {
+                    expected: N,
+                    actual,
+                })))
+            };
+            if let Ok(bytes) = &mut field {
+                crate::decode::decode_owned_exact(text.as_bytes(), bytes, Self::CASE)
+                    .map_err(|e| error(FieldError::Hex(e)))?;
+            }
+            field
         }
 
         #[inline(always)]
