@@ -144,8 +144,7 @@ mod internal {
         }
     }
 
-    // Keep the decoder separate from the format's parser and writer.
-    #[inline(never)]
+    #[inline]
     pub(super) fn decode_bytes(
         text: &str,
         with_prefix: bool,
@@ -478,6 +477,8 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 const CASE: CheckCase = $check_case;
             }
 
+            // Keep the format and its decoded field together at the call boundary.
+            #[inline(never)]
             pub(super) fn read_bytes<'de, const MAX: usize, D: serde::Deserializer<'de>>(
                 d: D,
             ) -> Result<internal::Field<alloc::vec::Vec<u8>>, D::Error> {
