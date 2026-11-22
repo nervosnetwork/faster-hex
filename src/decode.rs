@@ -504,13 +504,7 @@ pub fn hex_decode_append<'a>(
     let suffix = &mut dst[start..];
     // SAFETY: resize created exactly one output byte per input pair. On failure
     // the private suffix can be discarded, including previously decoded blocks.
-    let decoded = unsafe {
-        if suffix.len() > OWNED_DECODE_THRESHOLD {
-            decode_appended_blocks(src, suffix)
-        } else {
-            decode_checked(src, suffix, CheckCase::None).map_err(|()| 0)
-        }
-    };
+    let decoded = unsafe { decode_appended_blocks(src, suffix) };
     if let Err(from) = decoded {
         if let Err(error) = diagnose_appended(src, suffix, from) {
             dst.truncate(start);
