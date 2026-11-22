@@ -1,4 +1,4 @@
-name: Compare native digit checks in codec and JSON consumers
+name: Compare selected digits in real SHA-1 and SHA-256 prefixes
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -42,12 +42,12 @@ jobs:
           python3 verify/isolate_callers.py
         shell: bash
         env:
-          ISOLATE: range-check
+          ISOLATE: prefix-length
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: range-check-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: prefix-length-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
@@ -55,6 +55,6 @@ jobs:
       - name: Exercise release tests in the measured candidate
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/checked-codec" 0b3f0f0467b0bccc3224ef12b7b590b9199ee70c
+          git worktree add --detach "$RUNNER_TEMP/checked-codec" 167cfb0b5233b76a2d3c1730b905da4ef6d7bf72
           cd "$RUNNER_TEMP/checked-codec"
           cargo test --release --all-features

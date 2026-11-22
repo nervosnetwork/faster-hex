@@ -120,14 +120,21 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store','range-check'):
-        if role in ('release','version') and SCOPE not in ('arm-store','range-check'):
+    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length'):
+        if role in ('release','version') and SCOPE not in ('arm-store','range-check','prefix-length'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
+        if SCOPE=='prefix-length' and role in ('release','version'):
+            available=[b for b in bins if b not in ('prefix_buffer','prefix_format')]
         for name in available:
             harness = ROOT/'verify'/(name+'.rs')
             if harness.is_file():
                 shutil.copy2(harness,driver/'src/bin'/(name+'.rs'))
             assert (driver/'src/bin'/(name+'.rs')).is_file()
+    if SCOPE=='prefix-length' and role in ('release','version'):
+        probe=driver/'src/bin/gix_prefix.rs'
+        use_view='faster_hex::Hex::new(prefix.as_oid().as_bytes()).leading_digits(prefix.hex_len()).encode_to(dst).unwrap()'
+        code=probe.read_text();assert code.count(use_view)==1
+        probe.write_text(code.replace(use_view,'prefix.hex_to_buf(dst)'))
     run([*cargo,"build","--release","--locked","--offline","--quiet",*[item for b in available for item in ('--bin',b)],*(['--bin','allocation_count','--bin','ownership'] if SCOPE in ('visitor','owned') else [])], e=build_env)
     if SCOPE in ('visitor','owned'):
         for name in ('allocation_count','ownership'):
@@ -148,17 +155,25 @@ pin();rng=random.Random(602105)
 rng.shuffle(cases)
 summary={};samples={}
 for b,n,k in cases:
+    same_binary = SCOPE=='prefix-length' and b=='gix_prefix' and k.endswith('-adopt')
     def sample(role,repeat):
-        args=[n,k,repeat] if b in ('gix_caller','ckb_caller') else [n,repeat,k]
+        how=k
+        if same_binary and role.endswith('-legacy'):
+            role=role.removesuffix('-legacy')
+            how=k.removesuffix('-adopt')+'-legacy'
+        args=[n,how,repeat] if b in ('gix_caller','ckb_caller') else [n,repeat,how]
         return measure(out/'same-program',out/(('scoped' if role=='aa' else role)+'-'+b),args,driver)
     count=max(200,min(5000000,round(17000000/max(1,sample('scoped',3000)))))
     rows=[]
     for _ in range(24):
-        order=[r for r in revisions if (out/(r+"-"+b)).is_file()]+["aa"];rng.shuffle(order);groups={r:[] for r in order}
+        order=[r for r in revisions if (out/(r+"-"+b)).is_file()]+["aa"]
+        if same_binary: order += ['pr-legacy','scoped-legacy','candidate-legacy']
+        rng.shuffle(order);groups={r:[] for r in order}
         for role in order+order[::-1]:groups[role].append(sample(role,count))
         rows.append({r:statistics.mean(v) for r,v in groups.items()})
     key=f'{b}/{n}/{k}'
     selected = pairs
+    if same_binary: selected=pairs+[(r+'-legacy',r) for r in ('pr','scoped','candidate')]
     if SCOPE == 'append-report':
         selected = [pair for pair in pairs if (pair[0] != 'pr' or b == 'append_call') and (pair[0] != 'release' or b != 'append_call')]
     summary[key]={a+'/'+z:compare(rows,a,z) for a,z in selected if a in rows[0] and z in rows[0]}; samples[key]=rows

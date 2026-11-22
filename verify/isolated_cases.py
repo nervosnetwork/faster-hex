@@ -47,6 +47,18 @@ elif SCOPE in ('buffer','format'):
         cases=[('full_format',n,k) for n in (0,32,513,4096) for k in ('display','alternate','padded')]
         cases += [('prefix_format',n,'display') for n in (7,12,255,1023)]
 
+elif SCOPE=='prefix-length':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','narrow':SCOPE_BASE,'scoped':'42c484112239d78a943735d97125e356f123224a','candidate':'167cfb0b5233b76a2d3c1730b905da4ef6d7bf72'}
+    pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','candidate'),('narrow','scoped'),('pr','scoped'),('scoped','candidate'),('pr','candidate')]
+    cases=[('prefix_buffer',n,'buffer') for n in (0,1,4,7,8,12,16,31,32,33,40,63,64)]
+    cases+=[('prefix_format',n,'display') for n in (7,32,255,1023)]
+    cases+=[('gix_prefix',n,kind+'-adopt') for kind,digits in (('sha1',(0,4,7,8,39,40)),('sha256',(0,4,7,16,32,63,64))) for n in digits]
+    cases+=[('gix_prefix',n,kind+'-legacy') for kind,n in (('sha1',7),('sha256',64))]
+    cases+=[('full_buffer',n,'buffer') for n in (16,20,32,33,256,4096)]
+    cases+=[('full_format',n,'display') for n in (20,32,513,4096)]
+    cases+=[('full_format',32,k) for k in ('alternate','padded')]
+    cases+=[(b,n,'plain') for n in (32,4096) for b in ('vec_round_slice','array_round_slice','ckb_caller')]
+
 elif SCOPE=='range-check':
     revisions={'release':RELEASE,'version':SAME_VERSION,'scoped':'42c484112239d78a943735d97125e356f123224a','width':'00b8d795a02cb1812ad740d0871a297b056f6e49','range':'0b3f0f0467b0bccc3224ef12b7b590b9199ee70c'}
     pairs=[('scoped','aa'),('release','version'),('release','scoped')]+[(base,variant) for base in ('scoped','release') for variant in ('width','range')]
