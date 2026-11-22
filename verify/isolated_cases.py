@@ -186,3 +186,27 @@ elif SCOPE == 'append-storage':
     cases += [('array_round_slice',n,'plain') for n in (32,4096)]
     cases += [('ckb_caller',n,'plain') for n in (32,4096)] + [('gix_caller',20,'parse')]
     assert len(cases)==len(set(cases))==67
+
+elif SCOPE == 'append-callsite':
+    revisions = {
+        'release': RELEASE, 'version': SAME_VERSION,
+        'pr': '25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
+        'scoped': 'fc834c71026b6d7f81738b53bd73237f408474ff',
+        'ordinary': '458fb61c74dcbcc99549d296b158656acbc5505c',
+    }
+    pairs = [('scoped','aa'),('release','version'),('release','pr'),
+             ('release','scoped'),('release','ordinary'),('version','ordinary'),
+             ('pr','scoped'),('pr','ordinary'),('scoped','ordinary')]
+    cases = [('append_call',n,'valid') for n in (0,16,32,33,64,256,1024,1025,4096,4097)]
+    cases += [('append_call',n,k) for n in (32,256,4096) for k in ('first','middle','rollback')]
+    cases += [('append_callsite',n,k+'-valid') for n in (32,256,1025,4096)
+              for k in ('direct','api','wrapper')]
+    cases += [('append_callsite',256,k+'-rollback') for k in ('direct','api','wrapper')]
+    cases += [('owned_blocks',n,k) for n in (32,4096)
+              for k in ('array-valid','vec-valid','array-late','vec-late')]
+    cases += [(b,n,k) for n in (32,4096) for b,k in
+              (('vec_round_slice','plain'),('vec_round_slice','escaped'),('array_round_slice','plain'),
+               ('array_read_slice','plain'),('vec_read_slice','plain'))]
+    cases += [('qualified_decode',n,'valid') for n in (32,4096)]
+    cases += [('ckb_caller',n,'plain') for n in (32,4096)] + [('gix_caller',20,'parse')]
+    assert len(cases)==len(set(cases))==57

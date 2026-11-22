@@ -1,4 +1,4 @@
-name: Measure append storage, rollback and destination alignment
+name: Isolate the public append call boundary in native consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,7 +18,7 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      STAGED_SHA: 1ef4f422595bbe5021d7d6afc714dddbd036e493
+      ORDINARY_SHA: 458fb61c74dcbcc99549d296b158656acbc5505c
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -42,21 +42,23 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
+          python3 verify/append_callsite_image.py
         shell: bash
         env:
-          ISOLATE: append-storage
+          ISOLATE: append-callsite
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-storage-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: append-callsite-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
+            real/append-callsite-image.json
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Test staged append
+      - name: Test ordinary append
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/staged" "$STAGED_SHA"
-          (cd "$RUNNER_TEMP/staged" && cargo test --release --all-features)
+          git worktree add --detach "$RUNNER_TEMP/ordinary" "$ORDINARY_SHA"
+          (cd "$RUNNER_TEMP/ordinary" && cargo test --release --all-features)
