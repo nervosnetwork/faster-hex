@@ -116,3 +116,25 @@ elif SCOPE=='validation':
     cases=[('validate_call',n,k) for n in (32,4096) for k in ('valid','odd','first','middle','last')]
     cases += [(b,n,k) for b,k in [('legacy_check','valid'),('qualified_decode','valid'),('vec_round_slice','plain')] for n in (32,4096)]
     cases += [('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
+
+elif SCOPE=='release-audit':
+    revisions={'release':RELEASE, 'version':SAME_VERSION, 'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4', 'scoped':os.environ['AUDIT_SHA']}
+    pairs=[('scoped','aa'),('release','version'),('version','scoped'),('release','scoped'),('pr','scoped')]
+    cases=[('full_buffer',n,'buffer') for n in (8,16,32,65,4096)]
+    cases += [('qualified_decode',n,'valid') for n in (16,32,4096)]
+    cases += [('legacy_check',n,'valid') for n in (32,4096)]
+    cases += [('owned_blocks',n,k) for n in (32,4096) for k in ('array-valid','vec-valid','array-late','vec-late')]
+    cases += [('full_format',n,k) for n,k in ((32,'display'),(32,'alternate'),(513,'padded'),(4096,'display'))]
+    cases += [('validate_call',n,k) for n in (32,4096) for k in ('valid','odd','first','middle','last')]
+    cases += [('append_call',n,'valid') for n in (0,16,32,33,64,256,1024,1025,4096,4097)]
+    cases += [('append_call',n,k) for n in (32,256,4096) for k in ('first','middle','rollback')]
+    cases += [('prefix_buffer',n,'buffer') for n in (0,4,7,8,12,40,64)]
+    cases += [('prefix_format',n,'display') for n in (7,12,1023)]
+    cases += [('gix_prefix',n,k+'-adopt') for k,ns in (('sha1',(0,7,40)),('sha256',(0,7,64))) for n in ns]
+    cases += [('gix_caller',n,'parse') for n in (20,32)]
+    cases += [('ckb_caller',n,k) for n in (32,4096) for k in ('plain','escaped')]
+    for target in ('array','vec'):
+        for n in (32,4096):
+            for phase,kind in (('read_slice','plain'),('read_slice','escaped'),('read_reader','reader'),('write','plain'),('round_slice','plain'),('round_slice','escaped'),('round_reader','reader')):
+                cases.append((target+'_'+phase,n,kind))
+    assert len(cases)==len(set(cases))==101
