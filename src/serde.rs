@@ -16,7 +16,6 @@ mod internal {
         const CASE: CheckCase;
     }
 
-    #[derive(Clone, Copy)]
     pub(super) enum FieldError {
         Prefix,
         Odd,
@@ -40,8 +39,13 @@ mod internal {
     pub(super) trait Destination {
         type Value;
         const MAX: usize = usize::MAX;
-        fn decode(pairs: &[[u8; 2]], case: CheckCase) -> Result<Self::Value, crate::Error>;
-        fn take(value: &mut Self::Value) -> Self::Value;
+
+        fn empty() -> Self::Value;
+        fn decode(
+            pairs: &[[u8; 2]],
+            output: &mut Self::Value,
+            case: CheckCase,
+        ) -> Result<(), crate::Error>;
     }
 
     pub(super) struct Bytes<const MAX: usize>;
@@ -50,61 +54,64 @@ mod internal {
         type Value = Vec<u8>;
         const MAX: usize = MAX;
 
-        fn take(value: &mut Vec<u8>) -> Vec<u8> {
-            core::mem::take(value)
+        fn empty() -> Vec<u8> {
+            Vec::new()
         }
 
-        #[inline(always)]
-        fn decode(pairs: &[[u8; 2]], case: CheckCase) -> Result<Vec<u8>, crate::Error> {
-            let mut bytes = alloc::vec![0; pairs.len()];
-            crate::hex_decode_with_case(pairs.as_flattened(), &mut bytes, case)?;
-            Ok(bytes)
+        fn decode(
+            pairs: &[[u8; 2]],
+            output: &mut Vec<u8>,
+            case: CheckCase,
+        ) -> Result<(), crate::Error> {
+            *output = alloc::vec![0; pairs.len()];
+            crate::hex_decode_with_case(pairs.as_flattened(), output, case)?;
+            Ok(())
         }
     }
 
     impl<const N: usize> Destination for [u8; N] {
         type Value = Self;
 
-        fn take(value: &mut Self) -> Self {
-            *value
+        fn empty() -> Self {
+            [0; N]
         }
 
-        #[inline(always)]
-        fn decode(pairs: &[[u8; 2]], case: CheckCase) -> Result<[u8; N], crate::Error> {
+        fn decode(
+            pairs: &[[u8; 2]],
+            output: &mut Self,
+            case: CheckCase,
+        ) -> Result<(), crate::Error> {
             use core::convert::TryInto;
             let input = pairs.try_into().map_err(|_| crate::Error::LengthMismatch {
                 expected: N,
                 actual: pairs.len(),
             })?;
-            crate::decode::decode_array_pairs(input, case)
+            crate::decode::decode_array_pairs(input, output, case)
         }
     }
 
-    // A deserializer may reject a field after visiting it, including its Option
-    // framing. Borrowed text can wait until then. Temporary text must be decoded
-    // in the visitor, but its hex diagnostic can still wait for the format.
-    pub(super) enum Field<'de, P, T: Destination> {
-        Borrowed(&'de str, PhantomData<P>),
-        Decoded(T::Value),
-        Invalid(FieldError),
+    enum Input<'de, T> {
+        Borrowed(&'de str),
+        Temporary(Result<T, FieldError>),
     }
 
-    struct FieldVisitor<'slot, 'de, P, T: Destination>(&'slot mut Option<Field<'de, P, T>>);
+    // A borrowed field can wait for the format to accept it. Temporary
+    // text must be decoded into the caller's storage while it is live.
+    struct TextVisitor<'a, P, T: Destination>(&'a mut T::Value, PhantomData<P>);
 
-    impl<'de, 'slot, P: Format, T: Destination> Visitor<'de> for FieldVisitor<'slot, 'de, P, T> {
-        type Value = &'slot mut Field<'de, P, T>;
+    impl<'de, P: Format, T: Destination> Visitor<'de> for TextVisitor<'_, P, T> {
+        type Value = Input<'de, ()>;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
 
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            let field = Field::<P, T>::decode(text, Field::Decoded, Field::Invalid);
-            Ok(self.0.insert(field))
+            Ok(Input::Temporary(Field::<P, T>::decode(text, self.0)))
         }
 
         fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(self.0.insert(Field::Borrowed(text, PhantomData)))
+            Ok(Input::Borrowed(text))
         }
 
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
@@ -122,76 +129,71 @@ mod internal {
         }
     }
 
+    // Option may reject the field after the inner deserializer succeeds.
+    // Keep borrowed input or a temporary decoding result until it accepts.
+    pub(super) struct Field<'de, P, T: Destination>(Input<'de, T::Value>, PhantomData<P>);
+
     impl<'de, P: Format, T: Destination> Deserialize<'de> for Field<'de, P, T> {
         fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-            let mut field = None;
-            Ok(match Self::input(d, &mut field)? {
-                Self::Borrowed(text, _) => Self::Borrowed(text, PhantomData),
-                Self::Decoded(value) => Self::Decoded(T::take(value)),
-                Self::Invalid(error) => Self::Invalid(*error),
-            })
+            let mut bytes = T::empty();
+            let input = match Self::input(d, &mut bytes)? {
+                Input::Borrowed(text) => Input::Borrowed(text),
+                Input::Temporary(result) => Input::Temporary(result.map(|()| bytes)),
+            };
+            Ok(Self(input, PhantomData))
         }
     }
 
     impl<'de, P: Format, T: Destination> Field<'de, P, T> {
-        fn input<'slot, D: Deserializer<'de>>(
+        fn input<D: Deserializer<'de>>(
             d: D,
-            slot: &'slot mut Option<Self>,
-        ) -> Result<&'slot mut Self, D::Error> {
-            d.deserialize_string(FieldVisitor(slot))
+            bytes: &mut T::Value,
+        ) -> Result<Input<'de, ()>, D::Error> {
+            d.deserialize_string(TextVisitor::<P, T>(bytes, PhantomData))
         }
 
-        #[inline]
-        fn decode<R>(
-            text: &str,
-            ready: impl FnOnce(T::Value) -> R,
-            invalid: impl FnOnce(FieldError) -> R,
-        ) -> R {
+        fn decode(text: &str, bytes: &mut T::Value) -> Result<(), FieldError> {
             let digits = if P::PREFIX {
-                let Some(digits) = text.strip_prefix("0x") else {
-                    return invalid(FieldError::Prefix);
-                };
-                digits
+                text.strip_prefix("0x").ok_or(FieldError::Prefix)?
             } else {
                 text
             };
             let (pairs, tail) = digits.as_bytes().as_chunks::<2>();
             if !tail.is_empty() {
-                return invalid(FieldError::Odd);
+                return Err(FieldError::Odd);
             }
             let actual = pairs.len();
             if actual > T::MAX {
-                return invalid(FieldError::Limit {
+                return Err(FieldError::Limit {
                     max: T::MAX,
                     actual,
                 });
             }
-            match T::decode(pairs, P::CASE) {
-                Ok(value) => ready(value),
-                Err(error) => invalid(FieldError::Hex(error)),
-            }
+            T::decode(pairs, bytes, P::CASE).map_err(FieldError::Hex)
         }
 
         pub(super) fn read<D: Deserializer<'de>>(d: D) -> Result<T::Value, D::Error> {
-            let mut field = None;
-            match Self::input(d, &mut field)? {
-                Self::Borrowed(text, _) => Self::decode(text, Ok, |error| Err(error.into_format())),
-                Self::Decoded(value) => Ok(T::take(value)),
-                Self::Invalid(error) => Err(error.into_format()),
+            let mut bytes = T::empty();
+            match Self::input(d, &mut bytes)? {
+                Input::Borrowed(text) => Self::decode(text, &mut bytes),
+                Input::Temporary(status) => status,
             }
+            .map_err(FieldError::into_format)?;
+            Ok(bytes)
         }
 
         pub(super) fn optional<D: Deserializer<'de>>(d: D) -> Result<Option<T::Value>, D::Error> {
-            match Option::<Self>::deserialize(d)? {
-                None => Ok(None),
-                Some(Self::Borrowed(text, _)) => Self::decode(
-                    text,
-                    |value| Ok(Some(value)),
-                    |error| Err(error.into_format()),
-                ),
-                Some(Self::Decoded(value)) => Ok(Some(value)),
-                Some(Self::Invalid(error)) => Err(error.into_format()),
-            }
+            Option::<Self>::deserialize(d)?
+                .map(|field| match field.0 {
+                    Input::Borrowed(text) => {
+                        let mut bytes = T::empty();
+                        Self::decode(text, &mut bytes)?;
+                        Ok(bytes)
+                    }
+                    Input::Temporary(result) => result,
+                })
+                .transpose()
+                .map_err(FieldError::into_format)
         }
     }
 

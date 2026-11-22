@@ -387,17 +387,17 @@ pub fn hex_decode_array_with_case<const N: usize>(
 #[inline]
 pub(crate) fn decode_array_pairs<const N: usize>(
     input: &[[u8; 2]; N],
+    bytes: &mut [u8; N],
     case: CheckCase,
-) -> Result<[u8; N], Error> {
+) -> Result<(), Error> {
     let src = input.as_flattened();
     #[cfg(target_arch = "aarch64")]
     if let Some(result) = decode_array_neon(src, case) {
-        return result;
+        *bytes = result?;
+        return Ok(());
     }
-    let mut bytes = [0; N];
-    // SAFETY: The array type supplies exactly one input pair for each private output byte.
-    unsafe { decode_owned(src, &mut bytes, case) }?;
-    Ok(bytes)
+    // SAFETY: The input type supplies one pair per byte of the output array.
+    unsafe { decode_owned(src, bytes, case) }
 }
 
 // Repeat eight digits to fill one NEON register. A rejected digit first
