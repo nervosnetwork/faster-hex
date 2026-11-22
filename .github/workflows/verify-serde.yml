@@ -1,4 +1,4 @@
-name: Isolate the Serde visitor and the append recovery call
+name: Compare packaged codec APIs and the separate owned-field decoder
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -14,10 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
         profile: [default, thin]
-        scope: [visitor]
-        include:
-          - {os: ubuntu-24.04-arm, profile: default, scope: recovery}
-          - {os: ubuntu-24.04-arm, profile: thin, scope: recovery}
+        scope: [surface, owned]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

@@ -50,6 +50,8 @@ registry = []
 packages = {}
 assert git('diff','--name-only',SCOPE_BASE,VISITOR).decode().splitlines()==['src/serde.rs']
 assert git('diff','--name-only',APPEND,RECOVERY).decode().splitlines()==['src/decode.rs']
+if SCOPE=='owned':
+    assert git('diff','--name-only',SCOPE_BASE,revisions['owned']).decode().splitlines()==['src/serde.rs']
 for role,ref in revisions.items():
     ver='2.0.0' if role=='release' else '2.1.0'
 
@@ -87,7 +89,7 @@ for b in bins:
     src=work/"probe/downstream/src/bin"/(b+".rs")
     if src.is_file():
         shutil.copy2(src,driver/"src/bin"/src.name)
-if SCOPE=='visitor':
+if SCOPE in ('visitor','owned'):
     shutil.copy2(ROOT/'verify/isolated_allocations.rs',driver/'src/bin/allocation_count.rs')
     shutil.copy2(work/'probe/downstream/src/bin/ownership.rs',driver/'src/bin/ownership.rs')
 
@@ -117,12 +119,18 @@ for role,(version,files,checksum) in packages.items():
     assert own["source"]==SOURCE and Path(own["manifest_path"]).parent==vendor/("faster-hex-"+version)
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
-    run([*cargo,"build","--release","--locked","--offline","--bins","--quiet"], e=build_env)
-    if SCOPE=='visitor':
+    available = list(bins)
+    if SCOPE=='surface':
+        if role in ('release','version'):
+            available=['full_format']
+        for name in available:
+            shutil.copy2(ROOT/'verify'/(name+'.rs'),driver/'src/bin'/(name+'.rs'))
+    run([*cargo,"build","--release","--locked","--offline","--quiet",*[item for b in available for item in ('--bin',b)],*(['--bin','allocation_count','--bin','ownership'] if SCOPE in ('visitor','owned') else [])], e=build_env)
+    if SCOPE in ('visitor','owned'):
         for name in ('allocation_count','ownership'):
             result=sp.check_output([str(Path(build_env['CARGO_TARGET_DIR'])/'release'/name)],text=True)
             (out/(role+'-'+name+'.txt')).write_text(result)
-    for b in bins:
+    for b in available:
         img=out/(role+"-"+b)
         shutil.copy2(Path(build_env["CARGO_TARGET_DIR"])/"release"/b,img)
         sections[role+"/"+b]=section(img)
@@ -139,10 +147,10 @@ for b,n,k in cases:
     count=max(200,min(5000000,round(17000000/max(1,sample('scoped',3000)))))
     rows=[]
     for _ in range(24):
-        order=[*revisions,'aa'];rng.shuffle(order);groups={r:[] for r in order}
+        order=[r for r in revisions if (out/(r+"-"+b)).is_file()]+["aa"];rng.shuffle(order);groups={r:[] for r in order}
         for role in order+order[::-1]:groups[role].append(sample(role,count))
         rows.append({r:statistics.mean(v) for r,v in groups.items()})
     key=f'{b}/{n}/{k}'
-    summary[key]={a+'/'+z:compare(rows,a,z) for a,z in pairs}; samples[key]=rows
+    summary[key]={a+'/'+z:compare(rows,a,z) for a,z in pairs if a in rows[0] and z in rows[0]}; samples[key]=rows
     print(key,{p:round(100*(v['ratio']-1),2) for p,v in summary[key].items()},flush=True)
     save(out/'times.json',summary);save(out/'samples.json',samples)
