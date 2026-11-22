@@ -120,7 +120,7 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('surface','buffer','format'):
+    if SCOPE in ('surface','buffer','format','append'):
         if role in ('release','version'):
             available=[b for b in bins if b in ('full_format','full_buffer')]
         for name in available:
