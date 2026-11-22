@@ -44,6 +44,15 @@ Use `view.encode_to(dst)` for a lowercase prefix in a caller-provided buffer,
 or `write!(out, "{view:#X}")` for formatted output. Use `hex_encode` when
 writing the complete value into a byte buffer.
 
+Time per SHA-1 prefix written into a reusable buffer by `gix_hash::Prefix::hex_to_buf`
+on an Apple M5 Pro, in nanoseconds. Each range spans the medians of default release
+and ThinLTO builds with Rust 1.95.0.
+
+| Implementation | 4 digits | 7 digits | 8 digits | 12 digits | 40 digits (full) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gix-hash with faster-hex 2.0 | 3.86–3.90 | 4.91–4.98 | 4.44–4.51 | 6.19–6.24 | 5.05–5.80 |
+| `leading_digits(n).encode_to(dst)` | 1.15–1.16 | 1.36–1.37 | 1.40–1.42 | 1.58–1.60 | 1.56–1.58 |
+
 ## Features
 
 `std` and `serde` are enabled by default. Set `default-features = false` for a
