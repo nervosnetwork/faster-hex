@@ -504,12 +504,9 @@ pub fn hex_decode_append<'a>(
     let suffix = &mut dst[start..];
     // SAFETY: resize created exactly one output byte per input pair. On failure
     // the private suffix can be discarded, including previously decoded blocks.
-    let decoded = unsafe { decode_appended_blocks(src, suffix) };
-    if let Err(from) = decoded {
-        if let Err(error) = diagnose_appended(src, suffix, from) {
-            dst.truncate(start);
-            return Err(error);
-        }
+    if let Err(error) = unsafe { decode_appended_blocks(src, suffix) } {
+        dst.truncate(start);
+        return Err(error);
     }
     Ok(&mut dst[start..])
 }
@@ -570,10 +567,10 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
     Ok(())
 }
 
-// On failure, return the byte offset of the first block that was not decoded.
+// Locate errors from the first block that was not decoded.
 // Safety: as for decode_owned_large; the caller owns the destination on error.
 #[cfg(feature = "alloc")]
-unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
+unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
     let case = CheckCase::None;
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -598,7 +595,7 @@ unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     let decoded = decode_checked(src, dst, case).map_err(|()| 0);
-    decoded
+    decoded.or_else(|from| diagnose_appended(src, dst, from))
 }
 
 /// Checks every digit before writing anything.
