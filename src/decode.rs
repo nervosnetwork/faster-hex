@@ -482,6 +482,7 @@ pub fn hex_decode_vec_with_case(
 /// ```
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[inline]
 pub fn hex_decode_append<'a>(
     src: &[u8],
     dst: &'a mut alloc::vec::Vec<u8>,
