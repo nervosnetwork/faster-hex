@@ -587,22 +587,22 @@ pub(super) unsafe fn hex_decode_sse41(src: &[u8], dst: &mut [u8]) {
 
 #[target_feature(enable = "avx2")]
 pub(super) unsafe fn hex_decode_avx2(src: &[u8], dst: &mut [u8]) {
-    if src.len() < 64 {
+    let (Some(first), Some(first_out)) = (src.first_chunk::<64>(), dst.first_chunk_mut::<32>())
+    else {
         return hex_decode_sse41(src, dst);
-    }
+    };
     let convert = |input: &[u8; 64], output: &mut [u8; 32]| {
         let a = _mm256_loadu_si256(input.as_ptr().cast());
         let b = _mm256_loadu_si256(input.as_ptr().add(32).cast());
         _mm256_storeu_si256(output.as_mut_ptr().cast(), decode_avx2_block(a, b));
     };
-    let (blocks, tail) = src.as_chunks::<64>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
+    convert(first, first_out);
+    // After the first vector, end-aligned blocks cover the rest. Skipping
+    // one pair keeps exact multiples from decoding the first vector twice.
+    let (_, blocks) = src[2..].as_rchunks::<64>();
+    let (_, outputs) = dst[1..].as_rchunks_mut::<32>();
+    for (input, output) in blocks.iter().zip(outputs) {
         convert(input, output);
-    }
-    if !tail.is_empty() {
-        if let (Some(input), Some(output)) = (src.last_chunk::<64>(), dst.last_chunk_mut::<32>()) {
-            convert(input, output);
-        }
     }
 }
 
