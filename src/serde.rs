@@ -4,10 +4,10 @@ use core::iter::FromIterator;
 
 mod internal {
     use crate::{
-        decode::{hex_decode_array_with_case, hex_decode_with_case, CheckCase},
+        decode::{hex_decode_array_with_case, hex_decode_vec_with_case, CheckCase},
         encode::encode,
     };
-    use alloc::{borrow::Cow, string::String, vec, vec::Vec};
+    use alloc::{borrow::Cow, string::String, vec::Vec};
     use core::{fmt, iter::FromIterator, mem::MaybeUninit};
     use serde::{
         de::{Error, Unexpected, Visitor},
@@ -139,9 +139,7 @@ mod internal {
                 "expected at most {max_bytes} decoded bytes, got {len}"
             )));
         }
-        let mut bytes = vec![0; len];
-        hex_decode_with_case(text.as_bytes(), &mut bytes, case).map_err(E::custom)?;
-        Ok(bytes)
+        hex_decode_vec_with_case(text.as_bytes(), case).map_err(E::custom)
     }
 
     fn decode_array<E: Error, const N: usize>(
