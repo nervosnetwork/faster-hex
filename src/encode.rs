@@ -433,7 +433,8 @@ unsafe fn encode_neon_16(src: &[u8; 16], dst: &mut [MaybeUninit<u8>; 32], table:
     let bytes = vld1q_u8(src.as_ptr());
     let high = vqtbl1q_u8(table, vshrq_n_u8::<4>(bytes));
     let low = vqtbl1q_u8(table, vandq_u8(bytes, vdupq_n_u8(15)));
-    vst2q_u8(dst.as_mut_ptr().cast(), uint8x16x2_t(high, low));
+    let digits = uint8x16x2_t(vzip1q_u8(high, low), vzip2q_u8(high, low));
+    vst1q_u8_x2(dst.as_mut_ptr().cast(), digits);
 }
 
 const fn encode_pairs(alphabet: &[u8; 16]) -> [[u8; 2]; 256] {
