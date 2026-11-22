@@ -118,11 +118,14 @@ impl<'a> Hex<'a> {
 }
 
 impl Hex<'_> {
-    fn format<const OMIT_LOW: bool>(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+    fn format<const OMIT_LOW: bool, const UPPER: bool>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         if f.width().is_some() || f.sign_plus() || f.alternate() {
-            return self.format_field::<OMIT_LOW>(f, upper);
+            return self.format_field::<OMIT_LOW>(f, UPPER);
         }
-        self.write_hex::<OMIT_LOW>(f, upper)
+        self.write_hex::<OMIT_LOW>(f, UPPER)
     }
 
     // Keep sign, prefix and padding out of plain hash formatting.
@@ -235,19 +238,19 @@ fn write_fill(f: &mut fmt::Formatter<'_>, fill: char, mut count: usize) -> fmt::
 
 impl fmt::Display for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format::<false>(f, false)
+        self.format::<false, false>(f)
     }
 }
 
 impl fmt::LowerHex for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format::<false>(f, false)
+        self.format::<false, false>(f)
     }
 }
 
 impl fmt::UpperHex for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format::<false>(f, true)
+        self.format::<false, true>(f)
     }
 }
 
@@ -277,29 +280,29 @@ impl LeadingDigits<'_> {
         }
     }
 
-    fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+    fn format<const UPPER: bool>(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.omit_low_nibble {
-            self.hex.format::<true>(f, upper)
+            self.hex.format::<true, UPPER>(f)
         } else {
-            self.hex.format::<false>(f, upper)
+            self.hex.format::<false, UPPER>(f)
         }
     }
 }
 
 impl fmt::Display for LeadingDigits<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format(f, false)
+        self.format::<false>(f)
     }
 }
 
 impl fmt::LowerHex for LeadingDigits<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format(f, false)
+        self.format::<false>(f)
     }
 }
 
 impl fmt::UpperHex for LeadingDigits<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format(f, true)
+        self.format::<true>(f)
     }
 }
