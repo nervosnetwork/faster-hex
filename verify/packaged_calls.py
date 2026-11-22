@@ -11,7 +11,7 @@ import sys
 import tarfile
 from cause_common import BASE, ROOT, compare, measure, pin, save, section
 
-PREPARED = "e03caf6f060d9475f2a79d5994fecf7571eaf4a9"
+PREPARED = "c2858276c1485881c1da8854c5fe1741d9df7cd9"
 RELEASE = "6d84260fe321669e7f93ecfb8aecb4db0f582f14"
 PUBLISHED = "e4ede54fe330383a5de28c0a1f06668ff9dbf06c8094e1c5150c39488a5e911d"
 SOURCE = "registry+https://github.com/rust-lang/crates.io-index"

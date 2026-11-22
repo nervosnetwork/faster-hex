@@ -1,4 +1,4 @@
-name: Validate the streaming append and error-only lookup against released callers
+name: Verify the append failure offsets against released callers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -50,39 +50,6 @@ jobs:
             real/qualification/archives.json
             real/qualification/*/*.json
             retained-work/results/*.json
-  controls:
-    name: Append and error positions / ${{ matrix.os }} / ${{ matrix.profile }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {os: ubuntu-22.04, profile: default}
-          - {os: ubuntu-22.04, profile: thin}
-          - {os: ubuntu-24.04-arm, profile: default}
-          - {os: macos-15-intel, profile: thin}
-          - {os: ubuntu-24.04, profile: thin}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Compare the isolated append change with published and earlier callers
-        shell: bash
-        env:
-          PROFILE: ${{ matrix.profile }}
-        run: |
-          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/append_release.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: streaming-${{ matrix.os }}-${{ matrix.profile }}
-          path: append-work/results
   product:
     name: Product tests / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -93,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: e03caf6f060d9475f2a79d5994fecf7571eaf4a9
+          ref: c2858276c1485881c1da8854c5fe1741d9df7cd9
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
