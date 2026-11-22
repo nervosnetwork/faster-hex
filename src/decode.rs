@@ -527,8 +527,7 @@ pub fn hex_decode_append<'a>(
 #[inline]
 fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
     diagnose_invalid::<true>(src, CheckCase::None, from)?;
-    hex_decode_fallback(&src[from..], &mut dst[from / 2..]);
-    Ok(())
+    decode_diagnosed(&src[from..], &mut dst[from / 2..], CheckCase::None)
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
