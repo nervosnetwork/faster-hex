@@ -499,14 +499,20 @@ pub fn hex_decode_append<'a>(
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
+    let len = src.len() / 2;
+    let small = len <= OWNED_DECODE_THRESHOLD;
+    if small && !hex_check(src) {
+        diagnose_invalid(src, CheckCase::None)?;
+    }
     let start = dst.len();
-    dst.resize(start + src.len() / 2, 0);
+    dst.resize(start + len, 0);
     let suffix = &mut dst[start..];
-    let decoded = if suffix.len() > OWNED_DECODE_THRESHOLD {
+    let decoded = if small {
+        hex_decode_unchecked(src, suffix);
+        Ok(())
+    } else {
         // SAFETY: The suffix has one byte per input pair and is discarded on error.
         unsafe { decode_owned_large(src, suffix, CheckCase::None) }
-    } else {
-        hex_decode(src, suffix).map(|_| ())
     };
     if let Err(error) = decoded {
         dst.truncate(start);
@@ -690,7 +696,12 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
 
 // Internal conversion only. Even if miscalled with short input, never pass an
 // undersized source to a SIMD kernel. Public callers must use checked decode.
-#[cfg(any(test, not(any(target_arch = "x86", target_arch = "x86_64"))))]
+#[cfg(any(
+    feature = "alloc",
+    test,
+    not(any(target_arch = "x86", target_arch = "x86_64"))
+))]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), inline)]
 pub(crate) fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
     let len = core::cmp::min(src.len() / 2, dst.len());
     let src = &src[..len * 2];
