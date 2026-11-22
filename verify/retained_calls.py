@@ -7,7 +7,7 @@ driver=work/'downstream'
 shutil.copytree(ROOT/'verify/retained',driver,dirs_exist_ok=True)
 lock=(driver/'Cargo.lock').read_text()
 out=work/'results';out.mkdir(exist_ok=True)
-roles={'release':'6d84260fe321669e7f93ecfb8aecb4db0f582f14','version':'f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93','pr':BASE,'prepared':'66de511665b057f35496d14b2b975a9880d7ccbc'}
+roles={'release':'6d84260fe321669e7f93ecfb8aecb4db0f582f14','version':'f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93','pr':BASE,'prepared':'e03caf6f060d9475f2a79d5994fecf7571eaf4a9'}
 codec=work/'codec'; sections={}
 for role,ref in roles.items():
     if codec.exists():

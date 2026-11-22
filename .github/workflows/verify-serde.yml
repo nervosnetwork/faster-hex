@@ -1,4 +1,4 @@
-name: Validate the isolated append change against released consumers
+name: Validate the streaming append and error-only lookup against released callers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -77,11 +77,11 @@ jobs:
           PROFILE: ${{ matrix.profile }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/append_final.py
+          python3 verify/append_release.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: isolated-${{ matrix.os }}-${{ matrix.profile }}
+          name: streaming-${{ matrix.os }}-${{ matrix.profile }}
           path: append-work/results
   product:
     name: Product tests / ${{ matrix.os }}
@@ -93,7 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 66de511665b057f35496d14b2b975a9880d7ccbc
+          ref: e03caf6f060d9475f2a79d5994fecf7571eaf4a9
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
