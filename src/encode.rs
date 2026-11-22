@@ -400,29 +400,19 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         }
         return;
     }
-    let (batches, rest) = src.as_chunks::<64>();
-    let (outputs, remaining) = dst.as_chunks_mut::<128>();
-    for (input, output) in batches.iter().zip(outputs) {
-        for (input, output) in input
-            .as_chunks::<16>()
-            .0
-            .iter()
-            .zip(output.as_chunks_mut::<32>().0)
-        {
-            encode_neon_16(input, output, table);
-        }
-    }
-    let (blocks, tail) = rest.as_chunks::<16>();
-    for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<32>().0) {
+    // Keep the final byte for the last full vector. An overlapping write encodes
+    // the same input bytes, including when the length is not a multiple of 16.
+    let body = &src[..src.len() - 1];
+    for (input, output) in body
+        .as_chunks::<16>()
+        .0
+        .iter()
+        .zip(dst.as_chunks_mut::<32>().0)
+    {
         encode_neon_16(input, output, table);
     }
-    if !tail.is_empty() {
-        // Re-encode the last complete block to cover a short tail. The overlap
-        // writes the same bytes and never accesses outside either slice.
-        match (src.last_chunk::<16>(), dst.last_chunk_mut::<32>()) {
-            (Some(input), Some(output)) => encode_neon_16(input, output, table),
-            _ => hex_encode_custom_case_fallback(src, dst, upper_case),
-        }
+    if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+        encode_neon_16(input, output, table);
     }
 }
 
