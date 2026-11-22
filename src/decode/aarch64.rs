@@ -14,18 +14,22 @@ use core::arch::aarch64::*;
 
 use super::{hex_check_fallback_with_case, hex_decode_fallback, CheckCase};
 
-// The high nibble selects a ten-digit range, a six-letter range or an empty
-// range. Digits start at low nibble zero and both letter ranges start at one.
+// ASCII digits, uppercase letters and lowercase letters occupy three distinct
+// high nibbles. Other nibbles and disallowed cases select a zero-width range.
 #[inline]
 #[target_feature(enable = "neon")]
 fn valid_neon(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
-    let widths = vsetq_lane_u8::<3>(10, vdupq_n_u8(0));
-    let widths = vsetq_lane_u8::<4>(if case == CheckCase::Lower { 0 } else { 6 }, widths);
-    let widths = vsetq_lane_u8::<6>(if case == CheckCase::Upper { 0 } else { 6 }, widths);
-    let width = vqtbl1q_u8(widths, vshrq_n_u8::<4>(bytes));
-    let low = vandq_u8(bytes, vdupq_n_u8(15));
-    let offset = vsubq_u8(low, vshrq_n_u8::<6>(bytes));
-    vcltq_u8(offset, width)
+    let ranges = |digits, upper, lower| {
+        let table = vsetq_lane_u8::<3>(digits, vdupq_n_u8(0));
+        let table = vsetq_lane_u8::<4>(upper, table);
+        vsetq_lane_u8::<6>(lower, table)
+    };
+    let upper = if case == CheckCase::Lower { 0 } else { 6 };
+    let lower = if case == CheckCase::Upper { 0 } else { 6 };
+    let high = vshrq_n_u8::<4>(bytes);
+    let start = vqtbl1q_u8(ranges(b'0', b'A', b'a'), high);
+    let width = vqtbl1q_u8(ranges(10, upper, lower), high);
+    vcltq_u8(vsubq_u8(bytes, start), width)
 }
 
 #[inline]
