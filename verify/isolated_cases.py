@@ -47,13 +47,13 @@ elif SCOPE in ('buffer','format'):
         cases=[('full_format',n,k) for n in (0,32,513,4096) for k in ('display','alternate','padded')]
         cases += [('prefix_format',n,'display') for n in (7,12,255,1023)]
 
-elif SCOPE=='avx2blocks':
-    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'42c484112239d78a943735d97125e356f123224a','plain':'073a9f0b089d1354afb3773b3e93616a18fa8cfd','wide':'4f328ceed2b7914d1ab8b9c91ff92b57300357cf'}
-    pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','plain'),('release','wide'),('pr','plain'),('pr','wide'),('plain','wide')]
-    cases=[('append_call',n,'valid') for n in (1,16,32,33,64,256,1025,4096,4097)]
-    cases+=[('append_call',n,k) for n in (32,256,4096) for k in ('first','rollback')]
-    cases+=[('owned_blocks',n,k) for n in (32,4096,4097) for k in ('array-valid','vec-valid','array-late','vec-late')]
-    cases+=[('vec_round_slice',n,'plain') for n in (32,4096)]
+elif SCOPE=='append-report':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'073a9f0b089d1354afb3773b3e93616a18fa8cfd','report':'163e41047af2938797b1e7d3f11488837cd22069'}
+    pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','report'),('pr','scoped'),('pr','report'),('scoped','report')]
+    cases=[('append_call',n,'valid') for n in (0,1,16,32,33,64,256,1024,1025,4096,4097)]
+    cases+=[('append_call',n,k) for n in (32,256,4096) for k in ('first','middle','rollback')]
+    cases+=[('owned_blocks',n,k) for n in (32,4096) for k in ('array-valid','vec-valid','array-late','vec-late')]
+    cases+=[(b,n,'plain') for b in ('vec_round_slice','array_round_slice') for n in (32,4096)]
 
 elif SCOPE=='append':
     revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'42c484112239d78a943735d97125e356f123224a','blocks':'9a14e514d93332ef67964742aca12a4730beafb2','plain':'073a9f0b089d1354afb3773b3e93616a18fa8cfd','outline':'3eb357d81f919095b12f72723dfdfd5a3ad1de5d'}

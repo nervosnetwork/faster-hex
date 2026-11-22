@@ -120,9 +120,9 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('surface','buffer','format','append','validation','avx2blocks'):
+    if SCOPE in ('surface','buffer','format','append','validation','append-report'):
         if role in ('release','version'):
-            available=[b for b in bins if b != 'append_call'] if SCOPE=='avx2blocks' else [b for b in bins if b in ('full_format','full_buffer')]
+            available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
         for name in available:
             harness = ROOT/'verify'/(name+'.rs')
             if harness.is_file():
@@ -154,6 +154,9 @@ for b,n,k in cases:
         for role in order+order[::-1]:groups[role].append(sample(role,count))
         rows.append({r:statistics.mean(v) for r,v in groups.items()})
     key=f'{b}/{n}/{k}'
-    summary[key]={a+'/'+z:compare(rows,a,z) for a,z in pairs if a in rows[0] and z in rows[0]}; samples[key]=rows
+    selected = pairs
+    if SCOPE == 'append-report':
+        selected = [pair for pair in pairs if (pair[0] != 'pr' or b == 'append_call') and (pair[0] != 'release' or b != 'append_call')]
+    summary[key]={a+'/'+z:compare(rows,a,z) for a,z in selected if a in rows[0] and z in rows[0]}; samples[key]=rows
     print(key,{p:round(100*(v['ratio']-1),2) for p,v in summary[key].items()},flush=True)
     save(out/'times.json',summary);save(out/'samples.json',samples)
