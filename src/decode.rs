@@ -300,7 +300,7 @@ pub fn hex_decode_with_case<'a>(
         .ok_or(Error::OutputTooSmall { required: len })?;
     // SAFETY: The input is even and dst is the exact output prefix checked above.
     if unsafe { decode_checked(src, dst, check_case) }.is_err() {
-        decode_diagnosed(src, dst, check_case)?;
+        decode_diagnosed(src, dst, check_case, 0)?;
     }
     Ok(dst)
 }
@@ -512,22 +512,12 @@ pub fn hex_decode_append<'a>(
         }
     };
     if let Err(from) = decoded {
-        if let Err(error) = diagnose_appended(src, suffix, from) {
+        if let Err(error) = decode_diagnosed(src, suffix, CheckCase::None, from) {
             dst.truncate(start);
             return Err(error);
         }
     }
     Ok(&mut dst[start..])
-}
-
-// Every earlier block is already valid and decoded. Search only the remainder
-// for the exact invalid digit, or finish it if a backend rejected valid input.
-#[cfg(feature = "alloc")]
-#[cold]
-#[inline]
-fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
-    diagnose_invalid(src, CheckCase::None, from)?;
-    decode_diagnosed(&src[from..], &mut dst[from / 2..], CheckCase::None)
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
@@ -564,7 +554,7 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     let decoded = decode_checked(src, dst, case);
     if decoded.is_err() {
-        decode_diagnosed(src, dst, case)?;
+        decode_diagnosed(src, dst, case, 0)?;
     }
     Ok(())
 }
@@ -699,13 +689,12 @@ pub(crate) fn hex_decode_short_scalar(
     Ok(())
 }
 
-// Backends report validity; diagnostics belong to the public boundary. The
-// successful SIMD path does not track byte positions or construct an error.
+// Input before `from` has already been decoded. On a backend rejection, report
+// the original digit index or finish the valid suffix with the scalar decoder.
 #[cold]
-fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid(src, case, 0)?;
-    // Recover if a backend rejected valid input; the caller needs initialized bytes.
-    hex_decode_fallback(src, dst);
+fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase, from: usize) -> Result<(), Error> {
+    diagnose_invalid(src, case, from)?;
+    hex_decode_fallback(&src[from..], &mut dst[from / 2..]);
     Ok(())
 }
 
