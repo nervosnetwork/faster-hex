@@ -627,16 +627,16 @@ pub(super) unsafe fn hex_decode_avx2_blocks<E>(
     case: CheckCase,
     failure: impl Fn(usize) -> E,
 ) -> Result<(), E> {
-    let (blocks, tail) = src.as_chunks::<64>();
-    let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
+    let (blocks, tail) = src.as_chunks::<128>();
+    let (outputs, rest) = dst.split_at_mut(blocks.len() * 64);
     for (i, (input, output)) in blocks
         .iter()
-        .zip(outputs.as_chunks_mut::<32>().0)
+        .zip(outputs.as_chunks_mut::<64>().0)
         .enumerate()
     {
-        hex_decode_avx2_checked(input, output, case).map_err(|()| failure(i * 64))?;
+        hex_decode_avx2_checked(input, output, case).map_err(|()| failure(i * 128))?;
     }
-    // SAFETY: Each block consumes 64 input bytes and 32 output bytes.
+    // SAFETY: Each block consumes 128 input bytes and 64 output bytes.
     unsafe { super::decode_checked(tail, rest, case) }.map_err(|()| failure(src.len() - tail.len()))
 }
 
