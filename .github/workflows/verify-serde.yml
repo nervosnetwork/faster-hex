@@ -22,8 +22,15 @@ jobs:
         run: |
           cp proof/verify/proof_contracts.rs candidate/src/proof_contracts.rs
           printf '\n#[cfg(kani)]\nmod proof_contracts;\n' >> candidate/src/lib.rs
-      - uses: model-checking/kani-github-action@daca1b75a96ce3884435ebaeeb73073ffa7edfbd
-        with:
-          kani-version: '0.68.0'
-          working-directory: candidate
-          args: --lib --no-default-features --harness proof_contracts --output-format terse
+      - name: Install the pinned verifier
+        run: |
+          cargo +stable install --locked --version 0.68.0 kani-verifier
+          cargo kani setup
+          kani --version | tee kani-version.txt
+          grep -F '0.68.0' kani-version.txt
+      - name: Verify both harnesses in the candidate crate
+        working-directory: candidate
+        shell: bash
+        run: |
+          kani src/lib.rs --harness proof_contracts --output-format terse | tee proof.log
+          grep -F '2 successfully verified harnesses, 0 failures' proof.log
