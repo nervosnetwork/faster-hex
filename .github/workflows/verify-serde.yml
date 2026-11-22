@@ -1,4 +1,4 @@
-name: Check bounded decode diagnostics and digit table placement
+name: Measure append storage, rollback and destination alignment
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,7 +18,7 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      BOUNDED_SHA: 54ef1bbac826a9e43dc2cb42456addf0ab23032c
+      STAGED_SHA: 1ef4f422595bbe5021d7d6afc714dddbd036e493
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -42,27 +42,21 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
-          if [[ "$LEGACY_SITES" == 1 ]]; then python3 verify/case_table_times.py; fi
         shell: bash
         env:
-          ISOLATE: bounded-errors
-          LEGACY_SITES: ${{ matrix.os == 'ubuntu-24.04-arm' && '1' || '0' }}
-          LEGACY_LIGHT: ${{ matrix.os != 'ubuntu-24.04-arm' && '1' || '0' }}
+          ISOLATE: append-storage
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: bounded-errors-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: append-storage-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-            real/table-sites/*.json
-            real/table-sites/*/*.json
-            real/table-sites/*/capture-error.txt
-      - name: Test the bounded diagnostic
+      - name: Test staged append
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/bounded" "$BOUNDED_SHA"
-          (cd "$RUNNER_TEMP/bounded" && cargo test --release --all-features)
+          git worktree add --detach "$RUNNER_TEMP/staged" "$STAGED_SHA"
+          (cd "$RUNNER_TEMP/staged" && cargo test --release --all-features)

@@ -162,3 +162,27 @@ elif SCOPE in ('legacy-errors','bounded-errors'):
         pairs += [(r,'bounded') for r in ('release','version','pr','scoped','group')]
         cases += [('legacy_error_positions',n,k) for n in (31,33,64,65) for k in ('mixed-first','mixed-middle','mixed-last')]
         assert len(cases)==len(set(cases))==56
+
+elif SCOPE == 'append-storage':
+    revisions = {
+        'release': RELEASE,
+        'version': SAME_VERSION,
+        'pr': '25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
+        'scoped': 'fc834c71026b6d7f81738b53bd73237f408474ff',
+        'staged': '1ef4f422595bbe5021d7d6afc714dddbd036e493',
+    }
+    pairs = [('scoped', 'aa'), ('release', 'version'), ('release', 'pr'),
+             ('release', 'scoped'), ('release', 'staged'), ('version', 'staged'),
+             ('pr', 'scoped'), ('pr', 'staged'), ('scoped', 'staged')]
+    cases = [('append_call',n,'valid') for n in (0,16,32,33,64,256,1024,1025,4096,4097)]
+    cases += [('append_call',n,k) for n in (32,256,1025,4096) for k in ('first','middle','rollback')]
+    storage = ('reuse-0-0-valid','reuse-0-3-valid','reuse-0-31-valid','reuse-0-63-valid',
+               'reuse-1-3-valid','reuse-0-3-late','grow-0-0-valid','grow-0-0-late',
+               'slice-0-3-valid','zero-0-3-valid')
+    cases += [('append_storage',n,k) for n in (256,1025,4096) for k in storage]
+    cases += [('owned_blocks',32,k) for k in ('array-late','vec-late','array-valid','vec-valid')]
+    cases += [('qualified_decode',n,'valid') for n in (32,4096)]
+    cases += [('vec_round_slice',n,k) for n in (32,4096) for k in ('plain','escaped')]
+    cases += [('array_round_slice',n,'plain') for n in (32,4096)]
+    cases += [('ckb_caller',n,'plain') for n in (32,4096)] + [('gix_caller',20,'parse')]
+    assert len(cases)==len(set(cases))==67
