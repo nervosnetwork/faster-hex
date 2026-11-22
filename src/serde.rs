@@ -90,16 +90,11 @@ mod internal {
         }
     }
 
-    enum Input<'de, T> {
-        Borrowed(&'de str),
-        Temporary(Result<T, FieldError>),
-    }
-
     // A borrowed field can wait for the format to accept it. Temporary
     // text must be decoded into the caller's storage while it is live.
     struct TextVisitor<'a, P, T: Destination> {
         output: &'a mut T::Value,
-        error: &'a mut Option<FieldError>,
+        status: &'a mut Result<(), FieldError>,
         policy: PhantomData<P>,
     }
 
@@ -111,9 +106,7 @@ mod internal {
         }
 
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            if let Err(error) = Field::<P, T>::decode(text, self.output) {
-                *self.error = Some(error);
-            }
+            *self.status = Field::<P, T>::decode(text, self.output);
             Ok(None)
         }
 
@@ -138,16 +131,19 @@ mod internal {
 
     // Option may reject the field after the inner deserializer succeeds.
     // Keep borrowed input or a temporary decoding result until it accepts.
-    pub(super) struct Field<'de, P, T: Destination>(Input<'de, T::Value>, PhantomData<P>);
+    pub(super) enum Field<'de, P, T: Destination> {
+        Borrowed(&'de str, PhantomData<P>),
+        Temporary(Result<T::Value, FieldError>),
+    }
 
     impl<'de, P: Format, T: Destination> Deserialize<'de> for Field<'de, P, T> {
         fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
             let mut bytes = T::empty();
-            let input = match Self::input(d, &mut bytes)? {
-                Input::Borrowed(text) => Input::Borrowed(text),
-                Input::Temporary(result) => Input::Temporary(result.map(|()| bytes)),
-            };
-            Ok(Self(input, PhantomData))
+            let mut status = Ok(());
+            Ok(match Self::input(d, &mut bytes, &mut status)? {
+                Some(text) => Self::Borrowed(text, PhantomData),
+                None => Self::Temporary(status.map(|()| bytes)),
+            })
         }
     }
 
@@ -155,16 +151,12 @@ mod internal {
         fn input<D: Deserializer<'de>>(
             d: D,
             bytes: &mut T::Value,
-        ) -> Result<Input<'de, ()>, D::Error> {
-            let mut error = None;
-            let borrowed = d.deserialize_string(TextVisitor::<P, T> {
+            status: &mut Result<(), FieldError>,
+        ) -> Result<Option<&'de str>, D::Error> {
+            d.deserialize_string(TextVisitor::<P, T> {
                 output: bytes,
-                error: &mut error,
+                status,
                 policy: PhantomData,
-            })?;
-            Ok(match borrowed {
-                Some(text) => Input::Borrowed(text),
-                None => Input::Temporary(error.map_or(Ok(()), Err)),
             })
         }
 
@@ -190,11 +182,11 @@ mod internal {
 
         pub(super) fn read<D: Deserializer<'de>>(d: D) -> Result<T::Value, D::Error> {
             let mut bytes = T::empty();
-            match Self::input(d, &mut bytes)? {
-                Input::Borrowed(text) => Self::decode(text, &mut bytes),
-                Input::Temporary(status) => status,
+            let mut status = Ok(());
+            if let Some(text) = Self::input(d, &mut bytes, &mut status)? {
+                status = Self::decode(text, &mut bytes);
             }
-            .map_err(FieldError::into_format)?;
+            status.map_err(FieldError::into_format)?;
             Ok(bytes)
         }
 
@@ -202,13 +194,13 @@ mod internal {
             let Some(field) = Option::<Self>::deserialize(d)? else {
                 return Ok(None);
             };
-            match field.0 {
-                Input::Borrowed(text) => {
+            match field {
+                Self::Borrowed(text, _) => {
                     let mut bytes = T::empty();
                     Self::decode(text, &mut bytes).map_err(FieldError::into_format)?;
                     Ok(Some(bytes))
                 }
-                Input::Temporary(result) => result.map(Some).map_err(FieldError::into_format),
+                Self::Temporary(result) => result.map(Some).map_err(FieldError::into_format),
             }
         }
     }
