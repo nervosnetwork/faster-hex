@@ -5,40 +5,14 @@ on:
 permissions:
   contents: read
 jobs:
-  scratch:
-    name: Serde writer buffer / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  fields:
+    name: Serde and short decodes / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel]
-        lto: ["false", "thin"]
-    timeout-minutes: 30
-    env:
-      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Keep the writer, source bytes, output and temporary text at fixed addresses
-        run: python3 verify/writer_storage.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: writer-buffer-${{ matrix.os }}-${{ matrix.lto }}
-          path: writer-buffer-work/results
-
-  reader:
-    name: Profile ordinary from_reader on ARM / LTO ${{ matrix.lto }}
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
+        os: [macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
@@ -50,14 +24,53 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Install native CPU sampling support
+      - name: Verify byte, case, overlap, diagnostics and Serde contracts
         run: |
-          sudo apt-get -qq update
-          sudo apt-get -qq install -y google-perftools libgoogle-perftools-dev
-      - name: Rebuild the original array and Vec readers and profile their hot instructions
-        run: python3 verify/profile_reader.py
+          cp verify/short_inputs.rs tests/short_inputs.rs
+          cargo test --release --all-features --test short_inputs --test allocations --test serde_protocol
+      - name: Compare ordinary and temporary field inputs and their allocations
+        run: python3 verify/short_calls.py fields
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: reader-arm-${{ matrix.lto }}
-          path: reader-profile
+          name: fields-${{ matrix.os }}-${{ matrix.lto }}
+          path: short-results
+  ckb:
+    name: CKB and gix real calls / ARM / LTO ${{ matrix.lto }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        lto: ["false", "thin"]
+    env:
+      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nervosnetwork/ckb
+          ref: 2061bc092a5dd447a741fad03b02628203b35e96
+          path: real/ckb
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: GitoxideLabs/gitoxide
+          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
+          path: real/gitoxide
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - name: Compare pinned CKB and gix with 2.0, the PR and the candidate
+        run: python3 verify/short_calls.py consumer
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: consumers-arm-${{ matrix.lto }}
+          path: short-results

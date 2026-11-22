@@ -36,69 +36,94 @@ mod internal {
         }
     }
 
+    // JSON may lend or temporarily hold the text. The two output forms
+    // differ only in how they obtain an exactly sized destination.
+    pub(super) trait Output<'a> {
+        fn bytes(self, len: usize) -> Result<&'a mut [u8], FieldError>;
+    }
+
+    impl<'a> Output<'a> for &'a mut [u8] {
+        fn bytes(self, len: usize) -> Result<&'a mut [u8], FieldError> {
+            if len != self.len() {
+                return Err(FieldError::Hex(crate::Error::LengthMismatch {
+                    expected: self.len(),
+                    actual: len,
+                }));
+            }
+            Ok(self)
+        }
+    }
+
+    struct BoundedVec<'a, const MAX: usize>(&'a mut Vec<u8>);
+
+    impl<'a, const MAX: usize> Output<'a> for BoundedVec<'a, MAX> {
+        fn bytes(self, len: usize) -> Result<&'a mut [u8], FieldError> {
+            if len > MAX {
+                return Err(FieldError::Limit {
+                    max: MAX,
+                    actual: len,
+                });
+            }
+            *self.0 = alloc::vec![0; len];
+            Ok(self.0.as_mut_slice())
+        }
+    }
+
+    fn decode<'a>(
+        text: &str,
+        prefix: bool,
+        case: CheckCase,
+        output: impl Output<'a>,
+    ) -> Result<(), FieldError> {
+        let digits = if prefix {
+            text.strip_prefix("0x").ok_or(FieldError::Prefix)?
+        } else {
+            text
+        };
+        let (pairs, tail) = digits.as_bytes().as_chunks::<2>();
+        if !tail.is_empty() {
+            return Err(FieldError::Odd);
+        }
+        let dst = output.bytes(pairs.len())?;
+        crate::hex_decode_with_case(pairs.as_flattened(), dst, case)
+            .map(|_| ())
+            .map_err(FieldError::Hex)
+    }
+
     pub(super) trait Destination {
         type Value;
-        const MAX: usize = usize::MAX;
-
         fn empty() -> Self::Value;
-        fn decode(
-            pairs: &[[u8; 2]],
-            output: &mut Self::Value,
-            case: CheckCase,
-        ) -> Result<(), crate::Error>;
+        fn output<'a>(value: &'a mut Self::Value) -> impl Output<'a>;
     }
 
     pub(super) struct Bytes<const MAX: usize>;
-
     impl<const MAX: usize> Destination for Bytes<MAX> {
         type Value = Vec<u8>;
-        const MAX: usize = MAX;
-
-        fn empty() -> Vec<u8> {
+        fn empty() -> Self::Value {
             Vec::new()
         }
-
-        fn decode(
-            pairs: &[[u8; 2]],
-            output: &mut Vec<u8>,
-            case: CheckCase,
-        ) -> Result<(), crate::Error> {
-            *output = alloc::vec![0; pairs.len()];
-            crate::hex_decode_with_case(pairs.as_flattened(), output, case)?;
-            Ok(())
+        fn output<'a>(value: &'a mut Self::Value) -> impl Output<'a> {
+            BoundedVec::<MAX>(value)
         }
     }
 
     impl<const N: usize> Destination for [u8; N] {
         type Value = Self;
-
-        fn empty() -> Self {
+        fn empty() -> Self::Value {
             [0; N]
         }
-
-        fn decode(
-            pairs: &[[u8; 2]],
-            output: &mut Self,
-            case: CheckCase,
-        ) -> Result<(), crate::Error> {
-            use core::convert::TryInto;
-            let input = pairs.try_into().map_err(|_| crate::Error::LengthMismatch {
-                expected: N,
-                actual: pairs.len(),
-            })?;
-            crate::decode::decode_array_pairs(input, output, case)
+        fn output<'a>(value: &'a mut Self::Value) -> impl Output<'a> {
+            &mut value[..]
         }
     }
 
-    // A borrowed field can wait for the format to accept it. Temporary
-    // text must be decoded into the caller's storage while it is live.
-    struct TextVisitor<'a, P, T: Destination> {
-        output: &'a mut T::Value,
-        error: &'a mut Option<FieldError>,
+    struct TextVisitor<'a, P, O> {
+        output: O,
         policy: PhantomData<P>,
+        error: &'a mut Option<FieldError>,
     }
 
-    impl<'de, P: Format, T: Destination> Visitor<'de> for TextVisitor<'_, P, T> {
+    impl<'a, 'de, P: Format, O: Output<'a>> Visitor<'de> for TextVisitor<'a, P, O> {
         type Value = Option<&'de str>;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -106,7 +131,7 @@ mod internal {
         }
 
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            if let Err(error) = Field::<P, T>::decode(text, self.output) {
+            if let Err(error) = decode(text, P::PREFIX, P::CASE, self.output) {
                 *self.error = Some(error);
             }
             Ok(None)
@@ -158,38 +183,18 @@ mod internal {
             bytes: &mut T::Value,
             error: &mut Option<FieldError>,
         ) -> Result<Option<&'de str>, D::Error> {
-            d.deserialize_string(TextVisitor::<P, T> {
-                output: bytes,
+            d.deserialize_string(TextVisitor {
+                output: T::output(bytes),
+                policy: PhantomData::<P>,
                 error,
-                policy: PhantomData,
             })
-        }
-
-        fn decode(text: &str, bytes: &mut T::Value) -> Result<(), FieldError> {
-            let digits = if P::PREFIX {
-                text.strip_prefix("0x").ok_or(FieldError::Prefix)?
-            } else {
-                text
-            };
-            let (pairs, tail) = digits.as_bytes().as_chunks::<2>();
-            if !tail.is_empty() {
-                return Err(FieldError::Odd);
-            }
-            let actual = pairs.len();
-            if actual > T::MAX {
-                return Err(FieldError::Limit {
-                    max: T::MAX,
-                    actual,
-                });
-            }
-            T::decode(pairs, bytes, P::CASE).map_err(FieldError::Hex)
         }
 
         pub(super) fn read<D: Deserializer<'de>>(d: D) -> Result<T::Value, D::Error> {
             let mut bytes = T::empty();
             let mut error = None;
             match Self::input(d, &mut bytes, &mut error)? {
-                Some(text) => Self::decode(text, &mut bytes),
+                Some(text) => decode(text, P::PREFIX, P::CASE, T::output(&mut bytes)),
                 None => error.map_or(Ok(()), Err),
             }
             .map_err(FieldError::into_format)?;
@@ -203,7 +208,8 @@ mod internal {
             match field {
                 Self::Borrowed(text, _) => {
                     let mut bytes = T::empty();
-                    Self::decode(text, &mut bytes).map_err(FieldError::into_format)?;
+                    decode(text, P::PREFIX, P::CASE, T::output(&mut bytes))
+                        .map_err(FieldError::into_format)?;
                     Ok(Some(bytes))
                 }
                 Self::Temporary(result) => result.map(Some).map_err(FieldError::into_format),
@@ -244,12 +250,8 @@ mod internal {
         }
         encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
             .map_err(serde::ser::Error::custom)?;
-        // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
-        // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
-        // backing stack buffer or allocation stays live throughout serialization.
-        serializer.serialize_str(unsafe {
-            core::str::from_utf8_unchecked(core::slice::from_raw_parts(dst.as_ptr().cast(), len))
-        })
+        // SAFETY: The prefix and encoder initialized the entire slice with ASCII.
+        serializer.serialize_str(unsafe { core::str::from_utf8_unchecked(dst.assume_init_ref()) })
     }
 
     pub(crate) fn serialize_option<S, T>(
