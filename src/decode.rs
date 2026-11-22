@@ -490,8 +490,6 @@ pub fn hex_decode_vec_with_case(
 /// ```
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-// Keep unused append code from pulling SIMD constants into existing slice decoders.
-#[inline]
 pub fn hex_decode_append<'a>(
     src: &[u8],
     dst: &'a mut alloc::vec::Vec<u8>,
