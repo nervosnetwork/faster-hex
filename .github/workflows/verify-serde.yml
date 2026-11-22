@@ -1,19 +1,23 @@
-name: Repeat the published baseline on independent Intel macOS runners
+name: Isolate the Serde visitor and the append recovery call
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
 permissions:
   contents: read
 jobs:
-  baseline:
-    name: Published 2.0.0 / ${{ matrix.os }} / ${{ matrix.profile }}
+  checks:
+    name: ${{ matrix.scope }} / ${{ matrix.os }} / ${{ matrix.profile }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel]
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
         profile: [default, thin]
+        scope: [visitor]
+        include:
+          - {os: ubuntu-24.04-arm, profile: default, scope: recovery}
+          - {os: ubuntu-24.04-arm, profile: thin, scope: recovery}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -36,14 +40,16 @@ jobs:
           toolchain: 1.95.0
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/release_baseline.py
+          python3 verify/isolate_callers.py
         shell: bash
         env:
+          ISOLATE: ${{ matrix.scope }}
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: published-${{ matrix.os }}-${{ matrix.profile }}
+          name: ${{ matrix.scope }}-${{ matrix.os }}-${{ matrix.profile }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
+            real/qualification/*/*.txt
