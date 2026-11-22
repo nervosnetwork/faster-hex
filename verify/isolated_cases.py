@@ -271,3 +271,24 @@ elif SCOPE == 'append-fill':
     cases += [(b,n,k) for n in (32,4096) for b,k in [('vec_round_slice','plain'),('vec_round_slice','escaped'),('array_round_slice','plain'),('ckb_caller','plain')]]
     cases += [('gix_caller',20,'parse')]
     assert len(cases)==len(set(cases))==67
+
+elif SCOPE == 'append-shape':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'narrow':SCOPE_BASE,
+               'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
+               'scoped':'fc834c71026b6d7f81738b53bd73237f408474ff',
+               'ordinary':'458fb61c74dcbcc99549d296b158656acbc5505c',
+               'extend':'6c068d01dd224f4cd6343a530105c10c77c3a5ad',
+               'staged':'1ef4f422595bbe5021d7d6afc714dddbd036e493'}
+    revisions.update({'pr_inline': 'e24615c55ab943fdc2d8b3173c6ff60d4713d3af', 'grouped': 'c80ecfa97e0ee3a444d3bc5044594a3f73dfa7ec', 'array': 'eb8257c9a923db04550108e1703842999f1b3a8f'})
+    pairs=[('scoped','aa'),('release','version'),('release','narrow'),('narrow','scoped'),('release','pr'),('release','scoped'),('pr','scoped')]
+    pairs += [(left,right) for left in ('release','pr','scoped') for right in ('pr_inline','ordinary','extend','grouped','staged','array')]
+    pairs += [('pr_inline','scoped'),('pr_inline','ordinary'),('extend','grouped'),('staged','array'),('grouped','array')]
+    pairs=list(dict.fromkeys(pairs))
+    cases=[('append_call',n,'valid') for n in (0,1,16,31,32,33,63,64,65,256,1024,1025,4096,4097,65536)]
+    cases += [('append_call',n,k) for n in (32,256,4096) for k in ('first','middle','rollback')]
+    cases += [('append_callsite',n,k+'-valid') for n in (256,4096) for k in ('direct','api','wrapper')]
+    cases += [('append_storage',n,k) for n in (256,4096) for k in ('reuse-0-3-valid','reuse-0-3-late','grow-0-0-valid')]
+    cases += [('vec_round_slice',4096,k) for k in ('plain','escaped')]
+    cases += [(b,n,k) for n in (32,4096) for b,k in (('array_round_slice','plain'),('ckb_caller','plain'),('owned_blocks','vec-late'),('qualified_decode','valid'))]
+    cases += [('gix_caller',20,'parse')]
+    assert len(cases)==len(set(cases))==47

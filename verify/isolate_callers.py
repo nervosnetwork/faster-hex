@@ -143,10 +143,10 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('append-fill','prefix-kernel-exchange','prefix-operation','legacy-errors','bounded-errors','release-audit','append-storage','append-callsite','append-suffix') and role in ('release','version'):
+    if SCOPE in ('append-shape','append-fill','prefix-kernel-exchange','prefix-operation','legacy-errors','bounded-errors','release-audit','append-storage','append-callsite','append-suffix') and role in ('release','version'):
         available = [b for b in bins if b not in ('append_call','append_storage','append_callsite','append_result','validate_call','prefix_buffer','prefix_format','prefix_extent')]
-    if SCOPE in ('append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
-        if role in ('release','version') and SCOPE not in ('append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
+    if SCOPE in ('append-shape','append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
+        if role in ('release','version') and SCOPE not in ('append-shape','append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
         if SCOPE in ('append-recovery','short-json') and role in ('release','version'):
             available=[b for b in bins if b not in ('append_call','validate_call')]
