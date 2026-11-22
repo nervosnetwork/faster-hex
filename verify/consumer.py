@@ -192,6 +192,9 @@ if study:
    key="decode_"+direction.lower()
    cases[key]=[33,64,96,112,128,129,4096]
    ops[key]=("",f"faster_hex::hex_decode_with_case(black_box(&hex),black_box(&mut dst[..n]),faster_hex::CheckCase::{direction}).unwrap();black_box(&dst);")
+  if diagnostics:
+   for name in ('first','middle','last'):
+    cases[name]=[32,256,4096]
  elif study=="matched":
   cases={"mixed":[32,4096],"escapedmixed":[32,4096]}
  elif study=="fixed":

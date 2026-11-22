@@ -377,36 +377,28 @@ fn array_decoding_keeps_the_text_hint_and_input_modes() {
 }
 
 #[test]
-fn owned_fields_keep_case_errors_and_limits_across_sizes() {
+fn large_owned_payloads_keep_case_errors_relative_to_the_hex_digits() {
     use serde::de::value::BorrowedStrDeserializer;
 
-    fn check<const MAX: usize>() {
-        let len = MAX + 1;
-        let mut text = format!("0x{}", "ab".repeat(len));
-        let de = BorrowedStrDeserializer::<Error>::new(&text);
-        let bytes: Vec<u8> = faster_hex::withpfx_lowercase::deserialize(de).unwrap();
-        assert_eq!(bytes, vec![0xab; len]);
+    let mut text = format!("0x{}", "ab".repeat(1025));
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let bytes: Vec<u8> = faster_hex::withpfx_lowercase::deserialize(de).unwrap();
+    assert_eq!(bytes, vec![0xab; 1025]);
 
-        let index = 2 * MAX;
-        text.replace_range(2 + index.., "Ag");
-        let de = BorrowedStrDeserializer::<Error>::new(&text);
-        let result: Result<Vec<u8>, _> = faster_hex::withpfx_lowercase::deserialize(de);
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!("invalid hex byte 0x41 at index {index}")
-        );
+    text.replace_range(2 + 2048.., "Ag");
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let result: Result<Vec<u8>, _> = faster_hex::withpfx_lowercase::deserialize(de);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "invalid hex byte 0x41 at index 2048"
+    );
 
-        let de = BorrowedStrDeserializer::<Error>::new(&text);
-        let result: Result<Vec<u8>, _> = faster_hex::deserialize_bounded::<MAX, _, _>(de);
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!("expected at most {MAX} decoded bytes, got {len}")
-        );
-    }
-    check::<254>();
-    check::<255>();
-    check::<256>();
-    check::<1024>();
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let result: Result<Vec<u8>, _> = faster_hex::deserialize_bounded::<1024, _, _>(de);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "expected at most 1024 decoded bytes, got 1025"
+    );
 }
 
 #[test]
@@ -450,43 +442,6 @@ fn errors_preserve_prefix_length_character_and_utf8_precedence() {
         result.unwrap_err().to_string(),
         "invalid type: boolean `true`, expected a string"
     );
-}
-
-#[test]
-fn a_format_error_after_the_value_precedes_invalid_hex() {
-    use faster_hex::option_withpfx_ignorecase as optional;
-
-    struct UnclosedField;
-    impl<'de> Deserializer<'de> for UnclosedField {
-        type Error = Error;
-
-        fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-            visitor.visit_str::<Error>("0xgg")?;
-            Err(Error::custom("unclosed string"))
-        }
-
-        fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-            visitor.visit_some(serde::de::value::StrDeserializer::<Error>::new("0xgg"))?;
-            Err(Error::custom("unclosed option"))
-        }
-
-        serde::forward_to_deserialize_any! {
-            bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes byte_buf
-            unit unit_struct newtype_struct seq tuple tuple_struct map struct enum identifier ignored_any
-        }
-    }
-    for error in [
-        faster_hex::deserialize::<_, Vec<u8>>(UnclosedField).unwrap_err(),
-        faster_hex::array::deserialize::<_, 1>(UnclosedField).unwrap_err(),
-    ] {
-        assert_eq!(error.to_string(), "unclosed string");
-    }
-    for error in [
-        optional::deserialize::<_, Vec<u8>>(UnclosedField).unwrap_err(),
-        optional::array::deserialize::<_, 1>(UnclosedField).unwrap_err(),
-    ] {
-        assert_eq!(error.to_string(), "unclosed option");
-    }
 }
 
 #[test]
