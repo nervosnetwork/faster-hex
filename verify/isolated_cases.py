@@ -139,7 +139,7 @@ elif SCOPE=='release-audit':
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
 
-elif SCOPE=='legacy-errors':
+elif SCOPE in ('legacy-errors','bounded-errors'):
     revisions={'release':RELEASE,'version':SAME_VERSION,'narrow':SCOPE_BASE,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'fc834c71026b6d7f81738b53bd73237f408474ff','group':'8800debd7a36c84ba8a0ec455b9d1c4705cad6ba','one':'5ea9c7a3bb98706a5dcfa7eb36b0b37920109f4d'}
     if os.environ.get('LEGACY_LIGHT')=='1':
         revisions.pop('narrow')
@@ -153,3 +153,12 @@ elif SCOPE=='legacy-errors':
     cases += [(b,n,k) for n in (32,4096) for b,k in (('vec_round_slice','plain'),('vec_round_slice','escaped'),('vec_read_slice','plain'),('array_read_slice','plain'),('array_round_slice','plain'))]
     cases += [('ckb_caller',n,'plain') for n in (32,4096)]+[('gix_caller',20,'parse')]
     assert len(cases)==len(set(cases))==44
+
+    if SCOPE == 'bounded-errors':
+        revisions.pop('narrow',None)
+        revisions.pop('one')
+        revisions['bounded']='54ef1bbac826a9e43dc2cb42456addf0ab23032c'
+        pairs=[p for p in pairs if 'one' not in p and 'narrow' not in p]
+        pairs += [(r,'bounded') for r in ('release','version','pr','scoped','group')]
+        cases += [('legacy_error_positions',n,k) for n in (31,33,64,65) for k in ('mixed-first','mixed-middle','mixed-last')]
+        assert len(cases)==len(set(cases))==56
