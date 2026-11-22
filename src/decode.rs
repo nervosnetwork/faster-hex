@@ -500,18 +500,26 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.reserve(src.len() / 2);
-    let mut block = [0; 32];
-    for input in src.chunks(2 * block.len()) {
-        match hex_decode(input, &mut block) {
-            Ok(bytes) => dst.extend_from_slice(bytes),
-            Err(mut error) => {
-                if let Error::InvalidChar { index, .. } = &mut error {
-                    *index += (dst.len() - start) * 2;
-                }
-                dst.truncate(start);
-                return Err(error);
+    let (blocks, tail) = src.as_chunks::<64>();
+    let decoded = blocks
+        .iter()
+        .try_for_each(|input| {
+            dst.extend_from_slice(&hex_decode_array::<32>(input)?);
+            Ok(())
+        })
+        .and_then(|()| {
+            if !tail.is_empty() {
+                let mut bytes = [0; 32];
+                dst.extend_from_slice(hex_decode(tail, &mut bytes)?);
             }
+            Ok(())
+        });
+    if let Err(mut error) = decoded {
+        if let Error::InvalidChar { index, .. } = &mut error {
+            *index += (dst.len() - start) * 2;
         }
+        dst.truncate(start);
+        return Err(error);
     }
     Ok(&mut dst[start..])
 }
