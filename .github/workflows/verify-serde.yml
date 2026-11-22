@@ -1,0 +1,52 @@
+name: Compare packaged byte-pair validation
+on:
+  push:
+    branches: [zhangsoledad/verify-2.1-serde]
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: ${{ matrix.scope }} / ${{ matrix.os }} / ${{ matrix.profile }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
+        profile: [default, thin]
+        scope: [validation]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nervosnetwork/ckb
+          ref: 2061bc092a5dd447a741fad03b02628203b35e96
+          path: real/ckb
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: GitoxideLabs/gitoxide
+          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
+          path: real/gitoxide
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - run: |
+          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
+          python3 verify/isolate_callers.py
+        shell: bash
+        env:
+          ISOLATE: ${{ matrix.scope }}
+          PROFILE: ${{ matrix.profile }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: ${{ matrix.scope }}-${{ matrix.os }}-${{ matrix.profile }}
+          path: |
+            real/qualification/archives.json
+            real/qualification/*/*.json
+            real/qualification/*/*.txt

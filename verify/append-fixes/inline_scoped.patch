@@ -1,0 +1,186 @@
+diff --git a/src/decode.rs b/src/decode.rs
+index f8e4322..013a993 100644
+--- a/src/decode.rs
++++ b/src/decode.rs
+@@ -501,13 +501,61 @@ pub fn hex_decode_append<'a>(
+     }
+     let start = dst.len();
+     dst.resize(start + src.len() / 2, 0);
+-    if let Err(error) = hex_decode(src, &mut dst[start..]) {
+-        dst.truncate(start);
+-        return Err(error);
++    let suffix = &mut dst[start..];
++    // SAFETY: resize created exactly one output byte per input pair. On failure
++    // the private suffix can be discarded, including previously decoded blocks.
++    let decoded = unsafe {
++        if suffix.len() > OWNED_DECODE_THRESHOLD {
++            decode_owned_blocks(src, suffix, CheckCase::None)
++        } else {
++            decode_checked(src, suffix, CheckCase::None).map_err(|()| 0)
++        }
++    };
++    if let Err(from) = decoded {
++        if let Err(error) = diagnose_appended(src, suffix, from) {
++            dst.truncate(start);
++            return Err(error);
++        }
+     }
+     Ok(&mut dst[start..])
+ }
+ 
++// Every earlier block is already valid and decoded. Search only the remainder
++// for the exact invalid digit, or finish it if a backend rejected valid input.
++#[cfg(feature = "alloc")]
++#[cold]
++#[inline]
++fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
++    let rest = &src[from..];
++    if let Some(&byte) = rest.first() {
++        if UNHEX[usize::from(byte)] == NIL {
++            return Err(Error::InvalidChar { index: from, byte });
++        }
++    }
++    // Only an invalid table entry sets the high bits.
++    let groups = rest.as_chunks::<4>().0;
++    let valid = groups
++        .iter()
++        .take_while(|group| {
++            group
++                .iter()
++                .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
++                != NIL
++        })
++        .count();
++    let start = from + 4 * valid;
++    for (offset, &byte) in src[start..].iter().enumerate() {
++        if UNHEX[usize::from(byte)] == NIL {
++            return Err(Error::InvalidChar {
++                index: start + offset,
++                byte,
++            });
++        }
++    }
++    hex_decode_fallback(rest, &mut dst[from / 2..]);
++    Ok(())
++}
++
+ const OWNED_DECODE_THRESHOLD: usize = 1024;
+ 
+ /// Decodes into private output that the caller discards on error. Large inputs
+@@ -518,6 +566,17 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
+ // Inline dispatch to preserve array return/copy code generation.
+ #[inline(always)]
+ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
++    // SAFETY: the caller established the exact input/output length ratio.
++    if unsafe { decode_owned_blocks(src, dst, case) }.is_err() {
++        decode_diagnosed(src, dst, case)?;
++    }
++    Ok(())
++}
++
++// On failure, return the byte offset of the first block that was not decoded.
++// Safety: as for decode_owned_large; the caller owns the destination on error.
++#[inline(always)]
++unsafe fn decode_owned_blocks(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), usize> {
+     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+     let decoded = match crate::vectorization_support() {
+@@ -530,21 +589,18 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
+             // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
+             unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
+         }
+-        _ => decode_checked(src, dst, case),
++        _ => decode_checked(src, dst, case).map_err(|()| 0),
+     };
+     #[cfg(target_arch = "aarch64")]
+     let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
+         // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
+         unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
+     } else {
+-        decode_checked(src, dst, case)
++        decode_checked(src, dst, case).map_err(|()| 0)
+     };
+     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+-    let decoded = decode_checked(src, dst, case);
+-    if decoded.is_err() {
+-        decode_diagnosed(src, dst, case)?;
+-    }
+-    Ok(())
++    let decoded = decode_checked(src, dst, case).map_err(|()| 0);
++    decoded
+ }
+ 
+ /// Checks every digit before writing anything.
+diff --git a/src/decode/aarch64.rs b/src/decode/aarch64.rs
+index 1d63d8b..135394a 100644
+--- a/src/decode/aarch64.rs
++++ b/src/decode/aarch64.rs
+@@ -189,12 +189,16 @@ pub(crate) unsafe fn hex_decode_neon_owned(
+     src: &[u8],
+     dst: &mut [u8],
+     case: CheckCase,
+-) -> Result<(), ()> {
++) -> Result<(), usize> {
+     let (blocks, tail) = src.as_chunks::<64>();
+     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
+-    for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
+-        hex_decode_bounded_neon(input, output, case)?;
++    for (i, (input, output)) in blocks
++        .iter()
++        .zip(outputs.as_chunks_mut::<32>().0)
++        .enumerate()
++    {
++        hex_decode_bounded_neon(input, output, case).map_err(|()| i * 64)?;
+     }
+     // SAFETY: Each block consumes 64 input bytes and 32 output bytes.
+-    unsafe { super::decode_checked(tail, rest, case) }
++    unsafe { super::decode_checked(tail, rest, case) }.map_err(|()| src.len() - tail.len())
+ }
+diff --git a/src/decode/x86.rs b/src/decode/x86.rs
+index acdaa76..ee6ed68 100644
+--- a/src/decode/x86.rs
++++ b/src/decode/x86.rs
+@@ -614,14 +614,18 @@ pub(crate) unsafe fn hex_decode_avx2_owned(
+     src: &[u8],
+     dst: &mut [u8],
+     case: CheckCase,
+-) -> Result<(), ()> {
++) -> Result<(), usize> {
+     let (blocks, tail) = src.as_chunks::<64>();
+     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
+-    for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
+-        hex_decode_avx2_checked(input, output, case)?;
++    for (i, (input, output)) in blocks
++        .iter()
++        .zip(outputs.as_chunks_mut::<32>().0)
++        .enumerate()
++    {
++        hex_decode_avx2_checked(input, output, case).map_err(|()| i * 64)?;
+     }
+     // SAFETY: Each block consumes 64 input bytes and 32 output bytes.
+-    unsafe { super::decode_checked(tail, rest, case) }
++    unsafe { super::decode_checked(tail, rest, case) }.map_err(|()| src.len() - tail.len())
+ }
+ 
+ #[target_feature(enable = "avx512f,avx512bw")]
+@@ -629,12 +633,16 @@ pub(crate) unsafe fn hex_decode_avx512_owned(
+     src: &[u8],
+     dst: &mut [u8],
+     case: CheckCase,
+-) -> Result<(), ()> {
++) -> Result<(), usize> {
+     let (blocks, tail) = src.as_chunks::<128>();
+     let (outputs, rest) = dst.split_at_mut(blocks.len() * 64);
+-    for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<64>().0) {
+-        hex_decode_avx512_checked(input, output, case)?;
++    for (i, (input, output)) in blocks
++        .iter()
++        .zip(outputs.as_chunks_mut::<64>().0)
++        .enumerate()
++    {
++        hex_decode_avx512_checked(input, output, case).map_err(|()| i * 128)?;
+     }
+     // SAFETY: Each block consumes 128 input bytes and 64 output bytes.
+-    unsafe { super::decode_checked(tail, rest, case) }
++    unsafe { super::decode_checked(tail, rest, case) }.map_err(|()| src.len() - tail.len())
+ }
