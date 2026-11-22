@@ -1,4 +1,4 @@
-name: Compare the existing owned decoder for append callers
+name: Locate short JSON costs in native package consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -40,21 +40,26 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
+          if [[ "$SHORT_JSON_LAYOUT" == 1 ]]; then python3 verify/short_json_sites.py; fi
         shell: bash
         env:
-          ISOLATE: append-recovery
+          ISOLATE: short-json
           PROFILE: ${{ matrix.profile }}
+          SHORT_JSON_LAYOUT: ${{ matrix.os == 'ubuntu-24.04-arm' && '1' || '0' }}
+          SHORT_JSON_LIGHT: ${{ matrix.os != 'ubuntu-24.04-arm' && '1' || '0' }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-owned-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: short-json-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Exercise release tests in the measured candidate
+            real/short-json-sites/*.json
+      - name: Exercise both isolated changes
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/checked-codec" 7dfaa3ae35b6ee7376c2247f3d3cbbd4ef5912d6
-          cd "$RUNNER_TEMP/checked-codec"
-          cargo test --release --all-features
+          for revision in fc834c71026b6d7f81738b53bd73237f408474ff 3ab653f0ba171618dd175d70331c556d11a9cc08; do
+            git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
+            (cd "$RUNNER_TEMP/$revision" && cargo test --release --all-features)
+          done

@@ -15,13 +15,18 @@ def stats(p):
  taken=re.findall(r'^\s*\d+\s+(\.\S+)\s+([0-9a-f]+)\s+([0-9a-f]+)',rows,re.M)
  return {name:[int(addr,16),int(length,16)] for name,length,addr in taken}
 results={'native':stats(exe)}
-script=out/'diagnostic.ld'
-script.write_text('SECTIONS { .layout_diagnostic : { '+('QUAD(0); '*8)+' } } INSERT BEFORE .text;\n')
-ret=sp.run([cc,*args,'-Wl,-T,'+str(script)],capture_output=True,text=True)
-if ret.returncode==0:
- shutil.copy2(exe,out/'shift64')
- results['shift64']=stats(exe)
-else: results['error']=ret.stderr
+for padding in ((64,128) if os.environ.get('SHORT_JSON_LAYOUT')=='1' else (64,)):
+ script=out/('diagnostic-'+str(padding)+'.ld')
+ script.write_text('SECTIONS { .layout_diagnostic : { '+('QUAD(0); '*(padding//8))+' } } INSERT BEFORE .text;\n')
+ sp.run([cc,*args,'-Wl,-T,'+str(script)],check=True)
+ label='shift'+str(padding);shutil.copy2(exe,out/label)
+ results[label]=stats(exe)
+if os.environ.get('SHORT_JSON_LAYOUT')=='1':
+ script=out/'data-only.ld'
+ script.write_text('SECTIONS { .layout_diagnostic : { '+('QUAD(0); '*8)+' } } INSERT AFTER .text;\n')
+ sp.run([cc,*args,'-Wl,-T,'+str(script)],check=True)
+ shutil.copy2(exe,out/'after64')
+ results['after64']=stats(exe)
 sp.run([cc,*args],check=True)
 assert exe.read_bytes()==(out/'native').read_bytes()
 (out/'sections.json').write_text(json.dumps(results))

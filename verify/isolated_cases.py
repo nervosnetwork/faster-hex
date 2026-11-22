@@ -76,6 +76,15 @@ elif SCOPE=='arm-store':
     cases+=[('ckb_caller',n,kind) for n in (32,4096) for kind in ('plain','escaped')]
     cases+=[('gix_caller',n,'parse') for n in (20,32)]
 
+elif SCOPE=='short-json':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'42c484112239d78a943735d97125e356f123224a','direct':'8ccdbc0428d5f20ad8e8383d69eea001549f754d','owned':'7dfaa3ae35b6ee7376c2247f3d3cbbd4ef5912d6','call':'fc834c71026b6d7f81738b53bd73237f408474ff','cold':'3ab653f0ba171618dd175d70331c556d11a9cc08'}
+    if os.environ.get('SHORT_JSON_LIGHT')=='1':
+        revisions={k:v for k,v in revisions.items() if k not in ('version','owned')}
+    pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','direct'),('release','owned'),('release','call'),('release','cold'),('version','direct'),('version','call'),('version','cold'),('scoped','direct'),('scoped','owned'),('scoped','call'),('scoped','cold'),('direct','call'),('direct','cold'),('pr','direct'),('pr','call'),('pr','cold')]
+    cases=[(b,n,'plain') for b in ('vec_read_slice','vec_write','vec_round_slice','array_read_slice','array_round_slice') for n in (32,4096)]
+    cases += [(b,n,'escaped') for b in ('vec_read_slice','vec_round_slice','array_read_slice') for n in (32,4096)]
+    cases += [('append_call',n,k) for n in (32,256,1025,4096) for k in ('valid','middle','rollback')]
+    cases += [('ckb_caller',n,'plain') for n in (32,4096)]+[('gix_caller',20,'parse')]
 elif SCOPE=='append-recovery':
     revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'8ccdbc0428d5f20ad8e8383d69eea001549f754d','candidate':'7dfaa3ae35b6ee7376c2247f3d3cbbd4ef5912d6'}
     pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','candidate'),('pr','scoped'),('pr','candidate'),('scoped','candidate')]

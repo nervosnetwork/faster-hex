@@ -28,6 +28,14 @@ template += 'serde = { version = "=1.0.229", features = ["derive"] }\n'
 lock = (driver / "Cargo.lock").read_text().replace(' "gix-hash",\n "serde_json",',' "gix-hash",\n "serde",\n "serde_json",')
 assert ' "gix-hash",\n "serde",\n "serde_json",' in lock
 env = dict(os.environ)
+layout = SCOPE == 'short-json' and env.get('SHORT_JSON_LAYOUT') == '1'
+if layout:
+    env['JSON_REAL_CC'] = shutil.which('cc')
+    wrapper = work / 'short-linker'
+    wrapper.mkdir()
+    shutil.copy2(ROOT/'verify/arm_json_link.py',wrapper/'cc')
+    (wrapper/'cc').chmod(0o755)
+    env['PATH'] = str(wrapper)+os.pathsep+env['PATH']
 offline = ["--offline"] if env.get("CARGO_NET_OFFLINE") == "true" else []
 def digest(b):
     return hashlib.sha256(b).hexdigest()
@@ -113,6 +121,8 @@ for role,(version,files,checksum) in packages.items():
             p.write_bytes(data)
         (dest/".cargo-checksum.json").write_text(json.dumps({"package":checksum,"files":{p:digest(s) for p,s in files.items()}}))
     build_env=dict(env,CARGO_TARGET_DIR=str(work/("target-"+role+"-"+mode)))
+    if layout:
+        build_env['JSON_LINK_WORK'] = str(work/'round-layout'/role)
     cargo=["cargo",*config]
     meta=json.loads(sp.check_output([*cargo,"metadata","--format-version=1","--locked","--offline"],cwd=driver,env=build_env))
     own,=[p for p in meta["packages"] if p["name"]=="faster-hex" and p["version"]==version]
@@ -120,10 +130,10 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery'):
-        if role in ('release','version') and SCOPE not in ('arm-store','range-check','prefix-length','append-recovery'):
+    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
+        if role in ('release','version') and SCOPE not in ('arm-store','range-check','prefix-length','append-recovery','short-json'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
-        if SCOPE=='append-recovery' and role in ('release','version'):
+        if SCOPE in ('append-recovery','short-json') and role in ('release','version'):
             available=[b for b in bins if b not in ('append_call','validate_call')]
         if SCOPE=='prefix-length' and role in ('release','version'):
             available=[b for b in bins if b not in ('prefix_buffer','prefix_format')]
