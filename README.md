@@ -27,9 +27,10 @@ fn main() -> Result<(), faster_hex::Error> {
 }
 ```
 
-Both functions return the written portion of the buffer and preserve its
-contents on error. `hex_decode` accepts mixed-case ASCII hex and reports the
-byte offset of the first invalid digit.
+Both calls return the written slice and preserve the buffer on error.
+`hex_decode` accepts mixed-case ASCII hex and reports the first invalid digit's
+byte offset. Use `hex_validate` to check hex pairs without an output buffer, or
+`hex_decode_append` (with `alloc`) to extend an existing `Vec<u8>`.
 
 ## Hash prefixes
 

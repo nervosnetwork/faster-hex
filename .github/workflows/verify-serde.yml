@@ -1,50 +1,19 @@
-name: Native 2.1 release checks
+name: Native 2.1 package qualification
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
 permissions:
   contents: read
 jobs:
-  fields:
-    name: Serde and short decodes / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  calls:
+    name: Registry consumers / ${{ matrix.os }} / ${{ matrix.profile }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
-        lto: ["false", "thin"]
-    env:
-      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Verify byte, case, overlap, diagnostics and Serde contracts
-        run: |
-          cp verify/short_inputs.rs tests/short_inputs.rs
-          cargo test --release --all-features --test short_inputs --test allocations --test serde_protocol
-      - name: Compare ordinary and temporary field inputs and their allocations
-        run: python3 verify/short_calls.py fields
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: fields-${{ matrix.os }}-${{ matrix.lto }}
-          path: short-results
-  ckb:
-    name: CKB and gix real calls / ARM / LTO ${{ matrix.lto }}
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        lto: ["false", "thin"]
-    env:
-      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
+        os: [macos-15-intel, ubuntu-24.04-arm]
+        profile: [default, thin]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -55,22 +24,27 @@ jobs:
           repository: nervosnetwork/ckb
           ref: 2061bc092a5dd447a741fad03b02628203b35e96
           path: real/ckb
-          fetch-depth: 1
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: GitoxideLabs/gitoxide
           ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
           path: real/gitoxide
-          fetch-depth: 1
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare pinned CKB and gix with 2.0, the PR and the candidate
-        run: python3 verify/short_calls.py consumer
+      - name: Compare published 2.0, the PR and the prepared package
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
+          python3 verify/packaged_calls.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: consumers-arm-${{ matrix.lto }}
-          path: short-results
+          name: registry-${{ matrix.os }}-${{ matrix.profile }}
+          path: |
+            real/qualification/archives.json
+            real/qualification/*/*.json

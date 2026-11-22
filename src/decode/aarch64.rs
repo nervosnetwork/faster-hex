@@ -27,35 +27,17 @@ unsafe fn valid_neon(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
     vorrq_u8(digit, letter)
 }
 
-// The high bit marks invalid input. The low four bits of a valid lane
-// are the decoded value. ASCII columns 3, 4 and 6 contain the digits,
-// uppercase letters and lowercase letters respectively.
 #[inline]
 #[target_feature(enable = "neon")]
 unsafe fn decode_neon_nibbles(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
-    const INVALID: u8 = 0x80;
-    // Low nibbles 1..=6 are shared by digits and letters. The others
-    // that occur in digits carry an extra bit so adding LETTER rejects them.
-    const LOW: [u8; 16] = [
-        0x10, 1, 2, 3, 4, 5, 6, 0x17, 0x18, 0x19, INVALID, INVALID, INVALID, INVALID, INVALID,
-        INVALID,
-    ];
-    const LETTER: u8 = 0x79;
-    const fn columns(upper: u8, lower: u8) -> [u8; 16] {
-        let mut table = [INVALID; 16];
-        table[3] = 0;
-        table[4] = upper;
-        table[6] = lower;
-        table
-    }
-    let high = match case {
-        CheckCase::None => &columns(LETTER, LETTER),
-        CheckCase::Lower => &columns(INVALID, LETTER),
-        CheckCase::Upper => &columns(LETTER, INVALID),
-    };
-    let low = vqtbl1q_u8(vld1q_u8(LOW.as_ptr()), vandq_u8(bytes, vdupq_n_u8(15)));
-    let high = vqtbl1q_u8(vld1q_u8(high.as_ptr()), vshrq_n_u8::<4>(bytes));
-    vqaddq_u8(low, high)
+    let digit = vsubq_u8(
+        vqsubq_u8(vaddq_u8(bytes, vdupq_n_u8(198)), vdupq_n_u8(6)),
+        vdupq_n_u8(240),
+    );
+    let fold = if case == CheckCase::None { 0x20 } else { 0 };
+    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
+    let letter = vsubq_u8(vorrq_u8(bytes, vdupq_n_u8(fold)), vdupq_n_u8(first));
+    vminq_u8(digit, vqaddq_u8(letter, vdupq_n_u8(10)))
 }
 
 #[inline]
@@ -127,7 +109,7 @@ pub(super) unsafe fn hex_decode_bounded_neon(
     let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), case);
     let c = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 32)), case);
     let d = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
-    if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) >= 0x80 {
+    if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
         return Err(());
     }
     let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
@@ -184,14 +166,14 @@ pub(super) unsafe fn hex_decode_short_neon(
     let pack = |a, b| vsliq_n_u8::<4>(vuzp2q_u8(a, b), vuzp1q_u8(a, b));
     let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
     if src.len() == 16 {
-        if vmaxvq_u8(a) >= 0x80 {
+        if vmaxvq_u8(a) > 15 {
             return Err(());
         }
         vst1_u8(dst.as_mut_ptr(), vget_low_u8(pack(a, a)));
         return Ok(());
     }
     let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
-    if vmaxvq_u8(vorrq_u8(a, b)) >= 0x80 {
+    if vmaxvq_u8(vorrq_u8(a, b)) > 15 {
         return Err(());
     }
     let decoded = pack(a, b);
