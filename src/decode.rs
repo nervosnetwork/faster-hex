@@ -507,7 +507,11 @@ pub fn hex_decode_append<'a>(
     // For validated ASCII, bit six distinguishes letters from decimal digits.
     let nibble = |digit: u8| (digit & 15) + 9 * (digit >> 6);
     let decode = |&[high, low]: &[u8; 2]| nibble(high) << 4 | nibble(low);
-    dst.extend(pairs.iter().map(decode));
+    let (blocks, tail) = pairs.as_chunks::<32>();
+    let decoded = blocks
+        .iter()
+        .flat_map(|block| block.map(|pair| decode(&pair)));
+    dst.extend(decoded.chain(tail.iter().map(decode)));
     Ok(&mut dst[start..])
 }
 
