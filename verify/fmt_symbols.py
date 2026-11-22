@@ -23,7 +23,7 @@ def inspect(path):
         assert body,(path,selected)
         data[hex(a)]={'names':selected,'extent':z-a,'instructions':len(body),'listing_digest':sha256('\n'.join(body).encode()).hexdigest(),'entry':body[:32]}
     return dict(symbols=data,text_extent=sum(v['extent'] for v in data.values()))
-roles=('release','version','narrow','pr','scoped','coalesced','separate','plain','typed')
+roles=('release','version','narrow','pr','scoped','coalesced','header','joined','safe')
 result={}
 for role in roles:
     for bin in ('full_format','fmt_sink','prefix_format'):

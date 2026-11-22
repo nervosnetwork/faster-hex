@@ -311,3 +311,23 @@ elif SCOPE == 'fmt-field':
     cases += [('owned_blocks',n,k) for n,k in ((32,'array-late'),(32,'vec-late'),(4096,'vec-late'))]
     cases += [('full_buffer',65,'buffer'),('append_call',256,'valid'),('append_call',1025,'valid'),('gix_caller',20,'parse')]
     assert len(cases)==len(set(cases))==52
+
+elif SCOPE == 'fmt-join':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'narrow':SCOPE_BASE,
+      'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'fc834c71026b6d7f81738b53bd73237f408474ff',
+      'coalesced':'283da6a91a455190fd1de9cf17dd8d3d12063276'}
+    revisions.update({'header': '58dd3686dfa8f0a7e92a87d5eb656d72a67945f1', 'joined': 'f3fb72cb2e941f4f821eec6dd21ab49d62aefc28', 'safe': 'c2b79d9b53fb41d981db5359b30884eff34b2e0e'})
+    pairs=[('scoped','aa'),('release','version'),('release','narrow'),('release','pr'),('release','scoped'),('release','coalesced'),('pr','scoped'),('pr','coalesced'),('scoped','coalesced')]
+    pairs += [(a,b) for a in ('release','version','pr','scoped','coalesced') for b in ('header','joined','safe')]
+    pairs += [('header','joined'),('safe','joined')]
+    cases=[('full_format',n,k) for n,k in ((32,'display'),(32,'alternate'),(32,'padded'),(513,'padded'),(4096,'display'))]
+    cases += [('fmt_sink',32,k) for k in ('display','upper','alternate','both','zero','unicode')]
+    cases += [('fmt_sink',n,'both') for n in (0,20,65,128,129,4096)]
+    cases += [('fmt_reject',n,'both') for n in (32,128,129)]
+    cases += [('serde_tag',n,k) for n in (32,65,66,67,4096) for k in ('tag-lower','bare-upper')]
+    cases += [('serde_tag',32,k) for k in ('tag-upper','bare-lower')]
+    cases += [(b,n,'plain') for b in ('array_write','vec_write','array_round_slice','vec_round_slice','ckb_caller') for n in (32,4096)]
+    cases += [(b,4096,'escaped') for b in ('array_round_slice','vec_round_slice')]
+    cases += [('prefix_format',n,'display') for n in (7,12,1023)]
+    cases += [('gix_prefix',7,'sha1-adopt'),('full_buffer',65,'buffer'),('append_call',256,'valid')]
+    assert len(cases)==len(set(cases))==50

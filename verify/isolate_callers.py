@@ -143,10 +143,10 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('fmt-field','append-shape','append-fill','prefix-kernel-exchange','prefix-operation','legacy-errors','bounded-errors','release-audit','append-storage','append-callsite','append-suffix') and role in ('release','version'):
+    if SCOPE in ('fmt-join','fmt-field','append-shape','append-fill','prefix-kernel-exchange','prefix-operation','legacy-errors','bounded-errors','release-audit','append-storage','append-callsite','append-suffix') and role in ('release','version'):
         available = [b for b in bins if b not in ('append_call','append_storage','append_callsite','append_result','validate_call','prefix_buffer','prefix_format','prefix_extent')]
-    if SCOPE in ('fmt-field','append-shape','append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
-        if role in ('release','version') and SCOPE not in ('fmt-field','append-shape','append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
+    if SCOPE in ('fmt-join','fmt-field','append-shape','append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
+        if role in ('release','version') and SCOPE not in ('fmt-join','fmt-field','append-shape','append-fill','prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
         if SCOPE in ('append-recovery','short-json') and role in ('release','version'):
             available=[b for b in bins if b not in ('append_call','validate_call')]
@@ -157,12 +157,18 @@ for role,(version,files,checksum) in packages.items():
             if harness.is_file():
                 shutil.copy2(harness,driver/'src/bin'/(name+'.rs'))
             assert (driver/'src/bin'/(name+'.rs')).is_file()
-    if SCOPE in ('fmt-field','prefix-length','release-audit','prefix-kernel-exchange','prefix-operation') and role in ('release','version'):
+    if SCOPE in ('fmt-join','fmt-field','prefix-length','release-audit','prefix-kernel-exchange','prefix-operation') and role in ('release','version'):
         probe=driver/'src/bin/gix_prefix.rs'
         use_view='faster_hex::Hex::new(prefix.as_oid().as_bytes()).leading_digits(prefix.hex_len()).encode_to(dst).unwrap()'
         code=probe.read_text();assert code.count(use_view)==1
         probe.write_text(code.replace(use_view,'prefix.hex_to_buf(dst)'))
+    if SCOPE=='fmt-join':
+        available.append('fmt_costs')
+        shutil.copy2(ROOT/'verify/fmt_costs.rs',driver/'src/bin/fmt_costs.rs')
     run([*cargo,"build","--release","--locked","--offline","--quiet",*[item for b in available for item in ('--bin',b)],*(['--bin','allocation_count','--bin','ownership'] if SCOPE in ('visitor','owned') else [])], e=build_env)
+    if SCOPE=='fmt-join':
+        costs=sp.check_output([str(Path(build_env['CARGO_TARGET_DIR'])/'release/fmt_costs')],text=True)
+        (out/(role+'-resource-costs.txt')).write_text(costs)
     if SCOPE in ('visitor','owned'):
         for name in ('allocation_count','ownership'):
             result=sp.check_output([str(Path(build_env['CARGO_TARGET_DIR'])/'release'/name)],text=True)
