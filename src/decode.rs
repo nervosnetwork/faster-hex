@@ -710,18 +710,20 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
 }
 
 #[inline(always)]
-fn diagnose_invalid<const GROUP_DIGITS: bool>(
+fn diagnose_invalid<const GROUP_LONG_INPUTS: bool>(
     src: &[u8],
     case: CheckCase,
     from: usize,
 ) -> Result<(), Error> {
+    const BLOCK: usize = 64;
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
     let rest = &src[from..];
-    if GROUP_DIGITS {
+    let group_digits = GROUP_LONG_INPUTS || rest.len() <= BLOCK;
+    if group_digits {
         for (offset, &byte) in rest.iter().take(2).enumerate() {
             if table[usize::from(byte)] == NIL {
                 return Err(Error::InvalidChar {
@@ -732,16 +734,16 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(
         }
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
-    let skipped = if rest.len() > 64 {
-        rest.chunks_exact(64)
+    let skipped = if rest.len() > BLOCK {
+        rest.chunks_exact(BLOCK)
             .take_while(|chunk| hex_check_with_case(chunk, case))
             .count()
-            * 64
+            * BLOCK
     } else {
         0
     };
     let skipped = from + skipped;
-    let start = if GROUP_DIGITS {
+    let start = if group_digits {
         // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
         let groups = src[skipped..].as_chunks::<4>().0;
         let valid = groups
