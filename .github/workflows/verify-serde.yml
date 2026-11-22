@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   fields:
-    name: Fixed-array NEON dispatch and complete Serde calls / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: Fixed-array destination, format framing and complete JSON calls / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 48
     strategy:
@@ -16,7 +16,7 @@ jobs:
         lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 1f368e1e571d9ac046472bad50d58a28e312c9eb
+      PRODUCT_REV: 9fa6d71209957bd5e03c8f6ff39bb3fd59ac8685
       REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

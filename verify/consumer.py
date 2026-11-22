@@ -296,7 +296,7 @@ for role,rev in [('base',base),('head',head)]:
    (out/(role+"-"+name+".asm")).write_text(output(["objdump","-d","-C","--disassemble=run_sample",dest/name]))
 if os.environ.get("FIELD_OBJECTS"):
  for role in ("base","head"):
-  for name in ("json32","option32","hash_slice","mixed","array32","array8"):
+  for name in ("json32","option32","json4096","option4096","hash_slice","mixed","array32","array8"):
    if name not in cases:continue
    asm=output(["objdump","-dC","--no-show-raw-insn",work/role/name])
    chunks=re.split(r"(?m)(?=^[0-9a-fA-F]+ <.+>:$)",asm)

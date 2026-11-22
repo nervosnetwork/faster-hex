@@ -387,21 +387,21 @@ pub fn hex_decode_array_with_case<const N: usize>(
 #[inline]
 pub(crate) fn decode_array_pairs<const N: usize>(
     input: &[[u8; 2]; N],
+    bytes: &mut [u8; N],
     case: CheckCase,
-) -> Result<[u8; N], Error> {
+) -> Result<(), Error> {
     let src = input.as_flattened();
     #[cfg(target_arch = "aarch64")]
     if let Some(result) = decode_array_neon(src, case) {
-        return result;
+        *bytes = result?;
+        return Ok(());
     }
-    let mut bytes = [0; N];
-    // SAFETY: The array type supplies exactly one input pair for each private output byte.
-    unsafe { decode_owned(src, &mut bytes, case) }?;
-    Ok(bytes)
+    // SAFETY: The input type supplies one pair per byte of the output array.
+    unsafe { decode_owned(src, bytes, case) }
 }
 
-// Four decoded bytes fit in a padded NEON block. The callers supply exactly
-// two input bytes per array element; padding never reads beyond that input.
+// Repeat eight digits to fill one NEON register. A rejected digit first
+// occurs in the original half, so diagnostic positions stay relative to src.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 fn decode_array_neon<const N: usize>(
@@ -411,11 +411,10 @@ fn decode_array_neon<const N: usize>(
     if N != 4 || crate::vectorization_support() != crate::Vectorization::Neon {
         return None;
     }
-    let mut digits = [b'0'; 16];
-    digits[..src.len()].copy_from_slice(src);
+    let digits = [*src.first_chunk::<8>()?; 2];
     let mut output = [0; 8];
     Some(
-        hex_decode_with_case(&digits, &mut output, case).map(|output| {
+        hex_decode_with_case(digits.as_flattened(), &mut output, case).map(|output| {
             let mut bytes = [0; N];
             bytes.copy_from_slice(&output[..N]);
             bytes
