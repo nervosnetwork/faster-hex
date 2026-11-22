@@ -524,7 +524,6 @@ pub fn hex_decode_append<'a>(
 // for the exact invalid digit, or finish it if a backend rejected valid input.
 #[cfg(feature = "alloc")]
 #[cold]
-#[inline]
 fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
     diagnose_invalid::<true>(src, CheckCase::None, from)?;
     hex_decode_fallback(&src[from..], &mut dst[from / 2..]);
