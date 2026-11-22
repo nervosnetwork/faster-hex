@@ -5,15 +5,15 @@ on:
 permissions:
   contents: read
 jobs:
-  decode:
-    name: Checked decode / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  scratch:
+    name: Serde writer buffer / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
+        lto: ["false", "thin"]
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15-intel, ubuntu-22.04, ubuntu-24.04]
-        lto: ["false", "thin"]
     env:
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
     steps:
@@ -24,54 +24,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare normal decoders and isolate conversion loop placement on Intel Mac
-        run: python3 verify/core_layout.py
-      - name: Check bulk and tail contracts on the trial implementation
-        working-directory: core-study/codec
-        run: cargo test --release --all-features --lib --test public_api --test owned_decode
+      - name: Keep the writer, source bytes, output and temporary text at fixed addresses
+        run: python3 verify/writer_storage.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: checked-${{ matrix.os }}-${{ matrix.lto }}
-          path: core-study/results
-  ckb:
-    name: CKB actual readers and writers / ARM / LTO ${{ matrix.lto }}
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        lto: ["false", "thin"]
-    env:
-      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: nervosnetwork/ckb
-          ref: 2061bc092a5dd447a741fad03b02628203b35e96
-          path: real/ckb
-          fetch-depth: 1
-          persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: GitoxideLabs/gitoxide
-          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
-          path: real/gitoxide
-          fetch-depth: 1
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Build unmodified CKB separately against 2.0 and the PR
-        run: CKB_NATURAL_PAIR=1 BUILD_CALLERS_ONLY=1 python3 verify/downstream/measure.py
-      - name: Cross both real readers with both real writers in one executable
-        run: python3 verify/cross_ckb.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: ckb-arm-${{ matrix.lto }}
-          path: results
+          name: writer-buffer-${{ matrix.os }}-${{ matrix.lto }}
+          path: writer-buffer-work/results
