@@ -68,7 +68,8 @@ def main():
             parts.append((int(m[1], 16), m[3].strip(), m[4]))
     kernel = next(i for i, (_, _, name) in enumerate(parts) if 'hex_decode_avx2_checked' in name)
     caller = next(i for i, (_, _, name) in enumerate(parts) if name == '.text.run_sample')
-    assert 0 < kernel < caller, (kernel, caller)
+    caller_only = 'LAYOUT_CALLER_ONLY' in os.environ
+    assert caller_only or 0 < kernel < caller, (kernel, caller)
 
     def available(i):
         return Path(parts[i][1]).is_file() and Path(parts[i][1]).suffix == '.o'
@@ -80,15 +81,17 @@ def main():
                 return i
         raise ValueError(f'no plain relocatable object before {parts[i]}')
 
-    locations = [parts[before(kernel, 0)], parts[before(caller, kernel)], parts[caller]]
+    locations = ([parts[before(caller, 0)], parts[caller]] if caller_only
+                 else [parts[before(kernel, 0)], parts[before(caller, kernel)], parts[caller]])
     assert available(caller)
     (out/'anchors.json').write_text(json.dumps({'locations': locations, 'kernel': parts[kernel], 'caller': parts[caller]}, indent=2))
     original = {Path(obj): Path(obj).read_bytes() for _, obj, name in locations}
     try:
-        for k in range(0, 64, 16):
+        for k in ([0] if caller_only else range(0, 64, 16)):
             for c in range(0, 64, 16):
                 changes = {path: [] for path in original}
-                for (_, obj, name), length in zip(locations, [k, 64 + c - k, 64 - c]):
+                pads = [c, 64-c] if caller_only else [k, 64+c-k, 64-c]
+                for (_, obj, name), length in zip(locations, pads):
                     changes[Path(obj)].append((name, length))
                 for obj, contents in original.items():
                     obj.write_bytes(pad_after_sections(contents, changes[obj]))
