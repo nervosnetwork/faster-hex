@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0
+
+- Add `Hex::leading_digits` for abbreviated hashes, including odd digit counts.
+  Format the view or write it directly into a byte buffer with `encode_to`.
+- Add `hex_decode_append` to decode into an existing vector. It returns the
+  appended slice and preserves the original bytes and length on error.
+- Add `hex_validate` to check complete hex byte pairs and report the first invalid byte.
+
 ## 2.0.0
 
 - Replace the `heapless-08` feature and `heapless_08` module with `heapless-09`
