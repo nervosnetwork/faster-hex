@@ -94,7 +94,7 @@ mod internal {
     // text must be decoded into the caller's storage while it is live.
     struct TextVisitor<'a, P, T: Destination> {
         output: &'a mut T::Value,
-        status: &'a mut Result<(), FieldError>,
+        error: &'a mut Option<FieldError>,
         policy: PhantomData<P>,
     }
 
@@ -106,7 +106,9 @@ mod internal {
         }
 
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            *self.status = Field::<P, T>::decode(text, self.output);
+            if let Err(error) = Field::<P, T>::decode(text, self.output) {
+                *self.error = Some(error);
+            }
             Ok(None)
         }
 
@@ -139,10 +141,13 @@ mod internal {
     impl<'de, P: Format, T: Destination> Deserialize<'de> for Field<'de, P, T> {
         fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
             let mut bytes = T::empty();
-            let mut status = Ok(());
-            Ok(match Self::input(d, &mut bytes, &mut status)? {
+            let mut error = None;
+            Ok(match Self::input(d, &mut bytes, &mut error)? {
                 Some(text) => Self::Borrowed(text, PhantomData),
-                None => Self::Temporary(status.map(|()| bytes)),
+                None => Self::Temporary(match error {
+                    Some(error) => Err(error),
+                    None => Ok(bytes),
+                }),
             })
         }
     }
@@ -151,11 +156,11 @@ mod internal {
         fn input<D: Deserializer<'de>>(
             d: D,
             bytes: &mut T::Value,
-            status: &mut Result<(), FieldError>,
+            error: &mut Option<FieldError>,
         ) -> Result<Option<&'de str>, D::Error> {
             d.deserialize_string(TextVisitor::<P, T> {
                 output: bytes,
-                status,
+                error,
                 policy: PhantomData,
             })
         }
@@ -182,11 +187,12 @@ mod internal {
 
         pub(super) fn read<D: Deserializer<'de>>(d: D) -> Result<T::Value, D::Error> {
             let mut bytes = T::empty();
-            let mut status = Ok(());
-            if let Some(text) = Self::input(d, &mut bytes, &mut status)? {
-                status = Self::decode(text, &mut bytes);
+            let mut error = None;
+            match Self::input(d, &mut bytes, &mut error)? {
+                Some(text) => Self::decode(text, &mut bytes),
+                None => error.map_or(Ok(()), Err),
             }
-            status.map_err(FieldError::into_format)?;
+            .map_err(FieldError::into_format)?;
             Ok(bytes)
         }
 
