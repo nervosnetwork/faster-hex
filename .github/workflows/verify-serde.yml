@@ -1,19 +1,17 @@
-name: Final formatting and release controls
+name: Native short decode diagnosis
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
 permissions:
   contents: read
 jobs:
-  calls:
-    name: Formatting and existing decodes / ${{ matrix.os }} / ${{ matrix.profile }}
+  decode:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, ubuntu-22.04, ubuntu-24.04-arm]
-        profile: [default, thin]
+        os: [ubuntu-22.04, ubuntu-24.04]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -22,15 +20,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare released formatting and independently repeat decode controls
-        shell: bash
-        env:
-          PROFILE: ${{ matrix.profile }}
-        run: |
-          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/confirm_format.py
+      - run: python3 verify/short_decode_cause.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: full-format-${{ matrix.os }}-${{ matrix.profile }}
-          path: retained-work/results/*.json
+          name: decode-${{ matrix.os }}
+          path: results/
