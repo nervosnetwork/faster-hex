@@ -178,15 +178,13 @@ mod kernels {
     fn forced_backends_check_every_byte_in_every_lane_before_writing() {
         for backend in backends() {
             let name = backend.name();
-            for len in [
-                2, 4, 6, 8, 10, 12, 14, 16, 32, 64, 66, 128, 130, 190, 192, 194,
-            ] {
+            // Every even length through 64 covers every overlap of two short input vectors.
+            for len in (2..=64).step_by(2).chain([66, 128, 130, 190, 192, 194]) {
                 for position in 0..len {
+                    // Vary neighboring digits to catch bits leaking between
+                    // byte lanes when a kernel uses wider shifts.
+                    let mut input: Vec<_> = (0..len).map(|i| b'0' + (i / 4 % 8) as u8).collect();
                     for byte in 0..=255 {
-                        // Vary neighboring digits to catch bits leaking between
-                        // byte lanes when a kernel uses wider shifts.
-                        let mut input: Vec<_> =
-                            (0..len).map(|i| b'0' + (i / 4 % 8) as u8).collect();
                         input[position] = byte;
                         for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
                             let valid = hex_check_fallback_with_case(&input, case);
