@@ -119,14 +119,17 @@ impl<'a> Hex<'a> {
 
 impl Hex<'_> {
     fn format<const OMIT_LOW: bool>(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+        let prefix = match (f.sign_plus(), f.alternate()) {
+            (false, false) => "",
+            (false, true) => "0x",
+            (true, false) => "+",
+            (true, true) => "+0x",
+        };
         if let Some(width) = f.width() {
-            return self.format_padded::<OMIT_LOW>(f, upper, width);
+            return self.format_padded::<OMIT_LOW>(f, upper, prefix, width);
         }
-        if f.sign_plus() {
-            f.write_str("+")?;
-        }
-        if f.alternate() {
-            f.write_str("0x")?;
+        if !prefix.is_empty() {
+            f.write_str(prefix)?;
         }
         self.write_hex::<OMIT_LOW>(f, upper)
     }
@@ -137,16 +140,13 @@ impl Hex<'_> {
         &self,
         f: &mut fmt::Formatter<'_>,
         upper: bool,
+        prefix: &str,
         width: usize,
     ) -> fmt::Result {
         // Saturation is sufficient for width comparison: if the complete output
         // exceeds usize::MAX characters, no representable width adds padding.
-        let prefix = if f.alternate() { "0x" } else { "" };
-        let sign = if f.sign_plus() { "+" } else { "" };
         let digits = self.bytes.len().saturating_mul(2) - usize::from(OMIT_LOW);
-        let len = digits
-            .saturating_add(prefix.len())
-            .saturating_add(sign.len());
+        let len = digits.saturating_add(prefix.len());
         let padding = width.saturating_sub(len);
         let zero_pad = f.sign_aware_zero_pad();
         let (left, right) = if zero_pad {
@@ -160,9 +160,6 @@ impl Hex<'_> {
         };
         let fill = f.fill();
         write_fill(f, fill, left)?;
-        if !sign.is_empty() {
-            f.write_str(sign)?;
-        }
         if !prefix.is_empty() {
             f.write_str(prefix)?;
         }
