@@ -1,10 +1,55 @@
-name: Verify the scoped append fix and x86 decoder dispatch
+name: Validate the isolated append change against released consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
 permissions:
   contents: read
 jobs:
+  calls:
+    name: Registry consumers / ${{ matrix.os }} / ${{ matrix.profile }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
+        profile: [default, thin]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nervosnetwork/ckb
+          ref: 2061bc092a5dd447a741fad03b02628203b35e96
+          path: real/ckb
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: GitoxideLabs/gitoxide
+          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
+          path: real/gitoxide
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - name: Verify the released calls with a package-version control
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
+          python3 verify/packaged_calls.py
+          python3 verify/retained_calls.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: registry-${{ matrix.os }}-${{ matrix.profile }}
+          path: |
+            real/qualification/archives.json
+            real/qualification/*/*.json
+            retained-work/results/*.json
   controls:
     name: Append and error positions / ${{ matrix.os }} / ${{ matrix.profile }}
     runs-on: ${{ matrix.os }}
@@ -32,41 +77,27 @@ jobs:
           PROFILE: ${{ matrix.profile }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/scoped_append.py
+          python3 verify/append_final.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: scoped-${{ matrix.os }}-${{ matrix.profile }}
+          name: isolated-${{ matrix.os }}-${{ matrix.profile }}
           path: append-work/results
-  dispatch:
-    name: Downstream loop and x86 dispatch / ${{ matrix.os }} / ${{ matrix.profile }}
+  product:
+    name: Product tests / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {os: ubuntu-22.04, profile: default}
-          - {os: ubuntu-22.04, profile: thin}
-          - {os: ubuntu-24.04, profile: default}
-          - {os: ubuntu-24.04, profile: thin}
+        os: [ubuntu-22.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
+          ref: 66de511665b057f35496d14b2b975a9880d7ccbc
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare dynamic feature dispatch at four downstream positions
-        shell: bash
-        env:
-          PROFILE: ${{ matrix.profile }}
-        run: |
-          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/dispatch_candidates.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: dispatch-${{ matrix.os }}-${{ matrix.profile }}
-          path: layout-work/results
+      - run: cargo test --release --all-features
+      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --features alloc
