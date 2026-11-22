@@ -109,7 +109,19 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
             return Err(Error::InvalidChar { index, byte });
         }
     }
-    diagnose_invalid(src, CheckCase::None)
+    let mut start = valid_block_prefix(src, CheckCase::None);
+    for group in src[start..].as_chunks::<4>().0 {
+        // Valid nibbles use four bits. An invalid entry sets all eight.
+        if group
+            .iter()
+            .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
+            == NIL
+        {
+            break;
+        }
+        start += group.len();
+    }
+    check_remaining_digits(src, start, &UNHEX)
 }
 
 /// Checks ASCII hex digits against an explicit letter-case policy.
@@ -667,18 +679,25 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
-    // Skip valid blocks so locating a late error retains SIMD throughput.
-    // Short inputs go directly to the byte scan.
-    let skipped = if src.len() > 64 {
+    check_remaining_digits(src, valid_block_prefix(src, case), table)
+}
+
+#[inline]
+fn valid_block_prefix(src: &[u8], case: CheckCase) -> usize {
+    if src.len() > 64 {
         src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
             .count()
             * 64
     } else {
         0
-    };
-    for (offset, &byte) in src[skipped..].iter().enumerate() {
-        let index = skipped + offset;
+    }
+}
+
+#[inline]
+fn check_remaining_digits(src: &[u8], start: usize, table: &[u8; 256]) -> Result<(), Error> {
+    for (offset, &byte) in src[start..].iter().enumerate() {
+        let index = start + offset;
         if table[usize::from(byte)] == NIL {
             return Err(Error::InvalidChar { index, byte });
         }
