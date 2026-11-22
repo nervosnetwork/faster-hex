@@ -127,7 +127,12 @@ macro_rules! array_policy_test {
             roundtrip([0xab]);
             roundtrip([0xcd; 32]);
             roundtrip([0x01; 64]);
-            roundtrip(core::array::from_fn::<_, 129, _>(|i| (i * 37) as u8));
+            // The 132-byte stack buffer fits 65 prefixed or 66 unprefixed bytes.
+            let byte = |i: usize| (i * 37) as u8;
+            roundtrip::<65>(core::array::from_fn(byte));
+            roundtrip::<66>(core::array::from_fn(byte));
+            roundtrip::<67>(core::array::from_fn(byte));
+            roundtrip::<129>(core::array::from_fn(byte));
 
             for (hex, actual) in [("", 0), ("abcd", 2)] {
                 for json in [
@@ -369,6 +374,31 @@ fn array_decoding_keeps_the_text_hint_and_input_modes() {
         });
         assert_eq!(result.unwrap_err().to_string(), expected);
     }
+}
+
+#[test]
+fn large_owned_payloads_keep_case_errors_relative_to_the_hex_digits() {
+    use serde::de::value::BorrowedStrDeserializer;
+
+    let mut text = format!("0x{}", "ab".repeat(1025));
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let bytes: Vec<u8> = faster_hex::withpfx_lowercase::deserialize(de).unwrap();
+    assert_eq!(bytes, vec![0xab; 1025]);
+
+    text.replace_range(2 + 2048.., "Ag");
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let result: Result<Vec<u8>, _> = faster_hex::withpfx_lowercase::deserialize(de);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "invalid hex byte 0x41 at index 2048"
+    );
+
+    let de = BorrowedStrDeserializer::<Error>::new(&text);
+    let result: Result<Vec<u8>, _> = faster_hex::deserialize_bounded::<1024, _, _>(de);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "expected at most 1024 decoded bytes, got 1025"
+    );
 }
 
 #[test]
