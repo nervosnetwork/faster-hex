@@ -289,17 +289,24 @@ impl LeadingDigits<'_> {
         if !self.omit_low_nibble {
             return self.hex.format(f, upper);
         }
-        let (&last, pairs) = self
-            .hex
-            .bytes
-            .split_last()
-            .expect("an odd prefix selects a byte");
         let write_digits = |f: &mut fmt::Formatter<'_>| {
-            Hex::new(pairs).write_hex(f, upper)?;
-            f.write_char(char::from(crate::encode::high_digit(last, upper)))
+            // Write the final partial byte in the same call as the preceding short digits.
+            let mut buffer = [MaybeUninit::uninit(); 256];
+            let bytes = self.hex.bytes;
+            let (head, tail) = bytes.split_at(bytes.len().saturating_sub(buffer.len() / 2));
+            if !head.is_empty() {
+                Hex::new(head).write_hex(f, upper)?;
+            }
+            let text = encode(tail, &mut buffer, upper).expect("the final chunk fits the buffer");
+            f.write_str(&text[..text.len() - 1])
         };
         if let Some(width) = f.width() {
-            return pad_hex(f, width, pairs.len() * 2 + 1, write_digits);
+            return pad_hex(
+                f,
+                width,
+                self.hex.bytes.len().saturating_mul(2) - 1,
+                write_digits,
+            );
         }
         write_prefix(f)?;
         write_digits(f)

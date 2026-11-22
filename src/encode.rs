@@ -503,12 +503,6 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
     vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
 }
 
-#[inline]
-pub(crate) fn high_digit(byte: u8, upper: bool) -> u8 {
-    let alphabet = if upper { TABLE_UPPER } else { TABLE_LOWER };
-    alphabet[usize::from(byte >> 4)]
-}
-
 // An odd digit count always selects at least the high nibble of the last byte.
 #[inline]
 pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
@@ -518,7 +512,7 @@ pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut st
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
     let written = hex_encode(pairs, output)?.len();
-    output[written] = high_digit(last, false);
+    output[written] = TABLE_LOWER[usize::from(last >> 4)];
     // SAFETY: hex_encode wrote the complete pairs as ASCII. The only
     // remaining byte was filled from the ASCII digit table.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
