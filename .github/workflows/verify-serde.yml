@@ -1,4 +1,4 @@
-name: Verify failed append recovery in native consumers
+name: Compare the existing owned decoder for append callers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-recovery-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: append-owned-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
@@ -55,6 +55,6 @@ jobs:
       - name: Exercise release tests in the measured candidate
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/checked-codec" 8ccdbc0428d5f20ad8e8383d69eea001549f754d
+          git worktree add --detach "$RUNNER_TEMP/checked-codec" 7dfaa3ae35b6ee7376c2247f3d3cbbd4ef5912d6
           cd "$RUNNER_TEMP/checked-codec"
           cargo test --release --all-features

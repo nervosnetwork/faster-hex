@@ -77,7 +77,7 @@ elif SCOPE=='arm-store':
     cases+=[('gix_caller',n,'parse') for n in (20,32)]
 
 elif SCOPE=='append-recovery':
-    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'42c484112239d78a943735d97125e356f123224a','candidate':'8ccdbc0428d5f20ad8e8383d69eea001549f754d'}
+    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'8ccdbc0428d5f20ad8e8383d69eea001549f754d','candidate':'7dfaa3ae35b6ee7376c2247f3d3cbbd4ef5912d6'}
     pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','candidate'),('pr','scoped'),('pr','candidate'),('scoped','candidate')]
     cases=[('append_call',n,'valid') for n in (0,16,32,33,64,256,1024,1025,4096,4097)]
     cases += [('append_call',n,k) for n in (32,256,1025,4096) for k in ('first','middle','rollback')]
