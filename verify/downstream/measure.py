@@ -43,10 +43,17 @@ def text_section(exe):
 roles = {"release": ("6d84260fe321669e7f93ecfb8aecb4db0f582f14", "2.0.0"),
          "pr": ("25cfd8eb6a4cd8257a96fabaf73771cabcced4b4", "2.1.0"),
          "visitor": ("9fa6d71209957bd5e03c8f6ff39bb3fd59ac8685", "2.1.0")}
+if "CKB_COMPONENTS" in os.environ:
+    import components
+    roles = {role:roles["release" if role == "release" else "pr"] for role in components.roles}
+    names = components.names
+    components.add_phases(driver)
 sections = {}
 for role, (ref, version) in roles.items():
     call(["git", "archive", "-o", work / "product.tar", ref], repo)
     call(["tar", "-xf", work / "product.tar", "-C", codec], repo)
+    if "CKB_COMPONENTS" in os.environ:
+        components.restore_component(repo, codec, role, roles["release"][0])
     assert lock.count('name = "faster-hex"\nversion = "2.1.0"') == 1
     text = lock.replace('name = "faster-hex"\nversion = "2.1.0"', 'name = "faster-hex"\nversion = "' + version + '"')
     (driver / "Cargo.lock").write_text(text.replace('"faster-hex 2.1.0"', '"faster-hex ' + version + '"'))
@@ -54,7 +61,8 @@ for role, (ref, version) in roles.items():
     assert str(codec) in graph and "ckb-jsonrpc-types " in graph and "gix-hash " in graph, graph
     if (work / "target").exists():
         call(["cargo", "clean", "--release", "-p", "faster-hex@" + version, "-p", "real-hex-consumers"])
-    call(["cargo", "build", "--release", "--bins", "--locked"])
+    targets = [argument for name in names for argument in ("--bin", name)]
+    call(["cargo", "build", "--release", "--locked", *targets])
     for name in names:
         exe = work / (role + "-" + name)
         shutil.copy2(work / "target/release" / name, exe)
