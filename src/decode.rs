@@ -528,17 +528,15 @@ fn diagnose_appended(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
             return Err(Error::InvalidChar { index: 0, byte });
         }
     }
-    // Skip verified prefixes with the SIMD checker, then locate the exact byte.
-    let mut start = 0;
-    let mut end = src.len();
-    while end - start > 64 {
-        let middle = start + (end - start) / 2;
-        if hex_check(&src[start..middle]) {
-            start = middle;
-        } else {
-            end = middle;
-        }
-    }
+    // Skip four 64-byte validation blocks at a time. Only a failed decode
+    // needs the exact index, so successful callers carry no offset.
+    let start = src
+        .as_chunks::<256>()
+        .0
+        .iter()
+        .take_while(|block| hex_check(block.as_slice()))
+        .count()
+        * 256;
     // Only an invalid table entry sets the high bits.
     let groups = src[start..].as_chunks::<4>().0;
     let valid = groups
@@ -559,8 +557,7 @@ fn diagnose_appended(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
             });
         }
     }
-    hex_decode_fallback(src, dst);
-    Ok(())
+    decode_diagnosed(src, dst, CheckCase::None)
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
