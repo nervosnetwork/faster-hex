@@ -75,6 +75,8 @@ fn main(){#[derive(Deserialize)]struct F{bytes:How}
  assert_eq!(serde_json::from_reader::<_,F>(&p[..]).unwrap().bytes,How::Temporary);
 }
 ''')
+if os.getenv("FIELD_DRIVERS_ONLY"):
+    sys.exit(0)
 smoke=bool(os.environ.get("CAUSE_SMOKE"))
 profiles=os.environ.get("CARGO_PROFILE_BENCH_LTO","false")
 roles=["base","head","old-serde"]
