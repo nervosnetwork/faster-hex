@@ -1,4 +1,4 @@
-name: Compare packaged codec APIs and the separate owned-field decoder
+name: Attribute the ARM registry-build change at fixed function addresses
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -12,9 +12,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
-        profile: [default, thin]
-        scope: [surface, owned]
+        os: [ubuntu-24.04-arm]
+        profile: [thin]
+        scope: [attribution]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -37,7 +37,7 @@ jobs:
           toolchain: 1.95.0
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/isolate_callers.py
+          python3 verify/registry_arm_attribution.py
         shell: bash
         env:
           ISOLATE: ${{ matrix.scope }}
@@ -50,3 +50,5 @@ jobs:
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
+            real/attribution/*.json
+            real/attribution/*.txt
