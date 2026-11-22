@@ -1,4 +1,4 @@
-name: Measure a single prefix encoder in native Git and JSON consumers
+name: Verify failed append recovery in native consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -42,12 +42,12 @@ jobs:
           python3 verify/isolate_callers.py
         shell: bash
         env:
-          ISOLATE: prefix-length
+          ISOLATE: append-recovery
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: prefix-one-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: append-recovery-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
@@ -55,6 +55,6 @@ jobs:
       - name: Exercise release tests in the measured candidate
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/checked-codec" cceed1b3fae514e93807c65e5b26d2007e46fc7e
+          git worktree add --detach "$RUNNER_TEMP/checked-codec" 8ccdbc0428d5f20ad8e8383d69eea001549f754d
           cd "$RUNNER_TEMP/checked-codec"
           cargo test --release --all-features

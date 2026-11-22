@@ -120,9 +120,11 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length'):
-        if role in ('release','version') and SCOPE not in ('arm-store','range-check','prefix-length'):
+    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery'):
+        if role in ('release','version') and SCOPE not in ('arm-store','range-check','prefix-length','append-recovery'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
+        if SCOPE=='append-recovery' and role in ('release','version'):
+            available=[b for b in bins if b not in ('append_call','validate_call')]
         if SCOPE=='prefix-length' and role in ('release','version'):
             available=[b for b in bins if b not in ('prefix_buffer','prefix_format')]
         for name in available:

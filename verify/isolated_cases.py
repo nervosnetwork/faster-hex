@@ -76,6 +76,15 @@ elif SCOPE=='arm-store':
     cases+=[('ckb_caller',n,kind) for n in (32,4096) for kind in ('plain','escaped')]
     cases+=[('gix_caller',n,'parse') for n in (20,32)]
 
+elif SCOPE=='append-recovery':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'42c484112239d78a943735d97125e356f123224a','candidate':'8ccdbc0428d5f20ad8e8383d69eea001549f754d'}
+    pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','candidate'),('pr','scoped'),('pr','candidate'),('scoped','candidate')]
+    cases=[('append_call',n,'valid') for n in (0,16,32,33,64,256,1024,1025,4096,4097)]
+    cases += [('append_call',n,k) for n in (32,256,1025,4096) for k in ('first','middle','rollback')]
+    cases += [('owned_blocks',n,k) for n in (32,4096) for k in ('array-late','vec-late','array-valid','vec-valid')]
+    cases += [('validate_call',n,k) for n in (32,4096) for k in ('first','middle','last','valid')]
+    cases += [(b,n,'plain') for b in ('array_round_slice','vec_round_slice','ckb_caller') for n in (32,4096)]
+    cases += [('gix_caller',n,'parse') for n in (20,32)]
 elif SCOPE=='append-report':
     revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'073a9f0b089d1354afb3773b3e93616a18fa8cfd','report':'163e41047af2938797b1e7d3f11488837cd22069'}
     pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','report'),('pr','scoped'),('pr','report'),('scoped','report')]
