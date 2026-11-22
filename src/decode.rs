@@ -103,7 +103,7 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if hex_check(src) {
         Ok(())
     } else {
-        diagnose_invalid(src, CheckCase::None)
+        diagnose_invalid::<true>(src, CheckCase::None)
     }
 }
 
@@ -649,19 +649,26 @@ pub(crate) fn hex_decode_short_scalar(
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid(src, case)?;
+    diagnose_invalid::<false>(src, case)?;
     // Recover if a backend rejected valid input; the caller needs initialized bytes.
     hex_decode_fallback(src, dst);
     Ok(())
 }
 
 #[inline(always)]
-fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
+fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Result<(), Error> {
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
+    if GROUP_DIGITS {
+        for (index, &byte) in src.iter().take(2).enumerate() {
+            if table[usize::from(byte)] == NIL {
+                return Err(Error::InvalidChar { index, byte });
+            }
+        }
+    }
     // Skip valid blocks so locating a late error retains SIMD throughput.
     // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
@@ -672,8 +679,24 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     } else {
         0
     };
-    for (offset, &byte) in src[skipped..].iter().enumerate() {
-        let index = skipped + offset;
+    let start = if GROUP_DIGITS {
+        // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
+        let groups = src[skipped..].as_chunks::<4>().0;
+        let valid = groups
+            .iter()
+            .take_while(|group| {
+                group
+                    .iter()
+                    .fold(0, |bits, &byte| bits | table[usize::from(byte)])
+                    != NIL
+            })
+            .count();
+        skipped + 4 * valid
+    } else {
+        skipped
+    };
+    for (offset, &byte) in src[start..].iter().enumerate() {
+        let index = start + offset;
         if table[usize::from(byte)] == NIL {
             return Err(Error::InvalidChar { index, byte });
         }
