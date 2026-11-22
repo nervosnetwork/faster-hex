@@ -144,15 +144,8 @@ pub(crate) fn encode<'a>(
     {
         hex_encode_custom_case_fallback(src, dst, upper_case);
     }
-    // SAFETY: Every backend initialized all len elements with ASCII, using the
-    // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
-    // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
-    Ok(unsafe {
-        core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(
-            dst.as_mut_ptr().cast(),
-            len,
-        ))
-    })
+    // SAFETY: Each backend initializes the exact output slice with ASCII.
+    Ok(unsafe { core::str::from_utf8_unchecked_mut(dst.assume_init_mut()) })
 }
 
 // An odd digit count always selects at least the high nibble of the last byte.
