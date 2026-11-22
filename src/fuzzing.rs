@@ -92,7 +92,7 @@ impl Backend {
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                 Kind::Avx2 | Kind::Avx512 => encode::hex_encode_avx2(src, dst, upper),
                 #[cfg(target_arch = "aarch64")]
-                Kind::Neon => encode::hex_encode_neon(src, dst, upper),
+                Kind::Neon => encode::hex_encode_neon::<false>(src, dst, upper),
             }
         }
     }
