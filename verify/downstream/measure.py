@@ -48,6 +48,9 @@ if "CKB_COMPONENTS" in os.environ:
     roles = {role:roles["release" if role == "release" else "pr"] for role in components.roles}
     names = components.names
     components.add_phases(driver)
+if os.getenv("CKB_NATURAL_PAIR"):
+    roles = {name: roles[name] for name in ("release", "pr")}
+    names = ["ckb_caller"]
 sections = {}
 for role, (ref, version) in roles.items():
     call(["git", "archive", "-o", work / "product.tar", ref], repo)

@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Relink an unchanged macOS program with the AVX2 converter at four offsets."""
+import os
+from pathlib import Path
+import re
+import subprocess as sp
+import sys
+
+cc = "/usr/bin/cc"
+args = sys.argv[1:]
+status = sp.run([cc, *args]).returncode
+if status or not os.getenv("MACH_LAYOUT") or "-o" not in args:
+    sys.exit(status)
+index = args.index("-o") + 1
+product = Path(args[index])
+if not re.fullmatch(r"decode-[a-f0-9]+", product.name):
+    sys.exit(0)
+out = Path(os.environ["MACH_LAYOUT"])
+out.mkdir(parents=True, exist_ok=True)
+syms = sp.check_output(["nm", "-n", product], text=True)
+(target,) = re.findall(r"(?m)^[a-f0-9]+ [tT] (\S*3x8615hex_decode_avx217h\S+)$", syms)
+order = out / "probe.order"
+order.write_text(f"_layout_lead\n{target}\n_layout_fill\n")
+for pos in (0, 16, 32, 48):
+    objects = []
+    for name, alignment, size in (("lead", 6, 64 + pos), ("fill", 0, 128 - pos)):
+        sym = "_layout_" + name
+        src = out / f"{name}-{pos}.s"
+        obj = src.with_suffix(".o")
+        src.write_text(f".text\n.p2align {alignment}\n.globl {sym}\n.no_dead_strip {sym}\n{sym}:\n.space {size},0x90\n.subsections_via_symbols\n")
+        sp.run([cc, "-arch", "x86_64", "-c", src, "-o", obj], check=True)
+        objects.append(str(obj))
+    linked = args.copy()
+    linked[index] = str(out / ("pos" + str(pos)))
+    sp.run([cc, *linked, *objects, "-Wl,-order_file," + str(order)], check=True)
