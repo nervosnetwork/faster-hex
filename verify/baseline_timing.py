@@ -1,6 +1,6 @@
 # The published image appears twice under different measurement labels.
 pin()
-rng=random.Random(883519)
+rng=random.Random(514039)
 rng.shuffle(cases)
 timings={}
 raw={}
@@ -9,7 +9,7 @@ for b,n,k in cases:
     def sample(role,iters):
         image=out/(('release' if role=='aa' else role)+'-'+b)
         return measure(out/'same-program',image,args(iters),driver)
-    count=max(200,min(3500000,round(14000000/max(1,sample('release',3000)))))
+    count=max(200,min(7000000,round(28000000/max(1,sample('release',3000)))))
     rows=[]
     for _ in range(22):
         order=['release','aa','repeat','version'];rng.shuffle(order);groups={r:[] for r in order}

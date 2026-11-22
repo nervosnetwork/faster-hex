@@ -1,4 +1,4 @@
-name: Measure the published 2.0.0 baseline and an independent rebuild
+name: Repeat the published baseline on independent Intel macOS runners
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel]
+        os: [macos-15-intel]
         profile: [default, thin]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
