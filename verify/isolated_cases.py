@@ -53,8 +53,8 @@ elif SCOPE=='append':
     cases=[('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
 
 elif SCOPE=='validation':
-    revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'policy':'286e072562e67ff47cab33b1816cd6e02135e90d','review':'c1c7a8fa74489546e1c9623d0dbb7aec2d25470c','integrated':'256e5df62ca1d457557e7083d73f78b1120a4615','shared':'b7bc8baef3c902c230351dc489a648f575eed559'}
-    pairs=[('scoped','aa'),('pr','scoped'),('scoped','policy'),('pr','policy'),('pr','review'),('review','integrated'),('pr','integrated'),('policy','integrated'),('integrated','shared'),('review','shared'),('pr','shared')]
-    cases=[('validate_call',n,k) for n in (32,4096) for k in ('valid','odd','first','middle','last')]
-    cases += [(b,n,k) for b,k in [('legacy_check','valid'),('qualified_decode','valid'),('vec_round_slice','plain')] for n in (32,4096)]
-    cases += [('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
+    pr='25cfd8eb6a4cd8257a96fabaf73771cabcced4b4'
+    candidate='42c484112239d78a943735d97125e356f123224a'
+    revisions={'pr':pr,'prcopy':pr,'scoped':SCOPE_BASE,'candidate':candidate,'candidatecopy':candidate}
+    pairs=[('pr','prcopy'),('scoped','aa'),('candidate','candidatecopy'),('pr','candidate'),('prcopy','candidate'),('pr','candidatecopy'),('prcopy','candidatecopy'),('scoped','candidate')]
+    cases=[('validate_call',32,'first'),('validate_call',32,'middle'),('validate_call',32,'odd'),('validate_call',4096,'first'),('validate_call',4096,'valid')]

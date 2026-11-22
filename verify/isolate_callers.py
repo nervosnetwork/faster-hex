@@ -141,15 +141,15 @@ save(out/"sections.json",sections)
 if SCOPE=='recovery' and sys.platform.startswith('linux'):
     from isolated_elf import record
     save(out/'elf.json',{role:record(out/(role+'-vec_round_slice')) for role in revisions})
-pin();rng=random.Random(602105)
+pin();rng=random.Random(623791)
 rng.shuffle(cases)
 summary={};samples={}
 for b,n,k in cases:
     def sample(role,repeat):
         return measure(out/'same-program',out/(('scoped' if role=='aa' else role)+'-'+b),[n,repeat,k],driver)
-    count=max(200,min(5000000,round(17000000/max(1,sample('scoped',3000)))))
+    count=max(200,min(5000000,round(23000000/max(1,sample('scoped',3000)))))
     rows=[]
-    for _ in range(24):
+    for _ in range(56):
         order=[r for r in revisions if (out/(r+"-"+b)).is_file()]+["aa"];rng.shuffle(order);groups={r:[] for r in order}
         for role in order+order[::-1]:groups[role].append(sample(role,count))
         rows.append({r:statistics.mean(v) for r,v in groups.items()})
