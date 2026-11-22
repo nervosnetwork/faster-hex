@@ -7,17 +7,19 @@ fn main() {
     let rounds: usize = args.next().unwrap().parse().unwrap();
     let mode = args.next().unwrap();
     let mut src = b"aF".repeat(n);
-    let expected = match mode.as_str() {
-        "valid" => Ok(()),
-        "odd" => { src.push(b'!'); Err(Error::OddLength) }
+    match mode.as_str() {
+        "valid" => assert_eq!(hex_validate(&src),Ok(())),
+        "odd" => {
+            src.push(b'!');
+            assert_eq!(hex_validate(&src),Err(Error::OddLength));
+        }
         "first" | "middle" | "last" => {
             let index = match mode.as_str() { "first" => 0, "middle" => n, _ => 2*n-1 };
             src[index] = b'!';
-            Err(Error::InvalidChar { index, byte: b'!' })
+            assert!(matches!(hex_validate(&src), Err(Error::InvalidChar { index: actual, byte: b'!', .. }) if actual == index));
         }
         _ => unreachable!()
     };
-    assert_eq!(hex_validate(&src),expected);
     let timing = |count| {
         let now = Instant::now();
         for _ in 0..count {
