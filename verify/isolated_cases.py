@@ -48,13 +48,16 @@ elif SCOPE in ('buffer','format'):
         cases += [('prefix_format',n,'display') for n in (7,12,255,1023)]
 
 elif SCOPE=='append':
-    revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'fixed':RECOVERY,'single':'e03caf6f060d9475f2a79d5994fecf7571eaf4a9','candidate':'1156b979818b562b1f295788e5e0d9ba396b1caf'}
-    pairs=[('scoped','aa'),('pr','scoped'),('pr','fixed'),('pr','single'),('pr','candidate'),('single','candidate'),('fixed','candidate')]
-    cases=[('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
+    revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'42c484112239d78a943735d97125e356f123224a','blocks':'9a14e514d93332ef67964742aca12a4730beafb2','plain':'073a9f0b089d1354afb3773b3e93616a18fa8cfd','outline':'3eb357d81f919095b12f72723dfdfd5a3ad1de5d'}
+    pairs=[('scoped','aa'),('pr','scoped')] + [(base,role) for base in ('pr','scoped') for role in ('blocks','plain','outline')]+[('blocks','plain'),('blocks','outline')]
+    cases=[('append_call',n,'valid') for n in (1,16,32,33,64,256,1024,1025,4096,4097)]
+    cases+= [('append_call',n,k) for n in (32,256,4096) for k in ('first','middle','rollback')]
+    cases+= [('qualified_decode',n,'valid') for n in (32,4096)]
+    cases+= [('vec_round_slice',n,'plain') for n in (32,4096)]
 
 elif SCOPE=='validation':
-    pr='25cfd8eb6a4cd8257a96fabaf73771cabcced4b4'
-    candidate='42c484112239d78a943735d97125e356f123224a'
-    revisions={'pr':pr,'prcopy':pr,'scoped':SCOPE_BASE,'candidate':candidate,'candidatecopy':candidate}
-    pairs=[('pr','prcopy'),('scoped','aa'),('candidate','candidatecopy'),('pr','candidate'),('prcopy','candidate'),('pr','candidatecopy'),('prcopy','candidatecopy'),('scoped','candidate')]
-    cases=[('validate_call',32,'first'),('validate_call',32,'middle'),('validate_call',32,'odd'),('validate_call',4096,'first'),('validate_call',4096,'valid')]
+    revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'policy':'286e072562e67ff47cab33b1816cd6e02135e90d','review':'c1c7a8fa74489546e1c9623d0dbb7aec2d25470c','integrated':'256e5df62ca1d457557e7083d73f78b1120a4615','shared':'b7bc8baef3c902c230351dc489a648f575eed559'}
+    pairs=[('scoped','aa'),('pr','scoped'),('scoped','policy'),('pr','policy'),('pr','review'),('review','integrated'),('pr','integrated'),('policy','integrated'),('integrated','shared'),('review','shared'),('pr','shared')]
+    cases=[('validate_call',n,k) for n in (32,4096) for k in ('valid','odd','first','middle','last')]
+    cases += [(b,n,k) for b,k in [('legacy_check','valid'),('qualified_decode','valid'),('vec_round_slice','plain')] for n in (32,4096)]
+    cases += [('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
