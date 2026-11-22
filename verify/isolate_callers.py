@@ -120,8 +120,8 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store'):
-        if role in ('release','version') and SCOPE != 'arm-store':
+    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store','range-check'):
+        if role in ('release','version') and SCOPE not in ('arm-store','range-check'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
         for name in available:
             harness = ROOT/'verify'/(name+'.rs')
@@ -133,6 +133,9 @@ for role,(version,files,checksum) in packages.items():
         for name in ('allocation_count','ownership'):
             result=sp.check_output([str(Path(build_env['CARGO_TARGET_DIR'])/'release'/name)],text=True)
             (out/(role+'-'+name+'.txt')).write_text(result)
+    if SCOPE == 'range-check':
+        msg = sp.check_output([str(Path(build_env['CARGO_TARGET_DIR'])/'release/ascii_check'),'exhaustive'],text=True)
+        (out/(role+'-byte-contract.txt')).write_text(msg)
     for b in available:
         img=out/(role+"-"+b)
         shutil.copy2(Path(build_env["CARGO_TARGET_DIR"])/"release"/b,img)

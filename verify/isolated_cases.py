@@ -47,6 +47,15 @@ elif SCOPE in ('buffer','format'):
         cases=[('full_format',n,k) for n in (0,32,513,4096) for k in ('display','alternate','padded')]
         cases += [('prefix_format',n,'display') for n in (7,12,255,1023)]
 
+elif SCOPE=='range-check':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'scoped':'42c484112239d78a943735d97125e356f123224a','width':'00b8d795a02cb1812ad740d0871a297b056f6e49','range':'0b3f0f0467b0bccc3224ef12b7b590b9199ee70c'}
+    pairs=[('scoped','aa'),('release','version'),('release','scoped')]+[(base,variant) for base in ('scoped','release') for variant in ('width','range')]
+    cases=[('ascii_check',n,'mixed-valid') for n in (15,16,17,31,32,63,64,65,128,256,8192,8193)]
+    cases+=[('ascii_check',n,how) for n in (64,8192) for how in ('mixed-first','mixed-middle','mixed-last','upper-valid','lower-valid','upper-last','lower-last')]
+    cases+=[('qualified_decode',n,'valid') for n in (32,256,4096)]
+    cases+=[(target+'_'+phase,n,'plain') for target in ('vec','array') for phase in ('read_slice','write','round_slice') for n in (32,4096)]
+    cases+=[('ckb_caller',n,'plain') for n in (32,4096)]+[('gix_caller',n,'parse') for n in (20,32)]
+
 elif SCOPE=='arm-store':
     revisions={'release':RELEASE,'version':SAME_VERSION,'scoped':'42c484112239d78a943735d97125e356f123224a','candidate':'3408ecdfb47ce20435ed9a6860ec47d5dd0e65ad'}
     pairs=[('scoped','aa'),('release','version'),('release','scoped'),('scoped','candidate'),('release','candidate')]

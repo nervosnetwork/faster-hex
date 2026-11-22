@@ -1,4 +1,4 @@
-name: Compare one NEON store in unchanged native consumers
+name: Compare native digit checks in codec and JSON consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -42,12 +42,12 @@ jobs:
           python3 verify/isolate_callers.py
         shell: bash
         env:
-          ISOLATE: arm-store
+          ISOLATE: range-check
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: arm-store-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: range-check-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
@@ -55,6 +55,6 @@ jobs:
       - name: Exercise release tests in the measured candidate
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/checked-codec" 3408ecdfb47ce20435ed9a6860ec47d5dd0e65ad
+          git worktree add --detach "$RUNNER_TEMP/checked-codec" 0b3f0f0467b0bccc3224ef12b7b590b9199ee70c
           cd "$RUNNER_TEMP/checked-codec"
           cargo test --release --all-features
