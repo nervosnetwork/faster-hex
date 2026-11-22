@@ -103,7 +103,7 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if hex_check(src) {
         Ok(())
     } else {
-        diagnose_invalid::<true>(src, CheckCase::None, 0)
+        diagnose_invalid(src, CheckCase::None, 0)
     }
 }
 
@@ -526,7 +526,7 @@ pub fn hex_decode_append<'a>(
 #[cold]
 #[inline]
 fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
-    diagnose_invalid::<true>(src, CheckCase::None, from)?;
+    diagnose_invalid(src, CheckCase::None, from)?;
     decode_diagnosed(&src[from..], &mut dst[from / 2..], CheckCase::None)
 }
 
@@ -703,32 +703,26 @@ pub(crate) fn hex_decode_short_scalar(
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid::<false>(src, case, 0)?;
+    diagnose_invalid(src, case, 0)?;
     // Recover if a backend rejected valid input; the caller needs initialized bytes.
     hex_decode_fallback(src, dst);
     Ok(())
 }
 
 #[inline(always)]
-fn diagnose_invalid<const GROUP_DIGITS: bool>(
-    src: &[u8],
-    case: CheckCase,
-    from: usize,
-) -> Result<(), Error> {
+fn diagnose_invalid(src: &[u8], case: CheckCase, from: usize) -> Result<(), Error> {
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
     let rest = &src[from..];
-    if GROUP_DIGITS {
-        for (offset, &byte) in rest.iter().take(2).enumerate() {
-            if table[usize::from(byte)] == NIL {
-                return Err(Error::InvalidChar {
-                    index: from + offset,
-                    byte,
-                });
-            }
+    for (offset, &byte) in rest.iter().take(2).enumerate() {
+        if table[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar {
+                index: from + offset,
+                byte,
+            });
         }
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
@@ -741,22 +735,18 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(
         0
     };
     let skipped = from + skipped;
-    let start = if GROUP_DIGITS {
-        // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
-        let groups = src[skipped..].as_chunks::<4>().0;
-        let valid = groups
-            .iter()
-            .take_while(|group| {
-                group
-                    .iter()
-                    .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                    != NIL
-            })
-            .count();
-        skipped + 4 * valid
-    } else {
-        skipped
-    };
+    // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
+    let groups = src[skipped..].as_chunks::<4>().0;
+    let valid = groups
+        .iter()
+        .take_while(|group| {
+            group
+                .iter()
+                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
+                != NIL
+        })
+        .count();
+    let start = skipped + 4 * valid;
     for (offset, &byte) in src[start..].iter().enumerate() {
         let index = start + offset;
         if table[usize::from(byte)] == NIL {
