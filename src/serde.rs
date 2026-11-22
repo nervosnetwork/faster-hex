@@ -183,17 +183,17 @@ mod internal {
         }
 
         pub(super) fn optional<D: Deserializer<'de>>(d: D) -> Result<Option<T::Value>, D::Error> {
-            Option::<Self>::deserialize(d)?
-                .map(|field| match field.0 {
-                    Input::Borrowed(text) => {
-                        let mut bytes = T::empty();
-                        Self::decode(text, &mut bytes)?;
-                        Ok(bytes)
-                    }
-                    Input::Temporary(result) => result,
-                })
-                .transpose()
-                .map_err(FieldError::into_format)
+            let Some(field) = Option::<Self>::deserialize(d)? else {
+                return Ok(None);
+            };
+            match field.0 {
+                Input::Borrowed(text) => {
+                    let mut bytes = T::empty();
+                    Self::decode(text, &mut bytes).map_err(FieldError::into_format)?;
+                    Ok(Some(bytes))
+                }
+                Input::Temporary(result) => result.map(Some).map_err(FieldError::into_format),
+            }
         }
     }
 
