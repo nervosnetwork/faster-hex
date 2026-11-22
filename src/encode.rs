@@ -405,25 +405,30 @@ pub(crate) unsafe fn hex_encode_neon<const SHORT_PREFIX: bool>(
     dst: &mut [MaybeUninit<u8>],
     upper_case: bool,
 ) {
-    if src.len() < 8 {
-        return hex_encode_custom_case_fallback(src, dst, upper_case);
-    }
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
     let table = vld1q_u8(table.as_ptr());
-    if src.len() < 16 {
-        if let (Some(input), Some(output)) = (src.first_chunk::<8>(), dst.first_chunk_mut::<16>()) {
-            encode_neon_8(input, output, table);
+    // Complete buffers enter the block loop at one vector. Short prefix writes
+    // fit in a first and last vector, including a partially overlapping tail.
+    let max_short = if SHORT_PREFIX { 32 } else { 15 };
+    if src.len() <= max_short {
+        if src.len() < 8 {
+            return hex_encode_custom_case_fallback(src, dst, upper_case);
         }
-        if src.len() > 8 {
-            if let (Some(input), Some(output)) = (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
+        if src.len() < 16 {
+            if let (Some(input), Some(output)) =
+                (src.first_chunk::<8>(), dst.first_chunk_mut::<16>())
             {
                 encode_neon_8(input, output, table);
             }
+            if src.len() > 8 {
+                if let (Some(input), Some(output)) =
+                    (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
+                {
+                    encode_neon_8(input, output, table);
+                }
+            }
+            return;
         }
-        return;
-    }
-    if SHORT_PREFIX && src.len() <= 32 {
-        // At 16–32 bytes the first and last vectors cover the entire prefix.
         if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
             encode_neon_16(input, output, table);
         }
