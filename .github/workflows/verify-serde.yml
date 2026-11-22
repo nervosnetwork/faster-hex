@@ -1,4 +1,4 @@
-name: Isolate suffix decoding and compare how callers use the returned bytes
+name: Compare native encoding kernels on fixed release and prefix callers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,7 +18,7 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      SUFFIX_SHA: bb1eecaff85fd359f2c717cffcae0d9f99d6f2c3
+      WINDOW_SHA: 2cb6384a8206ff598b3c811c15dbe28ddee7ba4d
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -42,23 +42,21 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
-          python3 verify/append_callsite_image.py
         shell: bash
         env:
-          ISOLATE: append-suffix
+          ISOLATE: prefix-kernel-exchange
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-suffix-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: prefix-kernel-exchange-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
-            real/append-callsite-image.json
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Test suffix decoding
+      - name: Test the final vector window implementation
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/suffix" "$SUFFIX_SHA"
-          (cd "$RUNNER_TEMP/suffix" && cargo test --release --all-features)
+          git worktree add --detach "$RUNNER_TEMP/window" "$WINDOW_SHA"
+          (cd "$RUNNER_TEMP/window" && cargo test --release --all-features)

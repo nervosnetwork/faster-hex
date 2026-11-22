@@ -216,3 +216,28 @@ elif SCOPE in ('append-callsite', 'append-suffix'):
         pairs.extend((r,'suffix') for r in ('release','version','pr','scoped','ordinary'))
         cases += [('append_result',n,how) for n in (32,256,1025,4096) for how in ('opaque','suffix','status')]
         assert len(cases)==len(set(cases))==69
+
+elif SCOPE == 'prefix-kernel-exchange':
+    revisions = {
+        'release': RELEASE, 'version': SAME_VERSION, 'narrow': SCOPE_BASE,
+        'pr': '25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
+        'scoped': 'fc834c71026b6d7f81738b53bd73237f408474ff',
+        'pr_native': '2680b238f7c5c211aed329a70c8a30c669570ec9',
+        'scoped_native': '6a3053149201aa89a8d76e32754c2fa1ffd9b598',
+        'window': '2cb6384a8206ff598b3c811c15dbe28ddee7ba4d',
+    }
+    pairs=[('scoped','aa'),('release','version'),('release','narrow'),('release','pr'),
+           ('release','scoped'),('pr','scoped'),('narrow','scoped')]
+    pairs += [(left,right) for right in ('pr_native','scoped_native','window')
+              for left in ('release','version','pr','scoped')]
+    pairs += [('pr_native','scoped'),('pr','scoped_native'),('scoped_native','window')]
+    pairs=list(dict.fromkeys(pairs))
+    cases=[('full_buffer',n,'buffer') for n in (4,7,8,15,16,17,20,31,32,33,63,64,65,66,128,4096,65536)]
+    cases += [('prefix_buffer',n,'buffer') for n in (0,1,3,4,6,7,8,12,15,16,31,40,63,64)]
+    cases += [('gix_prefix',n,k+'-adopt') for k,ns in (('sha1',(0,7,40)),('sha256',(0,7,64))) for n in ns]
+    cases += [('prefix_format',n,'display') for n in (7,12,1023)]
+    cases += [('full_format',n,k) for n,k in ((32,'display'),(32,'alternate'),(513,'padded'),(4096,'display'))]
+    cases += [(k,n,'plain') for k in ('vec_round_slice','array_round_slice','ckb_caller') for n in (32,4096)]
+    cases += [('vec_round_slice',4096,'escaped'),('gix_caller',20,'parse'),('gix_caller',32,'parse')]
+    cases += [('append_call',n,'valid') for n in (256,1025)]
+    assert len(cases)==len(set(cases))==55
