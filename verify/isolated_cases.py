@@ -25,11 +25,24 @@ elif SCOPE=='owned':
     revisions={'release':RELEASE,'scoped':SCOPE_BASE,'owned':'b6967d9c519b1a0c3e47ea435f678b2b2d601058'}
     pairs=[('scoped','aa'),('release','scoped'),('scoped','owned'),('release','owned')]
     cases=[(target,n,kind) for target,kind in [('vec_read_slice','plain'),('vec_round_slice','plain'),('vec_read_slice','escaped'),('vec_round_reader','reader'),('optvec_read_slice','plain'),('array_read_slice','plain'),('array_round_slice','plain')] for n in (32,4096)]
-else:
-    assert SCOPE=='surface'
+elif SCOPE=='surface':
     revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'fixed':RECOVERY}
     pairs=[('scoped','aa'),('release','version'),('version','scoped'),('release','scoped'),('pr','scoped'),('scoped','fixed'),('pr','fixed'),('release','fixed')]
     cases=[('full_format',n,k) for n in (0,32,513,4096) for k in ('display','alternate','padded')]
     cases += [('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
     cases += [('prefix_format',n,'display') for n in (7,12,255,1023)]
     cases += [('prefix_buffer',n,'buffer') for n in (0,1,4,7,8,12,40,64)]
+
+elif SCOPE in ('buffer','format'):
+    revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE}
+    pairs=[('scoped','aa'),('release','version'),('version','scoped'),('release','scoped'),('pr','scoped'),('scoped','candidate'),('pr','candidate'),('release','candidate')]
+    if SCOPE=='buffer':
+        revisions['candidate']='55d8e79081f72de85e2285c39957950d0597d632'
+        cases=[('prefix_buffer',n,'buffer') for n in (0,1,4,7,8,12,16,40,64)]
+        cases += [('full_buffer',n,'buffer') for n in (16,32,33,4096)]
+    else:
+        revisions['single']='bb8a8f67944831913dcd28ffa21b0a66846d44a7'
+        revisions['candidate']='e69043ffff7b529cc8a39059b05bab2175450f28'
+        pairs+= [('scoped','single'),('single','candidate')]
+        cases=[('full_format',n,k) for n in (0,32,513,4096) for k in ('display','alternate','padded')]
+        cases += [('prefix_format',n,'display') for n in (7,12,255,1023)]
