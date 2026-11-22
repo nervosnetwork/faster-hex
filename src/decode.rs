@@ -501,7 +501,14 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
-    if let Err(error) = hex_decode(src, &mut dst[start..]) {
+    let suffix = &mut dst[start..];
+    let decoded = if suffix.len() > OWNED_DECODE_THRESHOLD {
+        // SAFETY: The suffix has one byte per input pair and is discarded on error.
+        unsafe { decode_owned_large(src, suffix, CheckCase::None) }
+    } else {
+        hex_decode(src, suffix).map(|_| ())
+    };
+    if let Err(error) = decoded {
         dst.truncate(start);
         return Err(error);
     }
