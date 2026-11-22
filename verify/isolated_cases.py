@@ -53,7 +53,8 @@ elif SCOPE=='append':
     cases=[('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
 
 elif SCOPE=='validation':
-    revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'first':'e4d3e5b6088332d72c6a48409dc001902d212cea','group':'c52eb78fee9cb552da89f15dbe21b1adc679a169'}
-    pairs=[('scoped','aa'),('pr','scoped'),('scoped','first'),('first','group'),('pr','first'),('pr','group'),('scoped','group')]
+    revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'policy':'286e072562e67ff47cab33b1816cd6e02135e90d','review':'c1c7a8fa74489546e1c9623d0dbb7aec2d25470c','integrated':'256e5df62ca1d457557e7083d73f78b1120a4615','shared':'b7bc8baef3c902c230351dc489a648f575eed559'}
+    pairs=[('scoped','aa'),('pr','scoped'),('scoped','policy'),('pr','policy'),('pr','review'),('review','integrated'),('pr','integrated'),('policy','integrated'),('integrated','shared'),('review','shared'),('pr','shared')]
     cases=[('validate_call',n,k) for n in (32,4096) for k in ('valid','odd','first','middle','last')]
     cases += [(b,n,k) for b,k in [('legacy_check','valid'),('qualified_decode','valid'),('vec_round_slice','plain')] for n in (32,4096)]
+    cases += [('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
