@@ -43,6 +43,7 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
+          python3 verify/append_linkage.py
         shell: bash
         env:
           ISOLATE: append-shape
