@@ -400,8 +400,8 @@ pub(crate) fn decode_array_pairs<const N: usize>(
     Ok(bytes)
 }
 
-// Four decoded bytes fit in a padded NEON block. The callers supply exactly
-// two input bytes per array element; padding never reads beyond that input.
+// Repeat eight digits to fill one NEON register. A rejected digit first
+// occurs in the original half, so diagnostic positions stay relative to src.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 fn decode_array_neon<const N: usize>(
@@ -411,11 +411,10 @@ fn decode_array_neon<const N: usize>(
     if N != 4 || crate::vectorization_support() != crate::Vectorization::Neon {
         return None;
     }
-    let mut digits = [b'0'; 16];
-    digits[..src.len()].copy_from_slice(src);
+    let digits = [*src.first_chunk::<8>()?; 2];
     let mut output = [0; 8];
     Some(
-        hex_decode_with_case(&digits, &mut output, case).map(|output| {
+        hex_decode_with_case(digits.as_flattened(), &mut output, case).map(|output| {
             let mut bytes = [0; N];
             bytes.copy_from_slice(&output[..N]);
             bytes
