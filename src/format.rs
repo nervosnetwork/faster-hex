@@ -278,11 +278,7 @@ impl LeadingDigits<'_> {
     /// ```
     #[inline]
     pub fn encode_to(self, dst: &mut [u8]) -> Result<&mut str, crate::Error> {
-        if self.omit_low_nibble {
-            crate::encode::encode_odd(self.hex.bytes, dst)
-        } else {
-            crate::hex_encode(self.hex.bytes, dst)
-        }
+        crate::encode::encode_prefix(self.hex.bytes, self.omit_low_nibble, dst)
     }
 
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
