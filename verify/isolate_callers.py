@@ -120,8 +120,8 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('surface','buffer','format','append','validation','append-report'):
-        if role in ('release','version'):
+    if SCOPE in ('surface','buffer','format','append','validation','append-report','arm-store'):
+        if role in ('release','version') and SCOPE != 'arm-store':
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
         for name in available:
             harness = ROOT/'verify'/(name+'.rs')
@@ -146,7 +146,8 @@ rng.shuffle(cases)
 summary={};samples={}
 for b,n,k in cases:
     def sample(role,repeat):
-        return measure(out/'same-program',out/(('scoped' if role=='aa' else role)+'-'+b),[n,repeat,k],driver)
+        args=[n,k,repeat] if b in ('gix_caller','ckb_caller') else [n,repeat,k]
+        return measure(out/'same-program',out/(('scoped' if role=='aa' else role)+'-'+b),args,driver)
     count=max(200,min(5000000,round(17000000/max(1,sample('scoped',3000)))))
     rows=[]
     for _ in range(24):

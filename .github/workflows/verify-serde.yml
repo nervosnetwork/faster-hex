@@ -1,4 +1,4 @@
-name: Verify native append diagnostics and established consumers
+name: Compare one NEON store in unchanged native consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -15,8 +15,6 @@ jobs:
         include:
           - { os: ubuntu-22.04, profile: thin, isa: runtime }
           - { os: ubuntu-24.04, profile: default, isa: runtime }
-          - { os: ubuntu-22.04, profile: default, isa: avx2 }
-          - { os: ubuntu-24.04, profile: thin, isa: avx2 }
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     steps:
@@ -39,29 +37,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Enable the requested native instruction set
-        if: matrix.isa == 'avx2'
-        run: |
-          grep -qw avx2 /proc/cpuinfo
-          echo 'RUSTFLAGS=-C target-cpu=x86-64-v3' >> "$GITHUB_ENV"
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
         shell: bash
         env:
-          ISOLATE: append-report
+          ISOLATE: arm-store
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-report-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: arm-store-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Exercise the guard pages and owned output contracts in the measured candidate
+      - name: Exercise release tests in the measured candidate
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/checked-codec" 163e41047af2938797b1e7d3f11488837cd22069
+          git worktree add --detach "$RUNNER_TEMP/checked-codec" 3408ecdfb47ce20435ed9a6860ec47d5dd0e65ad
           cd "$RUNNER_TEMP/checked-codec"
-          cargo test --release --all-features --lib --test owned_decode
+          cargo test --release --all-features

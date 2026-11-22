@@ -47,6 +47,14 @@ elif SCOPE in ('buffer','format'):
         cases=[('full_format',n,k) for n in (0,32,513,4096) for k in ('display','alternate','padded')]
         cases += [('prefix_format',n,'display') for n in (7,12,255,1023)]
 
+elif SCOPE=='arm-store':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'scoped':'42c484112239d78a943735d97125e356f123224a','candidate':'3408ecdfb47ce20435ed9a6860ec47d5dd0e65ad'}
+    pairs=[('scoped','aa'),('release','version'),('release','scoped'),('scoped','candidate'),('release','candidate')]
+    cases=[('full_buffer',n,'buffer') for n in (8,15,16,20,32,33,64,65,256,4096,4097)]
+    cases+=[(target+'_'+phase,n,'plain') for target in ('vec','array') for phase in ('read_slice','write','round_slice') for n in (32,4096)]
+    cases+=[('ckb_caller',n,kind) for n in (32,4096) for kind in ('plain','escaped')]
+    cases+=[('gix_caller',n,'parse') for n in (20,32)]
+
 elif SCOPE=='append-report':
     revisions={'release':RELEASE,'version':SAME_VERSION,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'073a9f0b089d1354afb3773b3e93616a18fa8cfd','report':'163e41047af2938797b1e7d3f11488837cd22069'}
     pairs=[('scoped','aa'),('release','version'),('release','scoped'),('release','report'),('pr','scoped'),('pr','report'),('scoped','report')]
