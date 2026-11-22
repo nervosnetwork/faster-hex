@@ -14,17 +14,18 @@ use core::arch::aarch64::*;
 
 use super::{hex_check_fallback_with_case, hex_decode_fallback, CheckCase};
 
-// Wrapping subtraction turns each ASCII range into one unsigned comparison.
-// Only the either-case policy folds the ASCII case bit.
+// The high nibble selects a ten-digit range, a six-letter range or an empty
+// range. Digits start at low nibble zero and both letter ranges start at one.
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn valid_neon(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
-    let digit = vcleq_u8(vsubq_u8(bytes, vdupq_n_u8(b'0')), vdupq_n_u8(9));
-    let fold = if case == CheckCase::None { 0x20 } else { 0 };
-    let letters = vorrq_u8(bytes, vdupq_n_u8(fold));
-    let first = if case == CheckCase::Upper { b'A' } else { b'a' };
-    let letter = vcleq_u8(vsubq_u8(letters, vdupq_n_u8(first)), vdupq_n_u8(5));
-    vorrq_u8(digit, letter)
+fn valid_neon(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
+    let widths = vsetq_lane_u8::<3>(10, vdupq_n_u8(0));
+    let widths = vsetq_lane_u8::<4>(if case == CheckCase::Lower { 0 } else { 6 }, widths);
+    let widths = vsetq_lane_u8::<6>(if case == CheckCase::Upper { 0 } else { 6 }, widths);
+    let width = vqtbl1q_u8(widths, vshrq_n_u8::<4>(bytes));
+    let low = vandq_u8(bytes, vdupq_n_u8(15));
+    let offset = vsubq_u8(low, vshrq_n_u8::<6>(bytes));
+    vcltq_u8(offset, width)
 }
 
 #[inline]
