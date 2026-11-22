@@ -118,68 +118,26 @@ impl<'a> Hex<'a> {
 }
 
 impl Hex<'_> {
-    fn format<const OMIT_LOW: bool>(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+    fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+        // The usual hash/logging format has no field width. It needs neither
+        // encoded-length arithmetic nor alignment/padding calculations.
         if let Some(width) = f.width() {
-            return self.format_padded::<OMIT_LOW>(f, upper, width);
+            return self.format_padded(f, upper, width);
         }
-        if f.sign_plus() {
-            f.write_str("+")?;
-        }
-        if f.alternate() {
-            f.write_str("0x")?;
-        }
-        self.write_hex::<OMIT_LOW>(f, upper)
+        write_prefix(f)?;
+        self.write_hex(f, upper)
     }
 
     // Padding needs more live state; keep it out of the usual hash/logging path.
     #[inline(never)]
-    fn format_padded<const OMIT_LOW: bool>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        upper: bool,
-        width: usize,
-    ) -> fmt::Result {
-        // Saturation is sufficient for width comparison: if the complete output
-        // exceeds usize::MAX characters, no representable width adds padding.
-        let prefix = if f.alternate() { "0x" } else { "" };
-        let sign = if f.sign_plus() { "+" } else { "" };
-        let digits = self.bytes.len().saturating_mul(2) - usize::from(OMIT_LOW);
-        let len = digits
-            .saturating_add(prefix.len())
-            .saturating_add(sign.len());
-        let padding = width.saturating_sub(len);
-        let zero_pad = f.sign_aware_zero_pad();
-        let (left, right) = if zero_pad {
-            (0, 0)
-        } else {
-            match f.align().unwrap_or(Alignment::Right) {
-                Alignment::Left => (0, padding),
-                Alignment::Right => (padding, 0),
-                Alignment::Center => (padding / 2, padding - padding / 2),
-            }
-        };
-        let fill = f.fill();
-        write_fill(f, fill, left)?;
-        if !sign.is_empty() {
-            f.write_str(sign)?;
-        }
-        if !prefix.is_empty() {
-            f.write_str(prefix)?;
-        }
-        if zero_pad {
-            write_fill(f, '0', padding)?;
-        }
-
-        self.write_hex::<OMIT_LOW>(f, upper)?;
-        write_fill(f, fill, right)
+    fn format_padded(&self, f: &mut fmt::Formatter<'_>, upper: bool, width: usize) -> fmt::Result {
+        pad_hex(f, width, self.bytes.len().saturating_mul(2), |f| {
+            self.write_hex(f, upper)
+        })
     }
 
     #[inline]
-    fn write_hex<const OMIT_LOW: bool>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        upper: bool,
-    ) -> fmt::Result {
+    fn write_hex(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         if self.bytes.is_empty() {
             return Ok(());
         }
@@ -188,35 +146,77 @@ impl Hex<'_> {
             let mut buffer = [MaybeUninit::uninit(); 256];
             let text = encode(self.bytes, &mut buffer, upper)
                 .expect("short input fits the fixed encoding buffer");
-            return f.write_str(if OMIT_LOW {
-                &text[..text.len() - 1]
-            } else {
-                text
-            });
+            return f.write_str(text);
         }
-        self.write_long::<OMIT_LOW>(f, upper)
+        self.write_long(f, upper)
     }
 
     // Keep the larger scratch space and streaming loop out of short hash calls.
     #[inline(never)]
-    fn write_long<const OMIT_LOW: bool>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        upper: bool,
-    ) -> fmt::Result {
+    fn write_long(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         let mut buffer = [MaybeUninit::uninit(); 1024];
-        let mut chunks = self.bytes.chunks(buffer.len() / 2);
-        while let Some(chunk) = chunks.next() {
+        for chunk in self.bytes.chunks(buffer.len() / 2) {
             // Each chunk is at most half this fixed, nonempty buffer. Its
             // encoded length cannot overflow or exceed capacity. Keep the
             // checked encoder's initialization boundary intact.
             let text = encode(chunk, &mut buffer, upper)
                 .expect("each chunk fits the fixed encoding buffer");
-            let trim = OMIT_LOW && chunks.len() == 0;
-            f.write_str(&text[..text.len() - usize::from(trim)])?;
+            f.write_str(text)?;
         }
         Ok(())
     }
+}
+
+#[inline]
+fn write_prefix(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    if f.sign_plus() {
+        f.write_str("+")?;
+    }
+    if f.alternate() {
+        f.write_str("0x")?;
+    }
+    Ok(())
+}
+
+#[inline]
+fn pad_hex(
+    f: &mut fmt::Formatter<'_>,
+    width: usize,
+    digits: usize,
+    write_digits: impl FnOnce(&mut fmt::Formatter<'_>) -> fmt::Result,
+) -> fmt::Result {
+    let prefix = if f.alternate() { "0x" } else { "" };
+    let sign = if f.sign_plus() { "+" } else { "" };
+    // Saturation is sufficient for width comparison: if the complete output
+    // exceeds usize::MAX characters, no representable width adds padding.
+    let len = digits
+        .saturating_add(prefix.len())
+        .saturating_add(sign.len());
+    let padding = width.saturating_sub(len);
+    let zero_pad = f.sign_aware_zero_pad();
+    let (left, right) = if zero_pad {
+        (0, 0)
+    } else {
+        match f.align().unwrap_or(Alignment::Right) {
+            Alignment::Left => (0, padding),
+            Alignment::Right => (padding, 0),
+            Alignment::Center => (padding / 2, padding - padding / 2),
+        }
+    };
+    let fill = f.fill();
+    write_fill(f, fill, left)?;
+    if !sign.is_empty() {
+        f.write_str(sign)?;
+    }
+    if !prefix.is_empty() {
+        f.write_str(prefix)?;
+    }
+    if zero_pad {
+        write_fill(f, '0', padding)?;
+    }
+
+    write_digits(f)?;
+    write_fill(f, fill, right)
 }
 
 fn write_fill(f: &mut fmt::Formatter<'_>, fill: char, mut count: usize) -> fmt::Result {
@@ -243,19 +243,19 @@ fn write_fill(f: &mut fmt::Formatter<'_>, fill: char, mut count: usize) -> fmt::
 
 impl fmt::Display for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format::<false>(f, false)
+        self.format(f, false)
     }
 }
 
 impl fmt::LowerHex for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format::<false>(f, false)
+        self.format(f, false)
     }
 }
 
 impl fmt::UpperHex for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format::<false>(f, true)
+        self.format(f, true)
     }
 }
 
@@ -286,11 +286,23 @@ impl LeadingDigits<'_> {
     }
 
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
-        if self.omit_low_nibble {
-            self.hex.format::<true>(f, upper)
-        } else {
-            self.hex.format::<false>(f, upper)
+        if !self.omit_low_nibble {
+            return self.hex.format(f, upper);
         }
+        let (&last, pairs) = self
+            .hex
+            .bytes
+            .split_last()
+            .expect("an odd prefix selects a byte");
+        let write_digits = |f: &mut fmt::Formatter<'_>| {
+            Hex::new(pairs).write_hex(f, upper)?;
+            f.write_char(char::from(crate::encode::high_digit(last, upper)))
+        };
+        if let Some(width) = f.width() {
+            return pad_hex(f, width, pairs.len() * 2 + 1, write_digits);
+        }
+        write_prefix(f)?;
+        write_digits(f)
     }
 }
 
