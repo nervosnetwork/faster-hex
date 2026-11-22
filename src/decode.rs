@@ -573,7 +573,7 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
 // On failure, return the byte offset of the first block that was not decoded.
 // Safety: as for decode_owned_large; the caller owns the destination on error.
 #[cfg(feature = "alloc")]
-#[inline(always)]
+#[inline(never)]
 unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
     let case = CheckCase::None;
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
