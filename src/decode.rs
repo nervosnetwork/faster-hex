@@ -501,11 +501,68 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
-    if let Err(error) = hex_decode(src, &mut dst[start..]) {
+    let suffix = &mut dst[start..];
+    let result = if suffix.len() > OWNED_DECODE_THRESHOLD {
+        // Bound error recovery to the current block of privately owned output.
+        src.chunks(2 * OWNED_DECODE_THRESHOLD)
+            .zip(suffix.chunks_mut(OWNED_DECODE_THRESHOLD))
+            .enumerate()
+            .try_for_each(|(block, (input, output))| {
+                // SAFETY: the even input and the suffix have corresponding chunk boundaries.
+                unsafe { decode_owned_large(input, output, CheckCase::None) }.map_err(|error| {
+                    match error {
+                        Error::InvalidChar { index, byte } => Error::InvalidChar {
+                            index: block * (2 * OWNED_DECODE_THRESHOLD) + index,
+                            byte,
+                        },
+                        error => error,
+                    }
+                })
+            })
+    } else {
+        // SAFETY: resize added exactly one byte per pair.
+        unsafe { decode_checked(src, suffix, CheckCase::None) }
+            .or_else(|()| diagnose_appended(src, suffix))
+    };
+    if let Err(error) = result {
         dst.truncate(start);
         return Err(error);
     }
     Ok(&mut dst[start..])
+}
+
+// Report the first invalid digit, or recover if a backend rejected valid input.
+#[cfg(feature = "alloc")]
+#[cold]
+#[inline]
+fn diagnose_appended(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+    if let Some(&byte) = src.first() {
+        if UNHEX[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar { index: 0, byte });
+        }
+    }
+    // Only an invalid table entry sets the high bits.
+    let groups = src.as_chunks::<4>().0;
+    let valid = groups
+        .iter()
+        .take_while(|group| {
+            group
+                .iter()
+                .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
+                != NIL
+        })
+        .count();
+    let start = 4 * valid;
+    for (offset, &byte) in src[start..].iter().enumerate() {
+        if UNHEX[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar {
+                index: start + offset,
+                byte,
+            });
+        }
+    }
+    hex_decode_fallback(src, dst);
+    Ok(())
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
