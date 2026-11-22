@@ -5,84 +5,43 @@ on:
 permissions:
   contents: read
 jobs:
-  codec:
-    name: AVX2 leading vector and end-aligned full blocks / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  consumers:
+    name: CKB JsonBytes and gix ObjectId / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 48
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, ubuntu-22.04]
+        os: [ubuntu-22.04, macos-15-intel, ubuntu-24.04-arm]
         lto: ["false", "thin"]
     env:
-      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 5943a055d3070960a84806311337953c9c7a58ec
-      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
+      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nervosnetwork/ckb
+          ref: 2061bc092a5dd447a741fad03b02628203b35e96
+          path: real/ckb
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: GitoxideLabs/gitoxide
+          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
+          path: real/gitoxide
+          fetch-depth: 1
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Check every input byte at vector boundaries
-        run: |
-          mkdir codec-verify
-          git archive "$PRODUCT_REV" | tar -xf - -C codec-verify
-          cp verify/core-inputs.rs codec-verify/tests/native_inputs.rs
-          mkdir -p results
-          cat >> codec-verify/src/tests.rs <<'RS'
-          #[test]
-          fn release_backend() {
-              std::println!("Selected native codec: {:?}", crate::vectorization_support());
-          }
-          RS
-          (cd codec-verify && cargo test --release --all-features --lib release_backend -- --nocapture) | tee results/backend.txt
-          cd codec-verify
-          cargo test --release --all-features --lib --test native_inputs --test public_api --test owned_decode
-      - name: Compare public callers with the PR and the 2.0 release
-        run: |
-          RELEASE_DIAGNOSTICS=1 PAIR_STUDY=windows RESULTS=results/pr python3 verify/consumer.py
-          REFERENCE_REV=6d84260fe321669e7f93ecfb8aecb4db0f582f14 RELEASE_DIAGNOSTICS=1 PAIR_STUDY=windows RESULTS=results/release python3 verify/consumer.py
+      - name: Compare the same callers at the 2.0 tag, PR head and Serde candidate
+        run: python3 verify/downstream/measure.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: avx-windows-${{ matrix.os }}-${{ matrix.lto }}
+          name: downstream-${{ matrix.os }}-${{ matrix.lto }}
           path: results
-  arm:
-    name: Downstream ARM code identity / LTO ${{ matrix.lto }}
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
-    strategy:
-      matrix:
-        lto: ["false", "thin"]
-    env:
-      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 5943a055d3070960a84806311337953c9c7a58ec
-      REFERENCE_REV: e8dcd37b95d516b9b8e492985d8519784d632178
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
-        with:
-          toolchain: 1.95.0
-      - name: Match downstream text address, size and bytes for each caller
-        run: |
-          CHECK_UNCHANGED=1 RELEASE_DIAGNOSTICS=1 PAIR_STUDY=windows python3 verify/consumer.py
-          python3 - <<'PYTHON'
-          from pathlib import Path
-          import json
-          sections = json.loads(Path('results/sections.json').read_text())
-          names = sorted(k[5:] for k in sections if k.startswith('base/'))
-          assert len(names) == 6, names
-          for name in names:
-              assert sections['base/' + name] == sections['head/' + name], name
-          print('Identical downstream executable code for', ', '.join(names))
-          PYTHON
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: arm-code-${{ matrix.lto }}
-          path: results/sections.json
