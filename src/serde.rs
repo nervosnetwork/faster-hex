@@ -97,21 +97,28 @@ mod internal {
 
     // A borrowed field can wait for the format to accept it. Temporary
     // text must be decoded into the caller's storage while it is live.
-    struct TextVisitor<'a, P, T: Destination>(&'a mut T::Value, PhantomData<P>);
+    struct TextVisitor<'a, P, T: Destination> {
+        output: &'a mut T::Value,
+        error: &'a mut Option<FieldError>,
+        policy: PhantomData<P>,
+    }
 
     impl<'de, P: Format, T: Destination> Visitor<'de> for TextVisitor<'_, P, T> {
-        type Value = Input<'de, ()>;
+        type Value = Option<&'de str>;
 
         fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.write_str("a string")
         }
 
         fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-            Ok(Input::Temporary(Field::<P, T>::decode(text, self.0)))
+            if let Err(error) = Field::<P, T>::decode(text, self.output) {
+                *self.error = Some(error);
+            }
+            Ok(None)
         }
 
         fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-            Ok(Input::Borrowed(text))
+            Ok(Some(text))
         }
 
         fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
@@ -149,7 +156,16 @@ mod internal {
             d: D,
             bytes: &mut T::Value,
         ) -> Result<Input<'de, ()>, D::Error> {
-            d.deserialize_string(TextVisitor::<P, T>(bytes, PhantomData))
+            let mut error = None;
+            let borrowed = d.deserialize_string(TextVisitor::<P, T> {
+                output: bytes,
+                error: &mut error,
+                policy: PhantomData,
+            })?;
+            Ok(match borrowed {
+                Some(text) => Input::Borrowed(text),
+                None => Input::Temporary(error.map_or(Ok(()), Err)),
+            })
         }
 
         fn decode(text: &str, bytes: &mut T::Value) -> Result<(), FieldError> {
