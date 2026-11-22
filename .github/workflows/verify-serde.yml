@@ -1,4 +1,4 @@
-name: Check fixed append blocks and reciprocal API linkage
+name: Compare complete and prefix formatting
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,8 +18,8 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      GROUPED_SHA: c80ecfa97e0ee3a444d3bc5044594a3f73dfa7ec
-      ARRAY_SHA: eb8257c9a923db04550108e1703842999f1b3a8f
+      PLAIN_SHA: 6440b73e3bb5f68fd335af4adec1bc000586a8ce
+      TYPED_SHA: 315a34ee891d1ab290a1e5e6db842b428a2bb546
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -43,24 +43,24 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
-          python3 verify/append_linkage.py
+          python3 verify/fmt_symbols.py
         shell: bash
         env:
-          ISOLATE: append-shape
+          ISOLATE: fmt-field
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-shape-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: fmt-field-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Test both fixed append variants
+      - name: Test field formatting and writer failures
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          for revision in "$GROUPED_SHA" "$ARRAY_SHA"; do
+          for revision in "$PLAIN_SHA" "$TYPED_SHA"; do
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
-            (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/append-tests" cargo test --release --all-features)
+            (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/fmt-tests" cargo test --release --all-features)
           done

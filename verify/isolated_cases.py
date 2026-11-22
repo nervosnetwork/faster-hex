@@ -292,3 +292,22 @@ elif SCOPE == 'append-shape':
     cases += [(b,n,k) for n in (32,4096) for b,k in (('array_round_slice','plain'),('ckb_caller','plain'),('owned_blocks','vec-late'),('qualified_decode','valid'))]
     cases += [('gix_caller',20,'parse')]
     assert len(cases)==len(set(cases))==47
+
+elif SCOPE == 'fmt-field':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'narrow':SCOPE_BASE,
+      'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'fc834c71026b6d7f81738b53bd73237f408474ff'}
+    revisions.update({'coalesced': '283da6a91a455190fd1de9cf17dd8d3d12063276', 'separate': 'fe7d49d673b66c6c519369e78f87842a19faf5e4', 'plain': '6440b73e3bb5f68fd335af4adec1bc000586a8ce', 'typed': '315a34ee891d1ab290a1e5e6db842b428a2bb546'})
+    pairs=[('scoped','aa'),('release','version'),('release','narrow'),('release','pr'),('release','scoped'),('pr','scoped'),('version','scoped')]
+    pairs += [(a,b) for a in ('release','version','pr','scoped') for b in ('coalesced','separate','plain','typed')]
+    pairs += [('coalesced','plain'),('coalesced','typed'),('plain','typed')]
+    cases=[('full_format',n,k) for n,k in ((0,'display'),(7,'display'),(32,'display'),(32,'alternate'),(32,'padded'),(128,'display'),(129,'display'),(512,'display'),(513,'padded'),(4096,'display'))]
+    cases += [('fmt_sink',32,k) for k in ('display','upper','alternate','both','small-width','zero','unicode')]
+    cases += [('fmt_sink',n,k) for n,k in ((0,'both'),(20,'both'),(128,'upper'),(129,'upper'),(513,'unicode'),(4096,'upper'))]
+    cases += [('prefix_format',n,'display') for n in (7,12,255,256,257,1023,1024)]
+    cases += [('gix_prefix',n,k+'-adopt') for k,ns in (('sha1',(0,7,40)),('sha256',(0,7,64))) for n in ns]
+    cases += [('prefix_buffer',n,'buffer') for n in (4,7,64)]
+    cases += [('ckb_caller',n,'plain') for n in (32,4096)]
+    cases += [(b,4096,k) for b in ('vec_round_slice','array_round_slice') for k in ('plain','escaped')]
+    cases += [('owned_blocks',n,k) for n,k in ((32,'array-late'),(32,'vec-late'),(4096,'vec-late'))]
+    cases += [('full_buffer',65,'buffer'),('append_call',256,'valid'),('append_call',1025,'valid'),('gix_caller',20,'parse')]
+    assert len(cases)==len(set(cases))==52
