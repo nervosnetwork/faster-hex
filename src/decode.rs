@@ -532,26 +532,7 @@ fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Erro
             return Err(Error::InvalidChar { index: from, byte });
         }
     }
-    // Only an invalid table entry sets the high bits.
-    let groups = rest.as_chunks::<4>().0;
-    let valid = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = from + 4 * valid;
-    for (offset, &byte) in src[start..].iter().enumerate() {
-        if UNHEX[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar {
-                index: start + offset,
-                byte,
-            });
-        }
-    }
+    check_digits_from::<true>(src, from, &UNHEX)?;
     // A rejected but valid suffix uses the existing scalar recovery path.
     decode_diagnosed(rest, &mut dst[from / 2..], CheckCase::None)
 }
@@ -750,7 +731,6 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Re
         }
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
-    // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
         src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
@@ -759,6 +739,17 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Re
     } else {
         0
     };
+    check_digits_from::<GROUP_DIGITS>(src, skipped, table)
+}
+
+// Standalone validation and append specialize the four-digit scan. Decoding
+// into an existing slice retains its scalar recovery after the valid blocks.
+#[inline(always)]
+fn check_digits_from<const GROUP_DIGITS: bool>(
+    src: &[u8],
+    skipped: usize,
+    table: &[u8; 256],
+) -> Result<(), Error> {
     let start = if GROUP_DIGITS {
         // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
         let groups = src[skipped..].as_chunks::<4>().0;
