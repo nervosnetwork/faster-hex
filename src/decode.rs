@@ -501,11 +501,66 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
-    if let Err(error) = hex_decode(src, &mut dst[start..]) {
+    let suffix = &mut dst[start..];
+    // SAFETY: resize added one byte per pair. Previously decoded blocks in
+    // the suffix can be discarded if a later block fails.
+    let decoded = unsafe {
+        if suffix.len() > OWNED_DECODE_THRESHOLD {
+            decode_owned_blocks(src, suffix, CheckCase::None)
+        } else {
+            decode_checked(src, suffix, CheckCase::None)
+        }
+    };
+    if let Err(error) = decoded.or_else(|()| diagnose_appended(src, suffix)) {
         dst.truncate(start);
         return Err(error);
     }
     Ok(&mut dst[start..])
+}
+
+// Report the first invalid digit, or recover if a backend rejected valid input.
+#[cfg(feature = "alloc")]
+#[cold]
+#[inline]
+fn diagnose_appended(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+    if let Some(&byte) = src.first() {
+        if UNHEX[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar { index: 0, byte });
+        }
+    }
+    // Skip verified prefixes with the SIMD checker, then locate the exact byte.
+    let mut start = 0;
+    let mut end = src.len();
+    while end - start > 64 {
+        let middle = start + (end - start) / 2;
+        if hex_check(&src[start..middle]) {
+            start = middle;
+        } else {
+            end = middle;
+        }
+    }
+    // Only an invalid table entry sets the high bits.
+    let groups = src[start..].as_chunks::<4>().0;
+    let valid = groups
+        .iter()
+        .take_while(|group| {
+            group
+                .iter()
+                .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
+                != NIL
+        })
+        .count();
+    let start = start + 4 * valid;
+    for (offset, &byte) in src[start..].iter().enumerate() {
+        if UNHEX[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar {
+                index: start + offset,
+                byte,
+            });
+        }
+    }
+    hex_decode_fallback(src, dst);
+    Ok(())
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
@@ -518,6 +573,16 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
 // Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
 unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    // SAFETY: the caller established the exact input/output length ratio.
+    if unsafe { decode_owned_blocks(src, dst, case) }.is_err() {
+        decode_diagnosed(src, dst, case)?;
+    }
+    Ok(())
+}
+
+// As for decode_owned_large, the destination is private until the call succeeds.
+#[inline(always)]
+unsafe fn decode_owned_blocks(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
@@ -541,10 +606,7 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     let decoded = decode_checked(src, dst, case);
-    if decoded.is_err() {
-        decode_diagnosed(src, dst, case)?;
-    }
-    Ok(())
+    decoded
 }
 
 /// Checks every digit before writing anything.
