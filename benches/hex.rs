@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use faster_hex::{
-    hex_append, hex_decode, hex_decode_array, hex_decode_vec, hex_encode, hex_encode_upper,
-    hex_string,
+    hex_append, hex_decode, hex_decode_append, hex_decode_array, hex_decode_vec, hex_encode,
+    hex_encode_upper, hex_string,
 };
 use hex_simd::{AsOut, AsciiCase};
 use std::hint::black_box;
@@ -264,6 +264,25 @@ fn allocation(c: &mut Criterion) {
     group.finish();
 }
 
+fn decode_append(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_append");
+    for len in [32, 4096] {
+        let bytes = support::bytes(len);
+        let input = hex::encode(&bytes);
+        let mut output = Vec::with_capacity(len + 1);
+        output.push(0xff);
+        group.bench_function(BenchmarkId::from_parameter(len), |b| {
+            b.iter(|| {
+                output.truncate(1);
+                black_box(
+                    hex_decode_append(black_box(input.as_bytes()), black_box(&mut output)).unwrap(),
+                );
+            });
+            assert_eq!(&output[1..], bytes);
+        });
+    }
+}
+
 fn rotating_case(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name: &str,
@@ -369,6 +388,7 @@ criterion_group!(
     conversion,
     decode_array,
     decode_vec,
+    decode_append,
     allocation,
     rotating
 );
