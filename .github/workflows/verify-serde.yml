@@ -5,21 +5,20 @@ on:
 permissions:
   contents: read
 jobs:
-  json:
-    name: JSON CPU samples / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  slices:
+    name: Initialized slice boundaries / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {os: ubuntu-22.04, lto: "false"}
-          - {os: ubuntu-22.04, lto: "thin"}
-          - {os: ubuntu-24.04, lto: "false"}
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        lto: ["false", "thin"]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 9fa6d71209957bd5e03c8f6ff39bb3fd59ac8685
-      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
+      REFERENCE_REV: 07e94ccd19fc6e1d26f295d4a1c8d37cdcd80e3e
+      PRODUCT_REV: b0e8c2695f27a5f4e77199243780982bdda8ffe3
+      CHECK_UNCHANGED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -28,20 +27,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Build and measure the two complete callers
-        run: PAIR_STUDY=json FIELD_OBJECTS=1 MIXED_CALLER=1 RESULTS=results/roundtrip python3 verify/consumer.py
-      - name: Install the userspace CPU sampler
+      - name: Check the verified product tree and native library tests
+        if: matrix.lto == 'false'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends google-perftools libgoogle-perftools4
-      - name: Run matched-path timings and collect CPU samples
-        run: python3 verify/timed_json_cpu.py
+          test "$(git rev-parse "${PRODUCT_REV}^{tree}")" = acee7e085501b8b45c30169cf491b859aeab0047
+          mkdir product
+          git archive "$PRODUCT_REV" | tar -xf - -C product
+          cd product
+          cargo test --release --all-features --quiet
+          cargo check --no-default-features --quiet
+      - name: Compare independent core and serializer executables
+        run: STUDY_WORK=core-work RESULTS=results/core python3 verify/consumer.py
+      - name: Compare complete JSON callers
+        run: STUDY_WORK=json-work RESULTS=results/json PAIR_STUDY=json MIXED_CALLER=1 FIELD_OBJECTS=1 python3 verify/consumer.py
+      - name: Compare fixed and optional fields
+        run: STUDY_WORK=field-work RESULTS=results/fields PAIR_STUDY=fixed ARRAY_VARIANT=frozen OWNED_VECTORS=1 RELEASE_FIELDS=1 FIELD_OBJECTS=1 python3 verify/consumer.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: cpu-json-${{ matrix.os }}-${{ matrix.lto }}
+          name: typed-slices-${{ matrix.os }}-${{ matrix.lto }}
           path: |
-            results/cpu
-            results/roundtrip/host.txt
-            results/roundtrip/sections.json
-            results/roundtrip/independent-summary.json
+            results/*/host.txt
+            results/*/sections.json
+            results/*/independent-summary.json
