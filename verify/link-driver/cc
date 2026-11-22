@@ -1,32 +1,36 @@
 #!/usr/bin/python3
-"""Relink the same Rust object files with one serde_json routine in a fixed-size section."""
+"""Link identical application objects with independently placed JSON read and write routines."""
 from pathlib import Path
-import os, re, subprocess, sys
+import os
+import re
+import subprocess as sp
+import sys
 
-args = sys.argv[1:]
-cc = "/usr/bin/cc"
-result = subprocess.run([cc, *args])
-if result.returncode or "-o" not in args or not os.getenv("JSON_LINK_OUTPUT"):
-    sys.exit(result.returncode)
-output_index = args.index("-o") + 1
-name = Path(args[output_index]).name
-match = re.fullmatch(r"(mixed|escapedmixed)-[a-f0-9]+", name)
-if match:
-    out = Path(os.environ["JSON_LINK_OUTPUT"])
-    out.mkdir(parents=True, exist_ok=True)
-    case = match.group(1)
-    for offset in (0, 16, 32, 48):
-        script = out / f"{case}-{offset}.ld"
+args=sys.argv[1:]
+cc="/usr/bin/cc"
+linked=sp.run([cc,*args])
+if linked.returncode or "-o" not in args or not os.getenv("JSON_LINK_OUTPUT"):
+    sys.exit(linked.returncode)
+index=args.index("-o")+1
+m=re.fullmatch(r"(mixed|escapedmixed)-[a-f0-9]+",Path(args[index]).name)
+if not m:
+    sys.exit(0)
+out=Path(os.environ["JSON_LINK_OUTPUT"]);out.mkdir(exist_ok=True,parents=True)
+for read in (0,16,32,48):
+    for write in (0,16,32,48):
+        stem=f"{m[1]}-r{read}w{write}"
+        script=out/(stem+".ld")
         script.write_text(f"""SECTIONS {{
- .jsonbench_text ALIGN(64) : {{
-  HIDDEN(__jsonbench_start = .);
-  . += {offset};
-  *(.text*format_escaped_str*)
-  . = __jsonbench_start + 4096;
+ .jsonread ALIGN(4096) : {{
+  HIDDEN(__probe_r = .); . += {read};
+  *(.text*skip_to_escape17h*) . = __probe_r + 4096;
+ }}
+ .jsonwrite ALIGN(4096) : {{
+  HIDDEN(__probe_w = .); . += {write};
+  *(.text*format_escaped_str17h*) . = __probe_w + 4096;
  }}
 }}
 INSERT BEFORE .text;
 """)
-        clone = list(args)
-        clone[output_index] = str(out / f"{case}-{offset}")
-        subprocess.run([cc, *clone, "-Wl,-T," + str(script)], check=True)
+        clone=args.copy();clone[index]=str(out/stem)
+        sp.run([cc,*clone,"-Wl,-T,"+str(script)],check=True)
