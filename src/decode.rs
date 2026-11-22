@@ -504,13 +504,8 @@ pub fn hex_decode_append<'a>(
     if !hex_check(src) {
         diagnose_invalid::<true>(src, CheckCase::None, 0)?;
     }
-    // For validated ASCII, bit six distinguishes letters from decimal digits.
-    let nibble = |digit: u8| (digit & 15) + 9 * (digit >> 6);
-    let decode = |&[high, low]: &[u8; 2]| nibble(high) << 4 | nibble(low);
     dst.resize(start + pairs.len(), 0);
-    for (slot, pair) in dst[start..].iter_mut().zip(pairs) {
-        *slot = decode(pair);
-    }
+    hex_decode_unchecked(src, &mut dst[start..]);
     Ok(&mut dst[start..])
 }
 
@@ -720,7 +715,11 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(
 
 // Internal conversion only. Even if miscalled with short input, never pass an
 // undersized source to a SIMD kernel. Public callers must use checked decode.
-#[cfg(any(test, not(any(target_arch = "x86", target_arch = "x86_64"))))]
+#[cfg(any(
+    feature = "alloc",
+    test,
+    not(any(target_arch = "x86", target_arch = "x86_64"))
+))]
 pub(crate) fn hex_decode_unchecked(src: &[u8], dst: &mut [u8]) {
     let len = core::cmp::min(src.len() / 2, dst.len());
     let src = &src[..len * 2];
