@@ -5,49 +5,29 @@ on:
 permissions:
   contents: read
 jobs:
-  consumers:
-    name: CKB JSON read, write and round trip / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  fields:
+    name: Fixed JSON fields / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {os: ubuntu-24.04-arm, lto: "false"}
-          - {os: ubuntu-24.04-arm, lto: "thin"}
+        os: [ubuntu-24.04, macos-15-intel, ubuntu-24.04-arm]
+        lto: ["false", thin]
     env:
-      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
+      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: nervosnetwork/ckb
-          ref: 2061bc092a5dd447a741fad03b02628203b35e96
-          path: real/ckb
-          fetch-depth: 1
-          persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: GitoxideLabs/gitoxide
-          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
-          path: real/gitoxide
-          fetch-depth: 1
-          persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Build CKB with each release component and the PR baseline
-        run: CKB_COMPONENTS=1 BUILD_CALLERS_ONLY=1 python3 verify/downstream/measure.py
-      - name: Check core decoding contracts with both 2.0 components
-        working-directory: real/codec
-        run: cargo test --release --all-features --lib --test public_api --test owned_decode
-      - name: Compare individual phases and the original program through the same path
-        run: python3 verify/downstream/components.py
+      - name: Run the maintained eight fixed-field benchmarks in both orders
+        run: python3 verify/fixed_field_matrix.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
         with:
-          name: ckb-components-${{ matrix.os }}-${{ matrix.lto }}
-          path: results
+          name: fixed-fields-${{ matrix.os }}-${{ matrix.lto }}
+          path: results/fixed-fields.json
+          if-no-files-found: error

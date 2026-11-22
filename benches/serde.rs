@@ -25,6 +25,25 @@ fn array_field<const N: usize>(c: &mut Criterion, name: &str, read: impl Fn(&str
     }
 }
 
+fn array_fields<const N: usize>(c: &mut Criterion) {
+    #[derive(Deserialize)]
+    struct Required<const N: usize>(#[serde(with = "faster_hex::array")] [u8; N]);
+    #[derive(Deserialize)]
+    struct Optional<const N: usize>(
+        #[serde(with = "faster_hex::option_withpfx_ignorecase::array")] Option<[u8; N]>,
+    );
+
+    array_field(c, "array", |json| {
+        serde_json::from_str::<Required<N>>(json).unwrap().0
+    });
+    array_field(c, "option_array", |json| {
+        serde_json::from_str::<Optional<N>>(json)
+            .unwrap()
+            .0
+            .unwrap()
+    });
+}
+
 fn serde(c: &mut Criterion) {
     let mut group = c.benchmark_group("serde_json");
     for len in [0, 10, 32, 64, 65, 66, 256, 4096] {
@@ -80,21 +99,8 @@ fn serde(c: &mut Criterion) {
     }
     group.finish();
 
-    #[derive(Deserialize)]
-    struct Hash(#[serde(with = "faster_hex::array")] [u8; 32]);
-    #[derive(Deserialize)]
-    struct OptionalBlock(
-        #[serde(with = "faster_hex::option_withpfx_ignorecase::array")] Option<[u8; 4096]>,
-    );
-    array_field(c, "array", |json| {
-        serde_json::from_str::<Hash>(json).unwrap().0
-    });
-    array_field(c, "option_array", |json| {
-        serde_json::from_str::<OptionalBlock>(json)
-            .unwrap()
-            .0
-            .unwrap()
-    });
+    array_fields::<32>(c);
+    array_fields::<4096>(c);
 }
 
 fn postcard(c: &mut Criterion) {
