@@ -518,7 +518,6 @@ pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut st
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
 }
 
-#[cfg(feature = "serde")]
 #[inline]
 pub(crate) fn prefixed_len(src: &[u8], prefix: &str) -> Result<usize, Error> {
     src.len()
@@ -527,7 +526,6 @@ pub(crate) fn prefixed_len(src: &[u8], prefix: &str) -> Result<usize, Error> {
         .ok_or(Error::Overflow)
 }
 
-#[cfg(feature = "serde")]
 #[inline]
 pub(crate) fn encode_prefixed<'a>(
     src: &[u8],

@@ -118,6 +118,8 @@ impl<'a> Hex<'a> {
 }
 
 impl Hex<'_> {
+    const SHORT_BYTES: usize = 128;
+
     fn format<const OMIT_LOW: bool>(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         let prefix = match (f.sign_plus(), f.alternate()) {
             (false, false) => "",
@@ -128,10 +130,28 @@ impl Hex<'_> {
         if let Some(width) = f.width() {
             return self.format_padded::<OMIT_LOW>(f, upper, prefix, width);
         }
-        if !prefix.is_empty() {
-            f.write_str(prefix)?;
+        if prefix.is_empty() {
+            return self.write_hex::<OMIT_LOW>(f, upper);
         }
-        self.write_hex::<OMIT_LOW>(f, upper)
+        self.write_prefixed::<OMIT_LOW>(f, upper, prefix)
+    }
+
+    // Keep the tagged hash and its digits in one writer call when they fit on the stack.
+    #[inline(never)]
+    fn write_prefixed<const OMIT_LOW: bool>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        upper: bool,
+        prefix: &str,
+    ) -> fmt::Result {
+        if self.bytes.len() > Self::SHORT_BYTES {
+            f.write_str(prefix)?;
+            return self.write_long::<OMIT_LOW>(f, upper);
+        }
+        let mut buffer = [MaybeUninit::uninit(); Self::SHORT_BYTES * 2 + 3];
+        let text = crate::encode::encode_prefixed(self.bytes, &mut buffer, upper, prefix)
+            .map_err(|_| fmt::Error)?;
+        f.write_str(&text[..text.len() - usize::from(OMIT_LOW)])
     }
 
     // Padding needs more live state; keep it out of the usual hash/logging path.
@@ -180,9 +200,9 @@ impl Hex<'_> {
         if self.bytes.is_empty() {
             return Ok(());
         }
-        if self.bytes.len() <= 128 {
+        if self.bytes.len() <= Self::SHORT_BYTES {
             // Hashes and short identifiers need one encode and one writer call.
-            let mut buffer = [MaybeUninit::uninit(); 256];
+            let mut buffer = [MaybeUninit::uninit(); Self::SHORT_BYTES * 2];
             let text = encode(self.bytes, &mut buffer, upper)
                 .expect("short input fits the fixed encoding buffer");
             return f.write_str(if OMIT_LOW {
