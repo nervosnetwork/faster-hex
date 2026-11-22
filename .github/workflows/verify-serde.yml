@@ -1,4 +1,4 @@
-name: Check the independent bounds of complete encoding and prefix writes
+name: Compare native append validation and direct output filling
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,7 +18,7 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      POLICY_SHA: 24b99b7a5e532edc8ea9a421e2d23c5e0c687aca
+      FILL_SHA: 6c068d01dd224f4cd6343a530105c10c77c3a5ad
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -44,19 +44,19 @@ jobs:
           python3 verify/isolate_callers.py
         shell: bash
         env:
-          ISOLATE: prefix-operation
+          ISOLATE: append-fill
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: prefix-operation-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: append-fill-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Test prefix and complete encoding
+      - name: Test directly extended output
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/policy" "$POLICY_SHA"
-          (cd "$RUNNER_TEMP/policy" && cargo test --release --all-features)
+          git worktree add --detach "$RUNNER_TEMP/fill" "$FILL_SHA"
+          (cd "$RUNNER_TEMP/fill" && cargo test --release --all-features)

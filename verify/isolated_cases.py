@@ -251,3 +251,23 @@ elif SCOPE in ('prefix-kernel-exchange','prefix-operation'):
         pairs += [('earlier','policy')]
         cases += [('prefix_extent',n,view) for n in (7,63,64,65,127,1023,8191,8192) for view in ('exact','spare')]
         assert len(cases)==len(set(cases))==71
+
+elif SCOPE == 'append-fill':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'narrow':SCOPE_BASE,
+           'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
+           'scoped':'fc834c71026b6d7f81738b53bd73237f408474ff'}
+    revisions.update({'initialized': 'd5d53be1e11a718e9326a675e4cc7fc40e3aa216', 'extend': '6c068d01dd224f4cd6343a530105c10c77c3a5ad', 'native': '7c8a78d50e68d3aa9782576d9d7a5e5c7ec40887'})
+    pairs=[('scoped','aa'),('release','version'),('release','pr'),('release','narrow'),
+           ('release','scoped'),('pr','scoped'),('narrow','scoped')]
+    pairs += [(left,right) for left in ('release','version','pr','scoped') for right in ('initialized','extend','native')]
+    pairs += [('initialized','extend'),('native','extend'),('native','initialized')]
+    cases=[('append_call',n,'valid') for n in (0,1,16,32,33,64,256,1024,1025,4096,4097,65536)]
+    cases += [('append_call',n,k) for n in (32,256,1025,4096) for k in ('first','middle','rollback')]
+    cases += [('append_storage',n,k) for n in (256,1025,4096) for k in
+             ('reuse-0-3-valid','reuse-0-31-valid','reuse-1-3-valid','grow-0-0-valid','reuse-0-3-late','zero-0-3-valid','slice-0-3-valid')]
+    cases += [('validate_call',n,'valid') for n in (32,256,4096)]
+    cases += [('owned_blocks',n,k) for n in (32,4096) for k in ('array-valid','array-late','vec-valid','vec-late')]
+    cases += [('qualified_decode',n,'valid') for n in (32,4096)]
+    cases += [(b,n,k) for n in (32,4096) for b,k in [('vec_round_slice','plain'),('vec_round_slice','escaped'),('array_round_slice','plain'),('ckb_caller','plain')]]
+    cases += [('gix_caller',20,'parse')]
+    assert len(cases)==len(set(cases))==67
