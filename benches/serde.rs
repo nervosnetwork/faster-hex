@@ -13,40 +13,9 @@ struct TextPayload<'a> {
     bytes: &'a str,
 }
 
-fn array_field<const N: usize>(c: &mut Criterion, name: &str, read: impl Fn(&str) -> [u8; N]) {
-    let plain = format!(r#""0x{}""#, "ab".repeat(N));
-    let escaped = plain.replacen('a', r"\u0061", 1);
-    let mut group = c.benchmark_group(format!("serde_json/{name}"));
-    for (kind, json) in [("plain", plain), ("escaped", escaped)] {
-        assert_eq!(read(&json), [0xab; N]);
-        group.bench_with_input(BenchmarkId::new(kind, N), &json, |b, json| {
-            b.iter(|| read(black_box(json)));
-        });
-    }
-}
-
-fn array_fields<const N: usize>(c: &mut Criterion) {
-    #[derive(Deserialize)]
-    struct Required<const N: usize>(#[serde(with = "faster_hex::array")] [u8; N]);
-    #[derive(Deserialize)]
-    struct Optional<const N: usize>(
-        #[serde(with = "faster_hex::option_withpfx_ignorecase::array")] Option<[u8; N]>,
-    );
-
-    array_field(c, "array", |json| {
-        serde_json::from_str::<Required<N>>(json).unwrap().0
-    });
-    array_field(c, "option_array", |json| {
-        serde_json::from_str::<Optional<N>>(json)
-            .unwrap()
-            .0
-            .unwrap()
-    });
-}
-
 fn serde(c: &mut Criterion) {
     let mut group = c.benchmark_group("serde_json");
-    for len in [0, 10, 32, 64, 65, 66, 256, 4096] {
+    for len in [0, 10, 32, 64, 65, 256, 4096] {
         let input = Payload {
             bytes: (0..len).map(|i| (i * 37 + 11) as u8).collect(),
         };
@@ -79,28 +48,13 @@ fn serde(c: &mut Criterion) {
             });
             assert_eq!(text_output, json.as_bytes());
         });
-        for (read, roundtrip, source) in [
-            ("deserialize", "roundtrip_reuse", &json),
-            ("deserialize_escaped", "roundtrip_escaped_reuse", &escaped),
-        ] {
-            group.bench_with_input(BenchmarkId::new(read, len), source, |b, source| {
+        for (name, source) in [("deserialize", &json), ("deserialize_escaped", &escaped)] {
+            group.bench_with_input(BenchmarkId::new(name, len), source, |b, source| {
                 b.iter(|| black_box(serde_json::from_str::<Payload>(black_box(source)).unwrap()));
-            });
-            group.bench_with_input(BenchmarkId::new(roundtrip, len), source, |b, source| {
-                b.iter(|| {
-                    let payload: Payload = serde_json::from_str(black_box(source)).unwrap();
-                    output.clear();
-                    serde_json::to_writer(&mut output, &payload).unwrap();
-                    black_box(output.as_slice());
-                });
-                assert_eq!(output, json.as_bytes());
             });
         }
     }
     group.finish();
-
-    array_fields::<32>(c);
-    array_fields::<4096>(c);
 }
 
 fn postcard(c: &mut Criterion) {

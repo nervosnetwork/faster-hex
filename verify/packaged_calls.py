@@ -11,7 +11,7 @@ import sys
 import tarfile
 from cause_common import BASE, ROOT, compare, measure, pin, save, section
 
-PREPARED = "bbf8a73963c39bd5e2eb1b41bbf8727877e95bbc"
+PREPARED = "370fa3f7ba5a7f8c5187158b851c5a2186a096de"
 RELEASE = "6d84260fe321669e7f93ecfb8aecb4db0f582f14"
 PUBLISHED = "e4ede54fe330383a5de28c0a1f06668ff9dbf06c8094e1c5150c39488a5e911d"
 SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
@@ -47,7 +47,7 @@ assert json.loads((vendor / "faster-hex-2.0.0/.cargo-checksum.json").read_text()
 config=["--config",'source.crates-io.replace-with="release-check"',"--config","source.release-check.directory="+json.dumps(str(vendor))]
 registry = []
 packages = {}
-for ref, ver, role in [(RELEASE,"2.0.0","release"),(BASE,"2.1.0","pr"),(PREPARED,"2.1.0","prepared")]:
+for ref, ver, role in [(RELEASE,"2.0.0","release"),("f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93","2.1.0","version"),(BASE,"2.1.0","pr"),(PREPARED,"2.1.0","prepared")]:
     if role == "release":
         cargo_home = Path(env.get("CARGO_HOME",Path.home()/".cargo"))
         pkg = next(cargo_home.glob("registry/cache/*/faster-hex-2.0.0.crate"))
@@ -92,7 +92,8 @@ mode = env.get("CARGO_PROFILE_RELEASE_LTO","default")
 out=out/mode
 out.mkdir(exist_ok=True)
 host_cmd = ['sysctl','-n','machdep.cpu.brand_string'] if sys.platform=='darwin' else ['lscpu']
-save(out/'host.json', {'cpu':sp.check_output(host_cmd,text=True),'rustc':sp.check_output(['rustc','-vV'],text=True),'lto':mode})
+cpu = env.get('VERIFIED_CPU_NAME') or sp.check_output(host_cmd,text=True)
+save(out/'host.json', {'cpu':cpu,'rustc':sp.check_output(['rustc','-vV'],text=True),'lto':mode})
 sections={}
 for role,(version,files,checksum) in packages.items():
     resolve(version,checksum)
@@ -137,7 +138,7 @@ for b,n,k in cases:
             groups[role].append(sample(role,count))
         rows.append({r:statistics.mean(v) for r,v in groups.items()})
     key=f"{b}/{n}/{k}"
-    summary[key]={x+"/"+y:compare(rows,x,y) for x,y in [("release","pr"),("release","prepared"),("pr","prepared"),("pr","aa")]}
+    summary[key]={x+"/"+y:compare(rows,x,y) for x,y in [("release","version"),("version","prepared"),("release","pr"),("release","prepared"),("pr","prepared"),("pr","aa")]}
     samples[key]=rows
     print(key,{p:round(100*(s["ratio"]-1),2) for p,s in summary[key].items()},flush=True)
     save(out/"times.json",summary);save(out/"samples.json",samples)

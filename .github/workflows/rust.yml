@@ -52,8 +52,6 @@ jobs:
         shell: bash
         run: |
           cp candidate/.cargo/config.toml baseline/.cargo/config.toml
-          # The Serde driver uses the released field adapter on both revisions.
-          cp candidate/benches/serde.rs baseline/benches/serde.rs
           cp -R baseline/benches/. candidate/benches/
           # Compile both drivers before timing either revision.
           for revision in baseline candidate; do

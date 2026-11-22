@@ -385,8 +385,12 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    if N > OWNED_DECODE_THRESHOLD {
+        // SAFETY: The length check above matched the number of input pairs to N.
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
 }
 
@@ -452,8 +456,12 @@ pub fn hex_decode_vec_with_case(
         return Err(Error::OddLength);
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
-    // SAFETY: The vector has one byte for each pair of the even input.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    if bytes.len() > OWNED_DECODE_THRESHOLD {
+        // SAFETY: The vector has one byte for each pair of the even input.
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
 }
 
@@ -491,13 +499,14 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
-    // SAFETY: resize added one byte for each pair of the even input.
-    if let Err(error) = unsafe { decode_owned(src, &mut dst[start..], CheckCase::None) } {
+    if let Err(error) = hex_decode(src, &mut dst[start..]) {
         dst.truncate(start);
         return Err(error);
     }
     Ok(&mut dst[start..])
 }
+
+const OWNED_DECODE_THRESHOLD: usize = 1024;
 
 /// Decodes into private output that the caller discards on error. Large inputs
 /// can commit a checked block at a time without re-reading valid input.
@@ -506,12 +515,8 @@ pub fn hex_decode_append<'a>(
 /// `src.len()` must be twice `dst.len()`, as for [`decode_checked`].
 // Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
-unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    // Short outputs share the slice decoder's bounded kernels.
-    if dst.len() <= 1024 {
-        return hex_decode_with_case(src, dst, case).map(|_| ());
-    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
@@ -655,13 +660,8 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
-    // Report a malformed first pair before scanning any SIMD blocks.
-    for (index, &byte) in src.iter().take(2).enumerate() {
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
-        }
-    }
     // Skip valid blocks so locating a late error retains SIMD throughput.
+    // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
         src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
@@ -670,21 +670,8 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     } else {
         0
     };
-    // Four independent lookups skip valid digits before the exact byte scan.
-    // A rejected digit sets all bits. Valid entries use only the low nibble.
-    let groups = src[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
-    for (offset, &byte) in src[start..].iter().enumerate() {
-        let index = start + offset;
+    for (offset, &byte) in src[skipped..].iter().enumerate() {
+        let index = skipped + offset;
         if table[usize::from(byte)] == NIL {
             return Err(Error::InvalidChar { index, byte });
         }
