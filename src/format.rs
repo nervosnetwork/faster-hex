@@ -119,35 +119,30 @@ impl<'a> Hex<'a> {
 
 impl Hex<'_> {
     fn format<const OMIT_LOW: bool>(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+        if f.width().is_some() || f.sign_plus() || f.alternate() {
+            return self.format_field::<OMIT_LOW>(f, upper);
+        }
+        self.write_hex::<OMIT_LOW>(f, upper)
+    }
+
+    // Keep sign, prefix and padding out of plain hash formatting.
+    #[inline(never)]
+    fn format_field<const OMIT_LOW: bool>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        upper: bool,
+    ) -> fmt::Result {
         let prefix = match (f.sign_plus(), f.alternate()) {
             (false, false) => "",
             (false, true) => "0x",
             (true, false) => "+",
             (true, true) => "+0x",
         };
-        if let Some(width) = f.width() {
-            return self.format_padded::<OMIT_LOW>(f, upper, prefix, width);
-        }
-        if !prefix.is_empty() {
-            f.write_str(prefix)?;
-        }
-        self.write_hex::<OMIT_LOW>(f, upper)
-    }
-
-    // Padding needs more live state; keep it out of the usual hash/logging path.
-    #[inline(never)]
-    fn format_padded<const OMIT_LOW: bool>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        upper: bool,
-        prefix: &str,
-        width: usize,
-    ) -> fmt::Result {
         // Saturation is sufficient for width comparison: if the complete output
         // exceeds usize::MAX characters, no representable width adds padding.
         let digits = self.bytes.len().saturating_mul(2) - usize::from(OMIT_LOW);
         let len = digits.saturating_add(prefix.len());
-        let padding = width.saturating_sub(len);
+        let padding = f.width().unwrap_or(0).saturating_sub(len);
         let zero_pad = f.sign_aware_zero_pad();
         let (left, right) = if zero_pad {
             (0, 0)
