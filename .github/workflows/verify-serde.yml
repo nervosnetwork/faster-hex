@@ -1,4 +1,4 @@
-name: Isolate the public append call boundary in native consumers
+name: Isolate suffix decoding and compare how callers use the returned bytes
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,7 +18,7 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      ORDINARY_SHA: 458fb61c74dcbcc99549d296b158656acbc5505c
+      SUFFIX_SHA: bb1eecaff85fd359f2c717cffcae0d9f99d6f2c3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -45,20 +45,20 @@ jobs:
           python3 verify/append_callsite_image.py
         shell: bash
         env:
-          ISOLATE: append-callsite
+          ISOLATE: append-suffix
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-callsite-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: append-suffix-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/append-callsite-image.json
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Test ordinary append
+      - name: Test suffix decoding
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/ordinary" "$ORDINARY_SHA"
-          (cd "$RUNNER_TEMP/ordinary" && cargo test --release --all-features)
+          git worktree add --detach "$RUNNER_TEMP/suffix" "$SUFFIX_SHA"
+          (cd "$RUNNER_TEMP/suffix" && cargo test --release --all-features)

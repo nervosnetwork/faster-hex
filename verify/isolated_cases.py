@@ -187,7 +187,7 @@ elif SCOPE == 'append-storage':
     cases += [('ckb_caller',n,'plain') for n in (32,4096)] + [('gix_caller',20,'parse')]
     assert len(cases)==len(set(cases))==67
 
-elif SCOPE == 'append-callsite':
+elif SCOPE in ('append-callsite', 'append-suffix'):
     revisions = {
         'release': RELEASE, 'version': SAME_VERSION,
         'pr': '25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
@@ -210,3 +210,9 @@ elif SCOPE == 'append-callsite':
     cases += [('qualified_decode',n,'valid') for n in (32,4096)]
     cases += [('ckb_caller',n,'plain') for n in (32,4096)] + [('gix_caller',20,'parse')]
     assert len(cases)==len(set(cases))==57
+
+    if SCOPE == 'append-suffix':
+        revisions['suffix']='bb1eecaff85fd359f2c717cffcae0d9f99d6f2c3'
+        pairs.extend((r,'suffix') for r in ('release','version','pr','scoped','ordinary'))
+        cases += [('append_result',n,how) for n in (32,256,1025,4096) for how in ('opaque','suffix','status')]
+        assert len(cases)==len(set(cases))==69

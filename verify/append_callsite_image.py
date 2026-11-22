@@ -36,7 +36,7 @@ def record(img):
     return captured
 
 answer={}
-for role in ('pr','scoped','ordinary'):
+for role in ('pr','scoped','ordinary','suffix'):
     rows=record(out/(role+'-append_callsite'))
     samples=[r for r in rows if "append_callsite::sample" in r['symbol']]
     assert len(samples)==2,(role,[r['symbol'] for r in rows])
