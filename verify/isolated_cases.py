@@ -217,7 +217,7 @@ elif SCOPE in ('append-callsite', 'append-suffix'):
         cases += [('append_result',n,how) for n in (32,256,1025,4096) for how in ('opaque','suffix','status')]
         assert len(cases)==len(set(cases))==69
 
-elif SCOPE == 'prefix-kernel-exchange':
+elif SCOPE in ('prefix-kernel-exchange','prefix-operation'):
     revisions = {
         'release': RELEASE, 'version': SAME_VERSION, 'narrow': SCOPE_BASE,
         'pr': '25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
@@ -241,3 +241,13 @@ elif SCOPE == 'prefix-kernel-exchange':
     cases += [('vec_round_slice',4096,'escaped'),('gix_caller',20,'parse'),('gix_caller',32,'parse')]
     cases += [('append_call',n,'valid') for n in (256,1025)]
     assert len(cases)==len(set(cases))==55
+
+    if SCOPE == 'prefix-operation':
+        for role in ('pr_native','scoped_native','window'):
+            del revisions[role]
+        revisions.update({'earlier': '4edae506b3b7145958c8b2356189473f5c49cd44', 'policy': '24b99b7a5e532edc8ea9a421e2d23c5e0c687aca'})
+        pairs=[(a,b) for a,b in pairs if a in revisions and (b in revisions or b=='aa')]
+        pairs += [(a,b) for a in ('pr','scoped','release','version') for b in ('earlier','policy')]
+        pairs += [('earlier','policy')]
+        cases += [('prefix_extent',n,view) for n in (7,63,64,65,127,1023,8191,8192) for view in ('exact','spare')]
+        assert len(cases)==len(set(cases))==71

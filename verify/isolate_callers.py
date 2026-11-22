@@ -9,6 +9,7 @@ import statistics
 import subprocess as sp
 import sys
 import tarfile
+import tempfile
 from isolated_cases import SCOPE, revisions, pairs, cases, SCOPE_BASE, APPEND, RECOVERY, VISITOR
 from cause_common import BASE, ROOT, compare, measure, pin, save, section
 
@@ -121,6 +122,10 @@ for role,(version,files,checksum) in packages.items():
             p.write_bytes(data)
         (dest/".cargo-checksum.json").write_text(json.dumps({"package":checksum,"files":{p:digest(s) for p,s in files.items()}}))
     build_env=dict(env,CARGO_TARGET_DIR=str(work/("target-"+role+"-"+mode)))
+    transient=None
+    if env.get('EPHEMERAL_BUILD')=='1':
+        transient=tempfile.TemporaryDirectory(prefix='cargo-build-',dir=work)
+        build_env['CARGO_TARGET_DIR']=transient.name
     if layout:
         build_env['JSON_LINK_WORK'] = str(work/'round-layout'/role)
     if SCOPE in ('legacy-errors','bounded-errors') and env.get('LEGACY_SITES')=='1' and role in ('release','version','scoped'):
@@ -138,10 +143,10 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE in ('prefix-kernel-exchange','legacy-errors','bounded-errors','release-audit','append-storage','append-callsite','append-suffix') and role in ('release','version'):
-        available = [b for b in bins if b not in ('append_call','append_storage','append_callsite','append_result','validate_call','prefix_buffer','prefix_format')]
-    if SCOPE in ('prefix-kernel-exchange','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
-        if role in ('release','version') and SCOPE not in ('prefix-kernel-exchange','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
+    if SCOPE in ('prefix-kernel-exchange','prefix-operation','legacy-errors','bounded-errors','release-audit','append-storage','append-callsite','append-suffix') and role in ('release','version'):
+        available = [b for b in bins if b not in ('append_call','append_storage','append_callsite','append_result','validate_call','prefix_buffer','prefix_format','prefix_extent')]
+    if SCOPE in ('prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
+        if role in ('release','version') and SCOPE not in ('prefix-kernel-exchange','prefix-operation','append-storage','append-callsite','append-suffix','legacy-errors','bounded-errors','release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
         if SCOPE in ('append-recovery','short-json') and role in ('release','version'):
             available=[b for b in bins if b not in ('append_call','validate_call')]
@@ -152,7 +157,7 @@ for role,(version,files,checksum) in packages.items():
             if harness.is_file():
                 shutil.copy2(harness,driver/'src/bin'/(name+'.rs'))
             assert (driver/'src/bin'/(name+'.rs')).is_file()
-    if SCOPE in ('prefix-length','release-audit','prefix-kernel-exchange') and role in ('release','version'):
+    if SCOPE in ('prefix-length','release-audit','prefix-kernel-exchange','prefix-operation') and role in ('release','version'):
         probe=driver/'src/bin/gix_prefix.rs'
         use_view='faster_hex::Hex::new(prefix.as_oid().as_bytes()).leading_digits(prefix.hex_len()).encode_to(dst).unwrap()'
         code=probe.read_text();assert code.count(use_view)==1
@@ -169,6 +174,7 @@ for role,(version,files,checksum) in packages.items():
         img=out/(role+"-"+b)
         shutil.copy2(Path(build_env["CARGO_TARGET_DIR"])/"release"/b,img)
         sections[role+"/"+b]=section(img)
+    if transient is not None: transient.cleanup()
 save(out/"sections.json",sections)
 if SCOPE=='recovery' and sys.platform.startswith('linux'):
     from isolated_elf import record
