@@ -5,19 +5,20 @@ on:
 permissions:
   contents: read
 jobs:
-  causes:
-    name: JSON phases and placement / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  common-writer:
+    name: Same writer after either reader / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
-        lto: ["false", "thin"]
+        include:
+          - {os: ubuntu-22.04, lto: "false"}
+          - {os: ubuntu-22.04, lto: "thin"}
+          - {os: ubuntu-24.04, lto: "false"}
+          - {os: ubuntu-24.04-arm, lto: "false"}
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
-      PRODUCT_REV: 9fa6d71209957bd5e03c8f6ff39bb3fd59ac8685
-      REFERENCE_REV: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -26,22 +27,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Build untouched round trips and preserve their native linker inputs
-        if: matrix.os != 'ubuntu-24.04-arm'
-        run: PATH="$PWD/verify/link-driver:$PATH" JSON_PLACEMENT=1 FIELD_OBJECTS=1 MIXED_CALLER=1 PAIR_STUDY=json RESULTS=results/paired python3 verify/consumer.py
-      - name: Cross the read and write code positions and revert the Serde change
-        if: matrix.os != 'ubuntu-24.04-arm'
-        run: python3 verify/where_json_runs.py
-      - name: Measure borrowed, escaped and reader input by destination and phase
-        if: success() || failure()
-        run: python3 verify/which_field_slows.py
+      - name: Cross both readers with one writer and repeat with reversed crate order
+        run: python3 verify/cross_readers.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: field-cause-${{ matrix.os }}-${{ matrix.lto }}
-          path: |
-            results/cause
-            results/paired/sections.json
-            results/paired/independent-summary.json
-            results/paired/host.txt
-            field-cause-work/results
+          name: same-writer-${{ matrix.os }}-${{ matrix.lto }}
+          path: crossed-readers/results
