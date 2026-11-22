@@ -503,17 +503,22 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
     vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
 }
 
-// An odd digit count always selects at least the high nibble of the last byte.
 #[inline]
-pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
-    let (&last, pairs) = src.split_last().expect("an odd prefix selects a byte");
-    let required = pairs.len() * 2 + 1;
+pub(crate) fn encode_prefix<'a>(
+    src: &[u8],
+    omit_low: bool,
+    dst: &'a mut [u8],
+) -> Result<&'a mut str, Error> {
+    let required = (src.len() * 2).saturating_sub(usize::from(omit_low));
     let output = dst
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
-    let written = hex_encode(pairs, output)?.len();
-    output[written] = TABLE_LOWER[usize::from(last >> 4)];
-    // SAFETY: hex_encode wrote the complete pairs as ASCII. The only
-    // remaining byte was filled from the ASCII digit table.
+    let (pairs, tail) = output.as_chunks_mut::<2>();
+    hex_encode(&src[..pairs.len()], pairs.as_flattened_mut())?;
+    if let [digit] = tail {
+        *digit = TABLE_LOWER[usize::from(src[pairs.len()] >> 4)];
+    }
+    // SAFETY: The encoder initialized every pair as ASCII, and the only possible
+    // remainder is one digit from the ASCII table.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
 }
