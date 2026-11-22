@@ -101,10 +101,15 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
         return Err(Error::OddLength);
     }
     if hex_check(src) {
-        Ok(())
-    } else {
-        diagnose_invalid(src, CheckCase::None)
+        return Ok(());
     }
+    // A malformed first pair needs no further block scan.
+    for (index, &byte) in src.iter().take(2).enumerate() {
+        if UNHEX[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar { index, byte });
+        }
+    }
+    diagnose_invalid(src, CheckCase::None)
 }
 
 /// Checks ASCII hex digits against an explicit letter-case policy.
