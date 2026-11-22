@@ -103,7 +103,7 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if hex_check(src) {
         Ok(())
     } else {
-        diagnose_invalid(src, CheckCase::None)
+        diagnose_mixed(src)
     }
 }
 
@@ -506,7 +506,9 @@ pub fn hex_decode_append<'a>(
         // SAFETY: The suffix has one byte per input pair and is discarded on error.
         unsafe { decode_owned_large(src, suffix, CheckCase::None) }
     } else {
-        hex_decode(src, suffix).map(|_| ())
+        // SAFETY: resize created one byte per input pair.
+        unsafe { decode_checked(src, suffix, CheckCase::None) }
+            .or_else(|()| diagnose_mixed(src).map(|()| hex_decode_fallback(src, suffix)))
     };
     if let Err(error) = decoded {
         dst.truncate(start);
@@ -669,16 +671,42 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
+    invalid_from(src, valid_block_prefix(src, case), table)
+}
+
+#[cold]
+fn diagnose_mixed(src: &[u8]) -> Result<(), Error> {
+    let blocks = valid_block_prefix(src, CheckCase::None);
+    // Valid digits use only the low nibble; an invalid byte sets every bit.
+    let groups = src[blocks..].as_chunks::<4>().0;
+    let valid = groups
+        .iter()
+        .take_while(|group| {
+            group
+                .iter()
+                .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
+                != NIL
+        })
+        .count();
+    invalid_from(src, blocks + 4 * valid, &UNHEX)
+}
+
+#[inline]
+fn valid_block_prefix(src: &[u8], case: CheckCase) -> usize {
     // Skip valid blocks so locating a late error retains SIMD throughput.
     // Short inputs go directly to the byte scan.
-    let skipped = if src.len() > 64 {
+    if src.len() > 64 {
         src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
             .count()
             * 64
     } else {
         0
-    };
+    }
+}
+
+#[inline]
+fn invalid_from(src: &[u8], skipped: usize, table: &[u8; 256]) -> Result<(), Error> {
     for (offset, &byte) in src[skipped..].iter().enumerate() {
         let index = skipped + offset;
         if table[usize::from(byte)] == NIL {
