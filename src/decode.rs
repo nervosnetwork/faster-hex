@@ -103,7 +103,7 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if hex_check(src) {
         Ok(())
     } else {
-        diagnose_invalid::<true>(src, CheckCase::None)
+        diagnose_invalid::<true>(src, CheckCase::None, 0)
     }
 }
 
@@ -526,15 +526,9 @@ pub fn hex_decode_append<'a>(
 #[cold]
 #[inline]
 fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
-    let rest = &src[from..];
-    if let Some(&byte) = rest.first() {
-        if UNHEX[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index: from, byte });
-        }
-    }
-    check_digits_from::<true>(src, from, &UNHEX)?;
-    // A rejected but valid suffix uses the existing scalar recovery path.
-    decode_diagnosed(rest, &mut dst[from / 2..], CheckCase::None)
+    diagnose_invalid::<true>(src, CheckCase::None, from)?;
+    hex_decode_fallback(&src[from..], &mut dst[from / 2..]);
+    Ok(())
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
@@ -710,46 +704,44 @@ pub(crate) fn hex_decode_short_scalar(
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid::<false>(src, case)?;
+    diagnose_invalid::<false>(src, case, 0)?;
     // Recover if a backend rejected valid input; the caller needs initialized bytes.
     hex_decode_fallback(src, dst);
     Ok(())
 }
 
 #[inline(always)]
-fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Result<(), Error> {
+fn diagnose_invalid<const GROUP_DIGITS: bool>(
+    src: &[u8],
+    case: CheckCase,
+    from: usize,
+) -> Result<(), Error> {
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
+    let rest = &src[from..];
     if GROUP_DIGITS {
-        for (index, &byte) in src.iter().take(2).enumerate() {
+        for (offset, &byte) in rest.iter().take(2).enumerate() {
             if table[usize::from(byte)] == NIL {
-                return Err(Error::InvalidChar { index, byte });
+                return Err(Error::InvalidChar {
+                    index: from + offset,
+                    byte,
+                });
             }
         }
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
-    let skipped = if src.len() > 64 {
-        src.chunks_exact(64)
+    let skipped = if rest.len() > 64 {
+        rest.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
             .count()
             * 64
     } else {
         0
     };
-    check_digits_from::<GROUP_DIGITS>(src, skipped, table)
-}
-
-// Standalone validation and append specialize the four-digit scan. Decoding
-// into an existing slice retains its scalar recovery after the valid blocks.
-#[inline(always)]
-fn check_digits_from<const GROUP_DIGITS: bool>(
-    src: &[u8],
-    skipped: usize,
-    table: &[u8; 256],
-) -> Result<(), Error> {
+    let skipped = from + skipped;
     let start = if GROUP_DIGITS {
         // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
         let groups = src[skipped..].as_chunks::<4>().0;
