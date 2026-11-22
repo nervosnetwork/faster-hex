@@ -1,4 +1,4 @@
-name: Independent caller and package version controls
+name: Check short decoding and output paths
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   controls:
-    name: Caller controls / ${{ matrix.os }} / ${{ matrix.profile }}
+    name: Short and long callers / ${{ matrix.os }} / ${{ matrix.profile }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
@@ -14,6 +14,7 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-22.04, profile: thin}
+          - {os: ubuntu-22.04, profile: default}
           - {os: ubuntu-24.04, profile: thin}
           - {os: ubuntu-24.04-arm, profile: default}
           - {os: macos-15-intel, profile: thin}
@@ -29,7 +30,6 @@ jobs:
         shell: bash
         env:
           PROFILE: ${{ matrix.profile }}
-          SAVE_CONTROL_IMAGES: '1'
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/caller_controls.py
@@ -37,4 +37,4 @@ jobs:
         if: always()
         with:
           name: controls-${{ matrix.os }}-${{ matrix.profile }}
-          path: controls/results
+          path: retained-work/results
