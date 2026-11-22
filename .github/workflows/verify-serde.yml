@@ -1,4 +1,4 @@
-name: Compare the 2.1 candidate with the published crate and API baseline
+name: Check existing decode errors and the cold recovery call
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,7 +18,8 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      AUDIT_SHA: fc834c71026b6d7f81738b53bd73237f408474ff
+      GROUPED_SHA: 8800debd7a36c84ba8a0ec455b9d1c4705cad6ba
+      SINGLE_SHA: 5ea9c7a3bb98706a5dcfa7eb36b0b37920109f4d
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -42,20 +43,28 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
+          if [[ "$LEGACY_SITES" == 1 ]]; then python3 verify/legacy_site_times.py; fi
         shell: bash
         env:
-          ISOLATE: release-audit
+          ISOLATE: legacy-errors
+          LEGACY_SITES: ${{ matrix.os == 'ubuntu-24.04-arm' && '1' || '0' }}
+          LEGACY_LIGHT: ${{ matrix.os != 'ubuntu-24.04-arm' && '1' || '0' }}
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: release-audit-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: legacy-errors-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Test the measured crate revision
+            real/legacy-sites/*.json
+            real/legacy-sites/*/*.json
+            real/legacy-sites/*/capture-error.txt
+      - name: Test both changes
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/candidate" "$AUDIT_SHA"
-          (cd "$RUNNER_TEMP/candidate" && cargo test --release --all-features)
+          for rev in "$GROUPED_SHA" "$SINGLE_SHA"; do
+            git worktree add --detach "$RUNNER_TEMP/$rev" "$rev"
+            (cd "$RUNNER_TEMP/$rev" && cargo test --release --all-features)
+          done

@@ -138,3 +138,18 @@ elif SCOPE=='release-audit':
             for phase,kind in (('read_slice','plain'),('read_slice','escaped'),('read_reader','reader'),('write','plain'),('round_slice','plain'),('round_slice','escaped'),('round_reader','reader')):
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
+
+elif SCOPE=='legacy-errors':
+    revisions={'release':RELEASE,'version':SAME_VERSION,'narrow':SCOPE_BASE,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'fc834c71026b6d7f81738b53bd73237f408474ff','group':'8800debd7a36c84ba8a0ec455b9d1c4705cad6ba','one':'5ea9c7a3bb98706a5dcfa7eb36b0b37920109f4d'}
+    if os.environ.get('LEGACY_LIGHT')=='1':
+        revisions.pop('narrow')
+    pairs=[('scoped','aa'),('release','version'),('release','narrow'),('narrow','scoped'),('release','scoped'),('release','group'),('release','one'),('version','group'),('version','one'),('scoped','group'),('group','one'),('scoped','one'),('pr','scoped'),('pr','group'),('pr','one')]
+    cases=[('owned_blocks',n,k) for n in (32,4096) for k in ('array-valid','array-late','vec-valid','vec-late')]
+    cases += [('legacy_error_positions',32,k) for k in ('mixed-first','mixed-second','mixed-middle','mixed-last','lower-last','upper-last')]
+    cases += [('legacy_error_positions',4096,k) for k in ('mixed-first','mixed-boundary','lower-middle','upper-last')]
+    cases += [('qualified_decode',n,'valid') for n in (16,32,4096)]
+    cases += [('append_call',n,k) for n,k in ((32,'valid'),(256,'valid'),(256,'middle'),(256,'rollback'),(1025,'valid'),(4096,'valid'),(4096,'rollback'))]
+    cases += [('validate_call',32,k) for k in ('valid','first','last')]
+    cases += [(b,n,k) for n in (32,4096) for b,k in (('vec_round_slice','plain'),('vec_round_slice','escaped'),('vec_read_slice','plain'),('array_read_slice','plain'),('array_round_slice','plain'))]
+    cases += [('ckb_caller',n,'plain') for n in (32,4096)]+[('gix_caller',20,'parse')]
+    assert len(cases)==len(set(cases))==44

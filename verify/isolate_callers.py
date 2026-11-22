@@ -123,6 +123,14 @@ for role,(version,files,checksum) in packages.items():
     build_env=dict(env,CARGO_TARGET_DIR=str(work/("target-"+role+"-"+mode)))
     if layout:
         build_env['JSON_LINK_WORK'] = str(work/'round-layout'/role)
+    if SCOPE == 'legacy-errors' and env.get('LEGACY_SITES')=='1' and role in ('release','version','scoped'):
+        build_env['LEGACY_REAL_CC']=shutil.which('cc')
+        build_env['LEGACY_WORK']=str(work/'legacy-sites'/role)
+        wrapper=work/'legacy-linker'
+        wrapper.mkdir(exist_ok=True)
+        shutil.copy2(ROOT/'verify/legacy_site_link.py',wrapper/'cc')
+        (wrapper/'cc').chmod(0o755)
+        build_env['PATH']=str(wrapper)+os.pathsep+build_env['PATH']
     cargo=["cargo",*config]
     meta=json.loads(sp.check_output([*cargo,"metadata","--format-version=1","--locked","--offline"],cwd=driver,env=build_env))
     own,=[p for p in meta["packages"] if p["name"]=="faster-hex" and p["version"]==version]
@@ -130,10 +138,10 @@ for role,(version,files,checksum) in packages.items():
     consumers={n["id"] for n in meta["resolve"]["nodes"] if own["id"] in n["dependencies"]}
     assert {"ckb-jsonrpc-types","gix-hash","real-hex-consumers"} <= {p["name"] for p in meta["packages"] if p["id"] in consumers}
     available = list(bins)
-    if SCOPE == 'release-audit' and role in ('release','version'):
+    if SCOPE in ('legacy-errors','release-audit') and role in ('release','version'):
         available = [b for b in bins if b not in ('append_call','validate_call','prefix_buffer','prefix_format')]
-    if SCOPE in ('release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
-        if role in ('release','version') and SCOPE not in ('release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
+    if SCOPE in ('legacy-errors','release-audit','surface','buffer','format','append','validation','append-report','arm-store','range-check','prefix-length','append-recovery','short-json'):
+        if role in ('release','version') and SCOPE not in ('legacy-errors','release-audit','arm-store','range-check','prefix-length','append-recovery','short-json'):
             available=[b for b in bins if b != 'append_call'] if SCOPE=='append-report' else [b for b in bins if b in ('full_format','full_buffer')]
         if SCOPE in ('append-recovery','short-json') and role in ('release','version'):
             available=[b for b in bins if b not in ('append_call','validate_call')]
