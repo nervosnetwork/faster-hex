@@ -508,11 +508,11 @@ pub fn hex_decode_append<'a>(
         if suffix.len() > OWNED_DECODE_THRESHOLD {
             decode_appended_blocks(src, suffix)
         } else {
-            decode_checked(src, suffix, CheckCase::None).map_err(|()| 0)
+            decode_checked(src, suffix, CheckCase::None).map_err(|()| src)
         }
     };
-    if let Err(from) = decoded {
-        if let Err(error) = diagnose_appended(src, suffix, from) {
+    if let Err(failed) = decoded {
+        if let Err(error) = diagnose_appended(src, suffix, failed) {
             dst.truncate(start);
             return Err(error);
         }
@@ -525,7 +525,9 @@ pub fn hex_decode_append<'a>(
 #[cfg(feature = "alloc")]
 #[cold]
 #[inline]
-fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
+fn diagnose_appended(src: &[u8], dst: &mut [u8], failed: &[u8]) -> Result<(), Error> {
+    // The decoder returned a block borrowed from this input.
+    let from = failed.as_ptr().addr() - src.as_ptr().addr();
     let rest = &src[from..];
     if let Some(&byte) = rest.first() {
         if UNHEX[usize::from(byte)] == NIL {
@@ -595,11 +597,11 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
     Ok(())
 }
 
-// On failure, return the byte offset of the first block that was not decoded.
+// On failure, borrow the first block that was not decoded.
 // Safety: as for decode_owned_large; the caller owns the destination on error.
 #[cfg(feature = "alloc")]
 #[inline(always)]
-unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
+unsafe fn decode_appended_blocks<'a>(src: &'a [u8], dst: &mut [u8]) -> Result<(), &'a [u8]> {
     let case = CheckCase::None;
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -613,17 +615,17 @@ unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize
             // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
             unsafe { x86::hex_decode_avx2_blocks(src, dst, case, core::convert::identity) }
         }
-        _ => decode_checked(src, dst, case).map_err(|()| 0),
+        _ => decode_checked(src, dst, case).map_err(|()| src),
     };
     #[cfg(target_arch = "aarch64")]
     let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
         // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
         unsafe { aarch64::hex_decode_neon_blocks(src, dst, case, core::convert::identity) }
     } else {
-        decode_checked(src, dst, case).map_err(|()| 0)
+        decode_checked(src, dst, case).map_err(|()| src)
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    let decoded = decode_checked(src, dst, case).map_err(|()| 0);
+    let decoded = decode_checked(src, dst, case).map_err(|()| src);
     decoded
 }
 

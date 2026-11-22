@@ -196,21 +196,17 @@ pub(crate) unsafe fn hex_decode_neon_owned(
 
 #[inline]
 #[target_feature(enable = "neon")]
-pub(super) unsafe fn hex_decode_neon_blocks<E>(
-    src: &[u8],
+pub(super) unsafe fn hex_decode_neon_blocks<'a, E>(
+    src: &'a [u8],
     dst: &mut [u8],
     case: CheckCase,
-    failure: impl Fn(usize) -> E,
+    failure: impl Fn(&'a [u8]) -> E,
 ) -> Result<(), E> {
     let (blocks, tail) = src.as_chunks::<64>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
-    for (i, (input, output)) in blocks
-        .iter()
-        .zip(outputs.as_chunks_mut::<32>().0)
-        .enumerate()
-    {
-        hex_decode_bounded_neon(input, output, case).map_err(|()| failure(i * 64))?;
+    for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
+        hex_decode_bounded_neon(input, output, case).map_err(|()| failure(input))?;
     }
     // SAFETY: Each block consumes 64 input bytes and 32 output bytes.
-    unsafe { super::decode_checked(tail, rest, case) }.map_err(|()| failure(src.len() - tail.len()))
+    unsafe { super::decode_checked(tail, rest, case) }.map_err(|()| failure(tail))
 }
