@@ -1,4 +1,4 @@
-name: Compare selected digits in real SHA-1 and SHA-256 prefixes
+name: Measure a single prefix encoder in native Git and JSON consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: prefix-length-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: prefix-one-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
@@ -55,6 +55,6 @@ jobs:
       - name: Exercise release tests in the measured candidate
         shell: bash
         run: |
-          git worktree add --detach "$RUNNER_TEMP/checked-codec" 167cfb0b5233b76a2d3c1730b905da4ef6d7bf72
+          git worktree add --detach "$RUNNER_TEMP/checked-codec" cceed1b3fae514e93807c65e5b26d2007e46fc7e
           cd "$RUNNER_TEMP/checked-codec"
           cargo test --release --all-features
