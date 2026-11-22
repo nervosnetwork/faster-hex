@@ -369,7 +369,16 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
             dst.as_mut_ptr().add(dst.len() - 16).cast(),
             _mm256_extracti128_si256::<1>(packed),
         );
-    } else if src.len() <= 128 {
+        return Ok(());
+    }
+    decode_avx2_long(src, dst, case)
+}
+
+// Keep the multi-vector and streaming cases out of the short checked kernel.
+#[inline(never)]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_avx2_long(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
+    if src.len() <= 128 {
         let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
         let (b, b_checked) =
             decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
@@ -446,7 +455,16 @@ pub(crate) unsafe fn hex_decode_avx512_checked(
             return Err(());
         }
         _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(nibbles));
-    } else if src.len() <= 128 {
+        return Ok(());
+    }
+    decode_avx512_long(src, dst, case)
+}
+
+// Keep the multi-vector and streaming cases out of the short checked kernel.
+#[inline(never)]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn decode_avx512_long(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
+    if src.len() <= 128 {
         let (a, a_checked) = decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
         let (b, b_checked) = decode_avx512_nibbles(
             _mm512_loadu_si512(src.as_ptr().add(src.len() - 64).cast()),
