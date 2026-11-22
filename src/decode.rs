@@ -501,11 +501,59 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
-    if let Err(error) = hex_decode(src, &mut dst[start..]) {
-        dst.truncate(start);
-        return Err(error);
+    let suffix = &mut dst[start..];
+    // SAFETY: resize created exactly one output byte per input pair. On failure
+    // the private suffix can be discarded, including previously decoded blocks.
+    let decoded = unsafe {
+        if suffix.len() > OWNED_DECODE_THRESHOLD {
+            decode_appended_blocks(src, suffix)
+        } else {
+            decode_checked(src, suffix, CheckCase::None).map_err(|()| 0)
+        }
+    };
+    if let Err(from) = decoded {
+        if let Err(error) = diagnose_appended(src, suffix, from) {
+            dst.truncate(start);
+            return Err(error);
+        }
     }
     Ok(&mut dst[start..])
+}
+
+// Every earlier block is already valid and decoded. Search only the remainder
+// for the exact invalid digit, or finish it if a backend rejected valid input.
+#[cfg(feature = "alloc")]
+#[cold]
+#[inline]
+fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
+    let rest = &src[from..];
+    if let Some(&byte) = rest.first() {
+        if UNHEX[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar { index: from, byte });
+        }
+    }
+    // Only an invalid table entry sets the high bits.
+    let groups = rest.as_chunks::<4>().0;
+    let valid = groups
+        .iter()
+        .take_while(|group| {
+            group
+                .iter()
+                .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
+                != NIL
+        })
+        .count();
+    let start = from + 4 * valid;
+    for (offset, &byte) in src[start..].iter().enumerate() {
+        if UNHEX[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar {
+                index: start + offset,
+                byte,
+            });
+        }
+    }
+    hex_decode_fallback(rest, &mut dst[from / 2..]);
+    Ok(())
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
@@ -545,6 +593,38 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
         decode_diagnosed(src, dst, case)?;
     }
     Ok(())
+}
+
+// On failure, return the byte offset of the first block that was not decoded.
+// Safety: as for decode_owned_large; the caller owns the destination on error.
+#[cfg(feature = "alloc")]
+#[inline(always)]
+unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
+    let case = CheckCase::None;
+    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let decoded = match crate::vectorization_support() {
+        crate::Vectorization::AVX512 => {
+            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
+            // have the exact 2:1 ratio, and output is private until success.
+            unsafe { x86::hex_decode_avx512_blocks(src, dst, case, core::convert::identity) }
+        }
+        crate::Vectorization::AVX2 => {
+            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
+            unsafe { x86::hex_decode_avx2_blocks(src, dst, case, core::convert::identity) }
+        }
+        _ => decode_checked(src, dst, case).map_err(|()| 0),
+    };
+    #[cfg(target_arch = "aarch64")]
+    let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
+        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
+        unsafe { aarch64::hex_decode_neon_blocks(src, dst, case, core::convert::identity) }
+    } else {
+        decode_checked(src, dst, case).map_err(|()| 0)
+    };
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    let decoded = decode_checked(src, dst, case).map_err(|()| 0);
+    decoded
 }
 
 /// Checks every digit before writing anything.
