@@ -3,72 +3,182 @@
 use core::iter::FromIterator;
 
 mod internal {
-    use crate::{
-        decode::{hex_decode_array_with_case, hex_decode_with_case, CheckCase},
-        encode::encode,
-    };
-    use alloc::{borrow::Cow, string::String, vec, vec::Vec};
-    use core::{fmt, iter::FromIterator, mem::MaybeUninit};
+    use crate::{decode::CheckCase, encode::encode};
+    use alloc::vec::Vec;
+    use core::{fmt, marker::PhantomData, mem::MaybeUninit};
     use serde::{
         de::{Error, Unexpected, Visitor},
         Deserialize, Deserializer, Serialize, Serializer,
     };
 
-    // Serde's Cow<str> deserializer always allocates. This adapter preserves
-    // String's deserialize_string hint and accepted inputs, but borrows text
-    // that the format can lend (for example, unescaped JSON from a slice).
-    struct Text<'a>(Cow<'a, str>);
+    pub(super) trait Format {
+        const PREFIX: bool;
+        const CASE: CheckCase;
+    }
 
-    impl<'de> Deserialize<'de> for Text<'de> {
-        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            struct TextVisitor;
+    #[derive(Clone, Copy)]
+    pub(super) enum FieldError {
+        Prefix,
+        Odd,
+        Limit { max: usize, actual: usize },
+        Hex(crate::Error),
+    }
 
-            impl<'de> Visitor<'de> for TextVisitor {
-                type Value = Text<'de>;
-
-                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                    f.write_str("a string")
-                }
-
-                fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
-                    Ok(Text(Cow::Owned(text.into())))
-                }
-
-                fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
-                    Ok(Text(Cow::Borrowed(text)))
-                }
-
-                fn visit_string<E: Error>(self, text: String) -> Result<Self::Value, E> {
-                    Ok(Text(Cow::Owned(text)))
-                }
-
-                fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
-                    match core::str::from_utf8(bytes) {
-                        Ok(text) => self.visit_str(text),
-                        Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-                    }
-                }
-
-                fn visit_borrowed_bytes<E: Error>(
-                    self,
-                    bytes: &'de [u8],
-                ) -> Result<Self::Value, E> {
-                    match core::str::from_utf8(bytes) {
-                        Ok(text) => self.visit_borrowed_str(text),
-                        Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
-                    }
-                }
-
-                fn visit_byte_buf<E: Error>(self, bytes: Vec<u8>) -> Result<Self::Value, E> {
-                    match String::from_utf8(bytes) {
-                        Ok(text) => self.visit_string(text),
-                        Err(error) => {
-                            Err(E::invalid_value(Unexpected::Bytes(error.as_bytes()), &self))
-                        }
-                    }
-                }
+    impl FieldError {
+        fn into_format<E: Error>(self) -> E {
+            match self {
+                Self::Prefix => E::custom("invalid prefix"),
+                Self::Odd => E::custom("invalid length"),
+                Self::Limit { max, actual } => E::custom(format_args!(
+                    "expected at most {max} decoded bytes, got {actual}"
+                )),
+                Self::Hex(error) => E::custom(error),
             }
-            deserializer.deserialize_string(TextVisitor)
+        }
+    }
+
+    pub(super) trait Destination {
+        type Value;
+        fn decode(digits: &[u8], case: CheckCase) -> Result<Self::Value, FieldError>;
+        fn take(value: &mut Self::Value) -> Self::Value;
+    }
+
+    pub(super) struct Bytes<const MAX: usize>;
+
+    impl<const MAX: usize> Destination for Bytes<MAX> {
+        type Value = Vec<u8>;
+
+        fn take(value: &mut Vec<u8>) -> Vec<u8> {
+            core::mem::take(value)
+        }
+
+        fn decode(digits: &[u8], case: CheckCase) -> Result<Vec<u8>, FieldError> {
+            let actual = digits.len() / 2;
+            if actual > MAX {
+                return Err(FieldError::Limit { max: MAX, actual });
+            }
+            let mut bytes = alloc::vec![0; actual];
+            crate::hex_decode_with_case(digits, &mut bytes, case).map_err(FieldError::Hex)?;
+            Ok(bytes)
+        }
+    }
+
+    impl<const N: usize> Destination for [u8; N] {
+        type Value = Self;
+
+        fn take(value: &mut Self) -> Self {
+            *value
+        }
+
+        fn decode(digits: &[u8], case: CheckCase) -> Result<[u8; N], FieldError> {
+            crate::hex_decode_array_with_case(digits, case).map_err(FieldError::Hex)
+        }
+    }
+
+    // A deserializer may reject a field after visiting it, including its Option
+    // framing. Borrowed text can wait until then. Temporary text must be decoded
+    // in the visitor, but its hex diagnostic can still wait for the format.
+    pub(super) enum Field<'de, P, T: Destination> {
+        Borrowed(&'de str, PhantomData<P>),
+        Decoded(T::Value),
+        Invalid(FieldError),
+    }
+
+    struct FieldVisitor<'slot, 'de, P, T: Destination>(&'slot mut Option<Field<'de, P, T>>);
+
+    impl<'de, 'slot, P: Format, T: Destination> Visitor<'de> for FieldVisitor<'slot, 'de, P, T> {
+        type Value = &'slot mut Field<'de, P, T>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a string")
+        }
+
+        fn visit_str<E: Error>(self, text: &str) -> Result<Self::Value, E> {
+            let field = Field::<P, T>::decode(text, Field::Decoded, Field::Invalid);
+            Ok(self.0.insert(field))
+        }
+
+        fn visit_borrowed_str<E: Error>(self, text: &'de str) -> Result<Self::Value, E> {
+            Ok(self.0.insert(Field::Borrowed(text, PhantomData)))
+        }
+
+        fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+            match core::str::from_utf8(bytes) {
+                Ok(text) => self.visit_str(text),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
+        }
+
+        fn visit_borrowed_bytes<E: Error>(self, bytes: &'de [u8]) -> Result<Self::Value, E> {
+            match core::str::from_utf8(bytes) {
+                Ok(text) => self.visit_borrowed_str(text),
+                Err(_) => Err(E::invalid_value(Unexpected::Bytes(bytes), &self)),
+            }
+        }
+    }
+
+    impl<'de, P: Format, T: Destination> Deserialize<'de> for Field<'de, P, T> {
+        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            let mut field = None;
+            Ok(match Self::input(d, &mut field)? {
+                Self::Borrowed(text, _) => Self::Borrowed(text, PhantomData),
+                Self::Decoded(value) => Self::Decoded(T::take(value)),
+                Self::Invalid(error) => Self::Invalid(*error),
+            })
+        }
+    }
+
+    impl<'de, P: Format, T: Destination> Field<'de, P, T> {
+        fn input<'slot, D: Deserializer<'de>>(
+            d: D,
+            slot: &'slot mut Option<Self>,
+        ) -> Result<&'slot mut Self, D::Error> {
+            d.deserialize_string(FieldVisitor(slot))
+        }
+
+        #[inline]
+        fn decode<R>(
+            text: &str,
+            ready: impl FnOnce(T::Value) -> R,
+            invalid: impl FnOnce(FieldError) -> R,
+        ) -> R {
+            let digits = if P::PREFIX {
+                let Some(digits) = text.strip_prefix("0x") else {
+                    return invalid(FieldError::Prefix);
+                };
+                digits
+            } else {
+                text
+            };
+            if !digits.len().is_multiple_of(2) {
+                return invalid(FieldError::Odd);
+            }
+            match T::decode(digits.as_bytes(), P::CASE) {
+                Ok(value) => ready(value),
+                Err(error) => invalid(error),
+            }
+        }
+
+        pub(super) fn read<D: Deserializer<'de>>(d: D) -> Result<T::Value, D::Error> {
+            let mut field = None;
+            match Self::input(d, &mut field)? {
+                Self::Borrowed(text, _) => Self::decode(text, Ok, |error| Err(error.into_format())),
+                Self::Decoded(value) => Ok(T::take(value)),
+                Self::Invalid(error) => Err(error.into_format()),
+            }
+        }
+
+        pub(super) fn optional<D: Deserializer<'de>>(d: D) -> Result<Option<T::Value>, D::Error> {
+            match Option::<Self>::deserialize(d)? {
+                None => Ok(None),
+                Some(Self::Borrowed(text, _)) => Self::decode(
+                    text,
+                    |value| Ok(Some(value)),
+                    |error| Err(error.into_format()),
+                ),
+                Some(Self::Decoded(value)) => Ok(Some(value)),
+                Some(Self::Invalid(error)) => Err(error.into_format()),
+            }
         }
     }
 
@@ -113,85 +223,6 @@ mod internal {
         })
     }
 
-    fn payload<E: Error>(text: &str, with_prefix: bool) -> Result<&str, E> {
-        let text = if with_prefix {
-            text.strip_prefix("0x")
-                .ok_or_else(|| E::custom("invalid prefix"))?
-        } else {
-            text
-        };
-        if !text.len().is_multiple_of(2) {
-            return Err(E::custom("invalid length"));
-        }
-        Ok(text)
-    }
-
-    fn decode<E: Error>(
-        text: &str,
-        with_prefix: bool,
-        case: CheckCase,
-        max_bytes: usize,
-    ) -> Result<Vec<u8>, E> {
-        let text = payload::<E>(text, with_prefix)?;
-        let len = text.len() / 2;
-        if len > max_bytes {
-            return Err(E::custom(format_args!(
-                "expected at most {max_bytes} decoded bytes, got {len}"
-            )));
-        }
-        let mut bytes = vec![0; len];
-        hex_decode_with_case(text.as_bytes(), &mut bytes, case).map_err(E::custom)?;
-        Ok(bytes)
-    }
-
-    fn decode_array<E: Error, const N: usize>(
-        text: &str,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Result<[u8; N], E> {
-        let text = payload::<E>(text, with_prefix)?;
-        hex_decode_array_with_case(text.as_bytes(), case).map_err(E::custom)
-    }
-
-    pub(crate) fn deserialize_array<'de, D, const N: usize>(
-        deserializer: D,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Result<[u8; N], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let text = Text::deserialize(deserializer)?;
-        decode_array(&text.0, with_prefix, case)
-    }
-
-    pub(crate) fn deserialize_option_array<'de, D, const N: usize>(
-        deserializer: D,
-        with_prefix: bool,
-        case: CheckCase,
-    ) -> Result<Option<[u8; N]>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Option::<Text>::deserialize(deserializer)?
-            .map(|text| decode_array(&text.0, with_prefix, case))
-            .transpose()
-    }
-
-    pub(crate) fn deserialize<'de, D, T>(
-        deserializer: D,
-        with_prefix: bool,
-        check_case: CheckCase,
-        max_bytes: usize,
-    ) -> Result<T, D::Error>
-    where
-        D: Deserializer<'de>,
-        T: FromIterator<u8>,
-    {
-        let text = Text::deserialize(deserializer)?;
-        decode(&text.0, with_prefix, check_case, max_bytes).map(|bytes| bytes.into_iter().collect())
-    }
-
     pub(crate) fn serialize_option<S, T>(
         data: &Option<T>,
         serializer: S,
@@ -224,24 +255,6 @@ mod internal {
             }),
             None => serializer.serialize_none(),
         }
-    }
-
-    pub(crate) fn deserialize_option<'de, D, T>(
-        deserializer: D,
-        with_prefix: bool,
-        check_case: CheckCase,
-        max_bytes: usize,
-    ) -> Result<Option<T>, D::Error>
-    where
-        D: Deserializer<'de>,
-        T: FromIterator<u8>,
-    {
-        // Let Serde retain its complete Option protocol, including untagged
-        // handling; the same decoder serves both optional and required text.
-        let bytes = Option::<Text>::deserialize(deserializer)?
-            .map(|text| decode(&text.0, with_prefix, check_case, max_bytes))
-            .transpose()?;
-        Ok(bytes.map(|bytes| bytes.into_iter().collect()))
     }
 }
 
@@ -295,8 +308,8 @@ where
 /// Decoded bytes are collected into `T`, which implements [`FromIterator<u8>`],
 /// for example [`Vec<u8>`](alloc::vec::Vec) or
 /// [`VecDeque<u8>`](alloc::collections::VecDeque).
-/// Input text is borrowed when the format can lend it; transient,
-/// escaped or owned text may require storage. Use [`array`](mod@crate::array)
+/// The adapter borrows text the format can lend and decodes temporary text in
+/// the visitor. The format may allocate its own buffer, for example to unescape JSON. Use [`array`](mod@crate::array)
 /// for `[u8; N]` fields, or [`deserialize_bounded`] to limit decoded output.
 /// Allocation failure follows the allocator's error handling.
 ///
@@ -420,6 +433,13 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
             use crate::serde::internal;
             use core::iter::FromIterator;
 
+            pub(super) struct Policy;
+
+            impl internal::Format for Policy {
+                const PREFIX: bool = $with_pfx;
+                const CASE: CheckCase = $check_case;
+            }
+
             /// Serializes a byte view using this module's prefix and case policy.
             ///
             /// Reads [`AsRef::as_ref`] once and sends a string to every serializer.
@@ -466,7 +486,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::deserialize(deserializer, $with_pfx, $check_case, usize::MAX)
+                internal::Field::<Policy, internal::Bytes<{ usize::MAX }>>::read(deserializer).map(|bytes| bytes.into_iter().collect())
             }
 
             /// Deserializes at most `MAX` decoded bytes using this module's policy.
@@ -494,7 +514,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::deserialize(deserializer, $with_pfx, $check_case, MAX)
+                internal::Field::<Policy, internal::Bytes<MAX>>::read(deserializer).map(|bytes| bytes.into_iter().collect())
             }
 
             /// Exact-length arrays using the parent module's prefix and case policy.
@@ -521,7 +541,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
 "###
                                     )]
             pub mod array {
-                use super::{internal, CheckCase};
+                use super::{internal, Policy};
 
                 pub use super::serialize;
 
@@ -544,7 +564,7 @@ assert_eq!(serde_json::from_str::<Record>(&json)?, record);
                 where
                     D: serde::Deserializer<'de>,
                 {
-                    internal::deserialize_array(deserializer, $with_pfx, $check_case)
+                    internal::Field::<Policy, [u8; N]>::read(deserializer)
                 }
             }
         }
@@ -578,6 +598,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                                 )]
         #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
         pub mod $option_name {
+            use super::$mod_name::Policy;
             use crate::decode::CheckCase;
             use crate::serde::internal;
             use core::iter::FromIterator;
@@ -631,7 +652,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::deserialize_option(deserializer, $with_pfx, $check_case, usize::MAX)
+                internal::Field::<Policy, internal::Bytes<{ usize::MAX }>>::optional(deserializer).map(|value| value.map(|bytes| bytes.into_iter().collect()))
             }
 
             /// Deserializes an optional collection of at most `MAX` decoded bytes.
@@ -659,7 +680,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 D: serde::Deserializer<'de>,
                 T: FromIterator<u8>,
             {
-                internal::deserialize_option(deserializer, $with_pfx, $check_case, MAX)
+                internal::Field::<Policy, internal::Bytes<MAX>>::optional(deserializer).map(|value| value.map(|bytes| bytes.into_iter().collect()))
             }
 
             /// Optional fixed-length arrays using this module's prefix and case policy.
@@ -672,7 +693,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
             ///
             /// See the [crate example](crate#serde-adapters) for optional array fields.
             pub mod array {
-                use super::{internal, CheckCase};
+                use super::{internal, Policy};
 
                 pub use super::serialize;
 
@@ -696,7 +717,7 @@ assert_eq!(serde_json::from_str::<Record>("{}")?.bytes, None);
                 where
                     D: serde::Deserializer<'de>,
                 {
-                    internal::deserialize_option_array(deserializer, $with_pfx, $check_case)
+                    internal::Field::<Policy, [u8; N]>::optional(deserializer)
                 }
             }
         }
