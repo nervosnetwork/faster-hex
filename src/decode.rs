@@ -103,7 +103,7 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if hex_check(src) {
         Ok(())
     } else {
-        diagnose_invalid::<true>(src, CheckCase::None, 0)
+        diagnose_invalid::<true>(src, CheckCase::None)
     }
 }
 
@@ -502,32 +502,29 @@ pub fn hex_decode_append<'a>(
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
     let suffix = &mut dst[start..];
-    // SAFETY: resize created exactly one output byte per input pair. On failure
-    // the private suffix can be discarded, including previously decoded blocks.
+    // SAFETY: resize added one byte per pair. Previously decoded blocks in
+    // the suffix can be discarded if a later block fails.
     let decoded = unsafe {
         if suffix.len() > OWNED_DECODE_THRESHOLD {
-            decode_appended_blocks(src, suffix)
+            decode_owned_blocks(src, suffix, CheckCase::None)
         } else {
-            decode_checked(src, suffix, CheckCase::None).map_err(|()| 0)
+            decode_checked(src, suffix, CheckCase::None)
         }
     };
-    if let Err(from) = decoded {
-        if let Err(error) = diagnose_appended(src, suffix, from) {
-            dst.truncate(start);
-            return Err(error);
-        }
+    if let Err(error) = decoded.or_else(|()| diagnose_appended(src, suffix)) {
+        dst.truncate(start);
+        return Err(error);
     }
     Ok(&mut dst[start..])
 }
 
-// Every earlier block is already valid and decoded. Search only the remainder
-// for the exact invalid digit, or finish it if a backend rejected valid input.
+// Report the first invalid digit, or recover if a backend rejected valid input.
 #[cfg(feature = "alloc")]
 #[cold]
 #[inline]
-fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
-    diagnose_invalid::<true>(src, CheckCase::None, from)?;
-    hex_decode_fallback(&src[from..], &mut dst[from / 2..]);
+fn diagnose_appended(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+    diagnose_invalid::<true>(src, CheckCase::None)?;
+    hex_decode_fallback(src, dst);
     Ok(())
 }
 
@@ -541,6 +538,16 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
 // Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
 unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    // SAFETY: the caller established the exact input/output length ratio.
+    if unsafe { decode_owned_blocks(src, dst, case) }.is_err() {
+        decode_diagnosed(src, dst, case)?;
+    }
+    Ok(())
+}
+
+// As for decode_owned_large, the destination is private until the call succeeds.
+#[inline(always)]
+unsafe fn decode_owned_blocks(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
@@ -564,41 +571,6 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     let decoded = decode_checked(src, dst, case);
-    if decoded.is_err() {
-        decode_diagnosed(src, dst, case)?;
-    }
-    Ok(())
-}
-
-// On failure, return the byte offset of the first block that was not decoded.
-// Safety: as for decode_owned_large; the caller owns the destination on error.
-#[cfg(feature = "alloc")]
-#[inline(always)]
-unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
-    let case = CheckCase::None;
-    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let decoded = match crate::vectorization_support() {
-        crate::Vectorization::AVX512 => {
-            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
-            // have the exact 2:1 ratio, and output is private until success.
-            unsafe { x86::hex_decode_avx512_blocks(src, dst, case, core::convert::identity) }
-        }
-        crate::Vectorization::AVX2 => {
-            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
-            unsafe { x86::hex_decode_avx2_blocks(src, dst, case, core::convert::identity) }
-        }
-        _ => decode_checked(src, dst, case).map_err(|()| 0),
-    };
-    #[cfg(target_arch = "aarch64")]
-    let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
-        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
-        unsafe { aarch64::hex_decode_neon_blocks(src, dst, case, core::convert::identity) }
-    } else {
-        decode_checked(src, dst, case).map_err(|()| 0)
-    };
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    let decoded = decode_checked(src, dst, case).map_err(|()| 0);
     decoded
 }
 
@@ -704,44 +676,35 @@ pub(crate) fn hex_decode_short_scalar(
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid::<false>(src, case, 0)?;
+    diagnose_invalid::<false>(src, case)?;
     // Recover if a backend rejected valid input; the caller needs initialized bytes.
     hex_decode_fallback(src, dst);
     Ok(())
 }
 
 #[inline(always)]
-fn diagnose_invalid<const GROUP_DIGITS: bool>(
-    src: &[u8],
-    case: CheckCase,
-    from: usize,
-) -> Result<(), Error> {
+fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Result<(), Error> {
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
-    let rest = &src[from..];
     if GROUP_DIGITS {
-        for (offset, &byte) in rest.iter().take(2).enumerate() {
+        for (index, &byte) in src.iter().take(2).enumerate() {
             if table[usize::from(byte)] == NIL {
-                return Err(Error::InvalidChar {
-                    index: from + offset,
-                    byte,
-                });
+                return Err(Error::InvalidChar { index, byte });
             }
         }
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
-    let skipped = if rest.len() > 64 {
-        rest.chunks_exact(64)
+    let skipped = if src.len() > 64 {
+        src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
             .count()
             * 64
     } else {
         0
     };
-    let skipped = from + skipped;
     let start = if GROUP_DIGITS {
         // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
         let groups = src[skipped..].as_chunks::<4>().0;
