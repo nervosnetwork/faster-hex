@@ -30,14 +30,12 @@ unsafe fn valid_neon(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
 #[inline]
 #[target_feature(enable = "neon")]
 unsafe fn decode_neon_nibbles(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
-    let digit = vsubq_u8(
-        vqsubq_u8(vaddq_u8(bytes, vdupq_n_u8(198)), vdupq_n_u8(6)),
-        vdupq_n_u8(240),
-    );
+    let digit = vsubq_u8(bytes, vdupq_n_u8(b'0'));
+    let is_digit = vcleq_u8(digit, vdupq_n_u8(9));
     let fold = if case == CheckCase::None { 0x20 } else { 0 };
     let first = if case == CheckCase::Upper { b'A' } else { b'a' };
     let letter = vsubq_u8(vorrq_u8(bytes, vdupq_n_u8(fold)), vdupq_n_u8(first));
-    vminq_u8(digit, vqaddq_u8(letter, vdupq_n_u8(10)))
+    vbslq_u8(is_digit, digit, vqaddq_u8(letter, vdupq_n_u8(10)))
 }
 
 #[inline]

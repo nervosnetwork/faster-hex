@@ -5,6 +5,7 @@ edition="2024"
 [workspace]
 [dependencies]
 ckb-jsonrpc-types={path="../ckb/util/jsonrpc-types"}
+faster-hex={path="../codec"}
 gix-hash={path="../gitoxide/gix-hash",features=["sha1","sha256","serde"]}
 serde_json="1"
 [patch.crates-io]

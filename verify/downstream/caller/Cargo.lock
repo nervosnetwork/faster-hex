@@ -690,6 +690,7 @@ name = "real-hex-consumers"
 version = "0.1.0"
 dependencies = [
  "ckb-jsonrpc-types",
+ "faster-hex 2.1.0",
  "gix-hash",
  "serde_json",
 ]

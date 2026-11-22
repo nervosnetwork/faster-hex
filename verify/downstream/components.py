@@ -5,8 +5,8 @@ import random
 import statistics
 import subprocess
 
-roles = ["release", "pr", "release_encoder", "release_diagnostics", "release_both"]
-names = ["ckb_caller", "ckb_read", "ckb_write"]
+roles = ["release", "pr", "select"]
+names = ["ckb_caller", "ckb_read", "ckb_write", "gix_caller", "lane_decode"]
 
 def add_phases(driver):
     sources = driver / "src/bin"
@@ -18,28 +18,21 @@ def add_phases(driver):
     (sources / "ckb_write.rs").write_text(original.replace(read,"").replace(write,write.replace("&parsed)","black_box(&parsed))")))
 
 def restore_component(root, codec, role, release_ref):
-    files = {}
-    if role in ("release_encoder","release_both"):
-        files["src/encode.rs"] = ("pub(crate) unsafe fn hex_encode_neon(", '\n#[inline]\n#[target_feature(enable = "neon")]\n#[cfg(target_arch = "aarch64")]\nunsafe fn encode_neon_16(')
-    if role in ("release_diagnostics","release_both"):
-        files["src/decode.rs"] = ("fn decode_diagnosed(", "\n}\n")
-    for path,(start,end) in files.items():
-        def span(text):
-            a=text.index(start);b=text.index(end,a)
-            return a, b + (3 if end=="\n}\n" else 0)
-        old = subprocess.check_output(["git","show",release_ref+":"+path],cwd=root,text=True)
-        dest = codec / path; new=dest.read_text()
-        u,v=span(old);x,y=span(new)
-        assert new[x:y] != old[u:v]
-        dest.write_text(new[:x]+old[u:v]+new[y:])
-        after = dest.read_text(); l,r=span(after)
-        assert after[l:r] == old[u:v]
+    if role == "select":
+        path = "src/decode/aarch64.rs"
+        dst = codec / path
+        assert dst.read_bytes() == subprocess.check_output(["git","show","25cfd8e:"+path],cwd=root)
+        assert dst.read_bytes() != (root/path).read_bytes()
+        dst.write_bytes((root/path).read_bytes())
 
 def time_phases():
     root=Path.cwd(); work=root/"real"; results=root/"results"; site=work/"same-component-caller"
     if hasattr(os,"sched_setaffinity"):
         os.sched_setaffinity(0,{min(os.sched_getaffinity(0))})
-    cases=[(op,n,mode) for op in names for n in [32,4096] for mode in (["plain"] if op=="ckb_write" else ["plain","escaped"])]
+    cases=[(op,n,m) for op in names[:3] for n in (32,4096) for m in (("plain",) if op=="ckb_write" else ("plain","escaped"))]
+    cases += [("gix_caller",n,"parse") for n in (20,32)]
+    cases += [("lane_decode",n,"mixed") for n in (4,8,9,15,16,17,20,24,31,32,33)]
+    cases += [("lane_decode",n,case) for n in (8,16,20,32) for case in ("upper","lower")]
     rng=random.Random(835872)
     samples={}; summaries={}
     for op,n,mode in cases:
