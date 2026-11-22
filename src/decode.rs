@@ -552,8 +552,8 @@ fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Erro
             });
         }
     }
-    hex_decode_fallback(rest, &mut dst[from / 2..]);
-    Ok(())
+    // A rejected but valid suffix uses the existing scalar recovery path.
+    decode_diagnosed(rest, &mut dst[from / 2..], CheckCase::None)
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
