@@ -5,7 +5,7 @@ use core::iter::FromIterator;
 mod internal {
     use crate::{
         decode::{hex_decode_array_with_case, hex_decode_with_case, CheckCase},
-        encode::encode,
+        encode::{encode_prefixed, prefixed_len},
     };
     use alloc::{borrow::Cow, string::String, vec, vec::Vec};
     use core::{fmt, iter::FromIterator, mem::MaybeUninit};
@@ -83,12 +83,8 @@ mod internal {
         T: AsRef<[u8]>,
     {
         let src = data.as_ref();
-        let prefix: &[u8] = if with_prefix { b"0x" } else { b"" };
-        let len = src
-            .len()
-            .checked_mul(2)
-            .and_then(|len| len.checked_add(prefix.len()))
-            .ok_or_else(|| serde::ser::Error::custom(crate::Error::Overflow))?;
+        let prefix = if with_prefix { "0x" } else { "" };
+        let len = prefixed_len(src, prefix).map_err(serde::ser::Error::custom)?;
         // Fixed values through 65 bytes (including H520) fit with the prefix.
         // Initialize only the storage selected for this call.
         let mut stack;
@@ -100,17 +96,9 @@ mod internal {
             heap = Vec::<u8>::with_capacity(len);
             &mut heap.spare_capacity_mut()[..len]
         };
-        for (slot, &byte) in dst.iter_mut().zip(prefix) {
-            slot.write(byte);
-        }
-        encode(src, &mut dst[prefix.len()..], case == CheckCase::Upper)
+        let text = encode_prefixed(src, dst, case == CheckCase::Upper, prefix)
             .map_err(serde::ser::Error::custom)?;
-        // SAFETY: The prefix and encoder initialized all len bytes as ASCII.
-        // MaybeUninit<u8> has u8's layout; unused capacity is excluded and the
-        // backing stack buffer or allocation stays live throughout serialization.
-        serializer.serialize_str(unsafe {
-            core::str::from_utf8_unchecked(core::slice::from_raw_parts(dst.as_ptr().cast(), len))
-        })
+        serializer.serialize_str(text)
     }
 
     fn payload<E: Error>(text: &str, with_prefix: bool) -> Result<&str, E> {

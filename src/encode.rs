@@ -517,3 +517,39 @@ pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut st
     // remaining byte was filled from the ASCII digit table.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
 }
+
+#[cfg(feature = "serde")]
+#[inline]
+pub(crate) fn prefixed_len(src: &[u8], prefix: &str) -> Result<usize, Error> {
+    src.len()
+        .checked_mul(2)
+        .and_then(|len| len.checked_add(prefix.len()))
+        .ok_or(Error::Overflow)
+}
+
+#[cfg(feature = "serde")]
+#[inline]
+pub(crate) fn encode_prefixed<'a>(
+    src: &[u8],
+    dst: &'a mut [MaybeUninit<u8>],
+    upper: bool,
+    prefix: &str,
+) -> Result<&'a str, Error> {
+    let required = prefixed_len(src, prefix)?;
+    let output = dst
+        .get_mut(..required)
+        .ok_or(Error::OutputTooSmall { required })?;
+    let (head, digits) = output.split_at_mut(prefix.len());
+    for (slot, byte) in head.iter_mut().zip(prefix.bytes()) {
+        slot.write(byte);
+    }
+    encode(src, digits, upper)?;
+    // SAFETY: head contains the complete UTF-8 prefix. The encoder initialized
+    // the remaining bytes as ASCII. The returned view excludes spare capacity.
+    Ok(unsafe {
+        core::str::from_utf8_unchecked(core::slice::from_raw_parts(
+            output.as_ptr().cast(),
+            output.len(),
+        ))
+    })
+}
