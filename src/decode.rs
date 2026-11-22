@@ -61,8 +61,8 @@ static UNHEX4: [u8; 256] = init_unhex4_array(CheckCase::None);
 /// character-only check: empty and odd-length inputs can pass. It does not
 /// allocate or modify the input.
 ///
-/// Use [`hex_decode`] to also require complete byte pairs. There is no need to
-/// call this function before a checked decoder: decoding already validates input.
+/// Use [`hex_validate`] to check complete byte pairs without an output buffer.
+/// [`hex_decode`] validates the input as part of decoding.
 ///
 /// # Examples
 ///
@@ -78,6 +78,33 @@ static UNHEX4: [u8; 256] = init_unhex4_array(CheckCase::None);
 #[inline]
 pub fn hex_check(src: &[u8]) -> bool {
     hex_check_with_case(src, CheckCase::None)
+}
+
+/// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
+///
+/// Accepts mixed case and empty input without allocating. Use [`hex_check`]
+/// to check individual digits, or [`hex_decode`] when the bytes are needed.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] first. Otherwise, the first invalid
+/// byte is reported as [`Error::InvalidChar`], with its byte index in `src`.
+///
+/// ```
+/// use faster_hex::{hex_validate, Error};
+/// assert_eq!(hex_validate(b"0aBF"), Ok(()));
+/// assert_eq!(hex_validate(b"abc"), Err(Error::OddLength));
+/// ```
+#[inline]
+pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    if hex_check(src) {
+        Ok(())
+    } else {
+        diagnose_invalid(src, CheckCase::None)
+    }
 }
 
 /// Checks ASCII hex digits against an explicit letter-case policy.
@@ -271,7 +298,8 @@ pub fn hex_decode_with_case<'a>(
     let dst = dst
         .get_mut(..len)
         .ok_or(Error::OutputTooSmall { required: len })?;
-    if decode_checked(src, dst, check_case).is_err() {
+    // SAFETY: The input is even and dst is the exact output prefix checked above.
+    if unsafe { decode_checked(src, dst, check_case) }.is_err() {
         decode_diagnosed(src, dst, check_case)?;
     }
     Ok(dst)
@@ -358,7 +386,8 @@ pub fn hex_decode_array_with_case<const N: usize>(
         return Ok(bytes);
     }
     if N > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
+        // SAFETY: The length check above matched the number of input pairs to N.
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
@@ -369,8 +398,8 @@ pub fn hex_decode_array_with_case<const N: usize>(
 ///
 /// Available with `alloc`. The result owns exactly `src.len() / 2` decoded bytes,
 /// independently of the input. Empty input produces an empty vector. The same
-/// strict ASCII grammar as [`hex_decode`] applies: no prefixes, whitespace or
-/// separators. Use [`hex_decode_vec_with_case`] to restrict letter case.
+/// ASCII grammar as [`hex_decode`] applies. Use [`hex_decode_vec_with_case`] to
+/// restrict letter case or [`hex_decode_append`] to extend an existing vector.
 ///
 /// # Errors
 ///
@@ -428,22 +457,66 @@ pub fn hex_decode_vec_with_case(
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
     if bytes.len() > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
+        // SAFETY: The vector has one byte for each pair of the even input.
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
     Ok(bytes)
 }
 
-// Small outputs are sensitive to streaming setup and call-site inlining.
+/// Appends decoded bytes to `dst` and returns just the new suffix.
+///
+/// Accepts the same mixed-case hex as [`hex_decode`]. Reuses the vector's
+/// allocation when capacity permits. Empty input returns an empty suffix.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] before growing the vector. Otherwise
+/// [`Error::InvalidChar`] identifies the first invalid byte. On error, the
+/// vector retains its original length and contents. Its capacity may grow.
+///
+/// # Panics
+///
+/// Panics if the resulting vector would exceed its maximum capacity.
+/// Allocation failure follows the allocator's normal handling.
+///
+/// ```
+/// use faster_hex::hex_decode_append;
+/// let mut bytes = vec![0xff];
+/// assert_eq!(hex_decode_append(b"aB01", &mut bytes)?, [0xab, 1]);
+/// assert_eq!(bytes, [0xff, 0xab, 1]);
+/// # Ok::<(), faster_hex::Error>(())
+/// ```
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub fn hex_decode_append<'a>(
+    src: &[u8],
+    dst: &'a mut alloc::vec::Vec<u8>,
+) -> Result<&'a mut [u8], Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let start = dst.len();
+    dst.resize(start + src.len() / 2, 0);
+    if let Err(error) = hex_decode(src, &mut dst[start..]) {
+        dst.truncate(start);
+        return Err(error);
+    }
+    Ok(&mut dst[start..])
+}
+
 const OWNED_DECODE_THRESHOLD: usize = 1024;
 
-// Owned callers discard this initialized, exact-size buffer on error. Large
-// inputs can commit one checked block at a time without re-reading valid input.
-// Inline dispatch to preserve array return/copy code generation. The SIMD block
-// loops remain in their target-feature functions.
+/// Decodes into private output that the caller discards on error. Large inputs
+/// can commit a checked block at a time without re-reading valid input.
+///
+/// # Safety
+/// `src.len()` must be twice `dst.len()`, as for [`decode_checked`].
+// Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
-fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
@@ -472,13 +545,21 @@ fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(),
     Ok(())
 }
 
-// Call after establishing even input and the exact 2:1 source/output ratio.
-// Every path validates the complete input before writing; diagnostics stay at
-// the public boundary. Tests use the same operation after asserting its lengths.
+/// Checks every digit before writing anything.
+///
+/// # Safety
+/// `src.len()` must be twice `dst.len()`. The input bytes may have any value.
+/// SIMD kernels use both lengths to address complete vectors. Call
+/// [`hex_decode_with_case`] with independently sized buffers.
 // Inline the boundary and dispatch together so short decodes can keep their
 // result and SIMD constants in the caller instead of a separate stack frame.
 #[inline(always)]
-pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
+pub(crate) unsafe fn decode_checked(
+    src: &[u8],
+    dst: &mut [u8],
+    check_case: CheckCase,
+) -> Result<(), ()> {
+    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     if dst.len() < 8 {
         return hex_decode_short_scalar(src, dst, check_case);
     }
@@ -566,6 +647,14 @@ pub(crate) fn hex_decode_short_scalar(
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    diagnose_invalid(src, case)?;
+    // Recover if a backend rejected valid input; the caller needs initialized bytes.
+    hex_decode_fallback(src, dst);
+    Ok(())
+}
+
+#[inline(always)]
+fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
@@ -587,9 +676,6 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
             return Err(Error::InvalidChar { index, byte });
         }
     }
-    // Every byte was validated. A scalar conversion also handles a backend
-    // rejecting valid input; never return an unwritten output prefix.
-    hex_decode_fallback(src, dst);
     Ok(())
 }
 
