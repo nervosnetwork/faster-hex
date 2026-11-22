@@ -1,18 +1,43 @@
-name: Verify the append failure offsets against released callers
+name: Trace the isolated append counter and ARM JSON layout
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
 permissions:
   contents: read
 jobs:
-  calls:
-    name: Registry consumers / ${{ matrix.os }} / ${{ matrix.profile }}
+  append:
+    name: Append offset / ${{ matrix.os }} / ${{ matrix.profile }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel, ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - {os: ubuntu-22.04, profile: default}
+          - {os: ubuntu-24.04, profile: thin}
+          - {os: ubuntu-24.04-arm, profile: default}
+          - {os: ubuntu-24.04-arm, profile: thin}
+          - {os: macos-15-intel, profile: thin}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+      - run: python3 verify/append_release.py
+        env:
+          PROFILE: ${{ matrix.profile }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: append-${{ matrix.os }}-${{ matrix.profile }}
+          path: append-work/results/*.json
+  json:
+    name: JSON address control / ${{ matrix.profile }}
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
         profile: [default, thin]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -34,22 +59,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Verify the released calls with a package-version control
+      - run: |
+          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
+          python3 verify/arm_json_observe.py
         shell: bash
         env:
           PROFILE: ${{ matrix.profile }}
-        run: |
-          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/packaged_calls.py
-          python3 verify/retained_calls.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: registry-${{ matrix.os }}-${{ matrix.profile }}
+          name: arm-json-${{ matrix.profile }}
           path: |
-            real/qualification/archives.json
-            real/qualification/*/*.json
-            retained-work/results/*.json
+            real/json-report
+            real/link-observe/*/sections.json
   product:
     name: Product tests / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -60,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: c2858276c1485881c1da8854c5fe1741d9df7cd9
+          ref: a6f1c464b2390d2aa82ed062389ffe100fd08ff9
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:

@@ -13,7 +13,7 @@ w.mkdir(parents=True,exist_ok=True);out=w/'results';out.mkdir(exist_ok=True)
 driver=w/'downstream';shutil.copytree(ROOT/'verify/retained',driver,dirs_exist_ok=True)
 lock=(driver/'Cargo.lock').read_text()
 base='976abc9503a22c1b24beb54182add19af097f098'
-roles={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','fixed':base,'coarse':'e03caf6f060d9475f2a79d5994fecf7571eaf4a9','specialized':'c2858276c1485881c1da8854c5fe1741d9df7cd9','release':'6d84260fe321669e7f93ecfb8aecb4db0f582f14'}
+roles={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','fixed':base,'offset':'a6f1c464b2390d2aa82ed062389ffe100fd08ff9','specialized':'c2858276c1485881c1da8854c5fe1741d9df7cd9','release':'6d84260fe321669e7f93ecfb8aecb4db0f582f14'}
 bins=['append_call','raw_vec','decode','array32','first','last']
 for role,ref in roles.items():
     selected=[b for b in bins if b!='append_call' or role!='release']
@@ -62,6 +62,6 @@ for b,n,k in cases:
         for role in order+order[::-1]: v[role].append(sample(role,loops))
         rows.append({role:statistics.mean(vals) for role,vals in v.items()})
     key=f'{b}/{n}/{k}';raw[key]=rows
-    data[key]={a+'/'+z:compare(rows,a,z) for a,z in [(reference,'aa'),('pr','fixed'),('pr','coarse'),('pr','specialized'),('fixed','coarse'),('fixed','specialized')]+([(reference,'fixed'),(reference,'coarse'),(reference,'specialized')] if reference!='pr' else [])}
+    data[key]={a+'/'+z:compare(rows,a,z) for a,z in [(reference,'aa'),('pr','fixed'),('pr','offset'),('pr','specialized'),('fixed','offset'),('fixed','specialized'),('specialized','offset')]+([(reference,'fixed'),(reference,'offset'),(reference,'specialized')] if reference!='pr' else [])}
     save(out/'times.json',data);save(out/'samples.json',raw)
     print(key,{pair:round((r['ratio']-1)*100,2) for pair,r in data[key].items()},flush=True)
