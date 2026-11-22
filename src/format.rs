@@ -289,16 +289,26 @@ impl LeadingDigits<'_> {
         if !self.omit_low_nibble {
             return self.hex.format(f, upper);
         }
-        let write_digits = |f: &mut fmt::Formatter<'_>| {
-            // Write the final partial byte in the same call as the preceding short digits.
+        let bytes = self.hex.bytes;
+        if bytes.len() <= 128 {
             let mut buffer = [MaybeUninit::uninit(); 256];
-            let bytes = self.hex.bytes;
-            let (head, tail) = bytes.split_at(bytes.len().saturating_sub(buffer.len() / 2));
-            if !head.is_empty() {
-                Hex::new(head).write_hex(f, upper)?;
+            let text = encode(bytes, &mut buffer, upper).expect("the short prefix fits");
+            let digits = &text[..text.len() - 1];
+            return if f.width().is_none() && !f.sign_plus() && !f.alternate() {
+                f.write_str(digits)
+            } else {
+                f.pad_integral(true, "0x", digits)
+            };
+        }
+
+        let write_digits = |f: &mut fmt::Formatter<'_>| {
+            let mut buffer = [MaybeUninit::uninit(); 1024];
+            let mut chunks = bytes.chunks(buffer.len() / 2);
+            while let Some(chunk) = chunks.next() {
+                let text = encode(chunk, &mut buffer, upper).expect("the chunk fits");
+                f.write_str(&text[..text.len() - usize::from(chunks.len() == 0)])?;
             }
-            let text = encode(tail, &mut buffer, upper).expect("the final chunk fits the buffer");
-            f.write_str(&text[..text.len() - 1])
+            Ok(())
         };
         if let Some(width) = f.width() {
             return pad_hex(
@@ -314,18 +324,21 @@ impl LeadingDigits<'_> {
 }
 
 impl fmt::Display for LeadingDigits<'_> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f, false)
     }
 }
 
 impl fmt::LowerHex for LeadingDigits<'_> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f, false)
     }
 }
 
 impl fmt::UpperHex for LeadingDigits<'_> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f, true)
     }
