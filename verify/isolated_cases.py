@@ -51,3 +51,8 @@ elif SCOPE=='append':
     revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'fixed':RECOVERY,'single':'e03caf6f060d9475f2a79d5994fecf7571eaf4a9','candidate':'1156b979818b562b1f295788e5e0d9ba396b1caf'}
     pairs=[('scoped','aa'),('pr','scoped'),('pr','fixed'),('pr','single'),('pr','candidate'),('single','candidate'),('fixed','candidate')]
     cases=[('append_call',n,k) for n in (32,4096) for k in ('valid','first','middle','rollback')]
+
+elif SCOPE=='validation':
+    revisions={'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':SCOPE_BASE,'review':'c1c7a8fa74489546e1c9623d0dbb7aec2d25470c'}
+    pairs=[('scoped','aa'),('pr','scoped'),('pr','review'),('scoped','review')]
+    cases=[('validate_call',n,k) for n in (32,4096) for k in ('valid','odd','first','middle','last')]

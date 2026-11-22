@@ -1,4 +1,4 @@
-name: Check short prefix encoding and error-only append scanning
+name: Check packaged validation and the complete candidate contracts
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -14,7 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
         profile: [default, thin]
-        scope: [buffer, append]
+        scope: [validation]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -50,3 +50,31 @@ jobs:
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
+
+  contracts:
+    name: Candidate contracts / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel, windows-2025]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: c1c7a8fa74489546e1c9623d0dbb7aec2d25470c
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - run: cargo fmt -- --check
+      - run: cargo test --release --all-features
+      - run: cargo test --no-default-features --lib --tests
+      - run: cargo test --no-default-features --features alloc --lib --tests
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - if: matrix.os == 'ubuntu-24.04'
+        run: cargo test --release --all-features --lib --tests
+        env:
+          RUSTFLAGS: -C target-feature=+avx2
+          FASTER_HEX_REQUIRE_AVX2: '1'
