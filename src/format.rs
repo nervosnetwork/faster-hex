@@ -295,18 +295,21 @@ impl LeadingDigits<'_> {
 }
 
 impl fmt::Display for LeadingDigits<'_> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f, false)
     }
 }
 
 impl fmt::LowerHex for LeadingDigits<'_> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f, false)
     }
 }
 
 impl fmt::UpperHex for LeadingDigits<'_> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f, true)
     }
