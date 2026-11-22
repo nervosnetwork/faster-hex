@@ -1,0 +1,37 @@
+diff --git a/src/decode.rs b/src/decode.rs
+index f8e4322..88ce567 100644
+--- a/src/decode.rs
++++ b/src/decode.rs
+@@ -583,13 +583,7 @@ pub(crate) unsafe fn decode_checked(
+                 // SAFETY: SSE4.1 is available and the slice lengths have the exact ratio.
+                 unsafe { x86::hex_decode_sse41_checked(src, dst, check_case) }
+             }
+-            crate::Vectorization::None => {
+-                if !hex_check_fallback_with_case(src, check_case) {
+-                    return Err(());
+-                }
+-                hex_decode_fallback(src, dst);
+-                Ok(())
+-            }
++            crate::Vectorization::None => x86::checked_portable(src, dst, check_case),
+         }
+     }
+ 
+diff --git a/src/decode/x86.rs b/src/decode/x86.rs
+index acdaa76..dceb4c0 100644
+--- a/src/decode/x86.rs
++++ b/src/decode/x86.rs
+@@ -638,3 +638,13 @@ pub(crate) unsafe fn hex_decode_avx512_owned(
+     // SAFETY: Each block consumes 128 input bytes and 64 output bytes.
+     unsafe { super::decode_checked(tail, rest, case) }
+ }
++
++// The portable fallback is compiled separately from the SIMD caller.
++#[inline(never)]
++pub(super) fn checked_portable(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
++    if !hex_check_fallback_with_case(src, case) {
++        return Err(());
++    }
++    hex_decode_fallback(src, dst);
++    Ok(())
++}
