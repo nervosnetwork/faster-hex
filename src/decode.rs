@@ -490,7 +490,6 @@ pub fn hex_decode_vec_with_case(
 /// ```
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-// Keep unused append code from pulling SIMD constants into existing slice decoders.
 #[inline]
 pub fn hex_decode_append<'a>(
     src: &[u8],
@@ -500,34 +499,21 @@ pub fn hex_decode_append<'a>(
         return Err(Error::OddLength);
     }
     let start = dst.len();
-    dst.resize(start + src.len() / 2, 0);
-    let suffix = &mut dst[start..];
-    // SAFETY: resize created exactly one output byte per input pair. On failure
-    // the private suffix can be discarded, including previously decoded blocks.
-    let decoded = unsafe {
-        if suffix.len() > OWNED_DECODE_THRESHOLD {
-            decode_appended_blocks(src, suffix)
-        } else {
-            decode_checked(src, suffix, CheckCase::None).map_err(|()| 0)
-        }
-    };
-    if let Err(from) = decoded {
-        if let Err(error) = diagnose_appended(src, suffix, from) {
-            dst.truncate(start);
-            return Err(error);
+    dst.reserve(src.len() / 2);
+    let mut block = [0; 32];
+    for input in src.chunks(2 * block.len()) {
+        match hex_decode(input, &mut block) {
+            Ok(bytes) => dst.extend_from_slice(bytes),
+            Err(mut error) => {
+                if let Error::InvalidChar { index, .. } = &mut error {
+                    *index += (dst.len() - start) * 2;
+                }
+                dst.truncate(start);
+                return Err(error);
+            }
         }
     }
     Ok(&mut dst[start..])
-}
-
-// Every earlier block is already valid and decoded. Search only the remainder
-// for the exact invalid digit, or finish it if a backend rejected valid input.
-#[cfg(feature = "alloc")]
-#[cold]
-#[inline]
-fn diagnose_appended(src: &[u8], dst: &mut [u8], from: usize) -> Result<(), Error> {
-    diagnose_invalid::<true>(src, CheckCase::None, from)?;
-    decode_diagnosed(&src[from..], &mut dst[from / 2..], CheckCase::None)
 }
 
 const OWNED_DECODE_THRESHOLD: usize = 1024;
@@ -567,38 +553,6 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
         decode_diagnosed(src, dst, case)?;
     }
     Ok(())
-}
-
-// On failure, return the byte offset of the first block that was not decoded.
-// Safety: as for decode_owned_large; the caller owns the destination on error.
-#[cfg(feature = "alloc")]
-#[inline(always)]
-unsafe fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), usize> {
-    let case = CheckCase::None;
-    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let decoded = match crate::vectorization_support() {
-        crate::Vectorization::AVX512 => {
-            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
-            // have the exact 2:1 ratio, and output is private until success.
-            unsafe { x86::hex_decode_avx512_blocks(src, dst, case, core::convert::identity) }
-        }
-        crate::Vectorization::AVX2 => {
-            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
-            unsafe { x86::hex_decode_avx2_blocks(src, dst, case, core::convert::identity) }
-        }
-        _ => decode_checked(src, dst, case).map_err(|()| 0),
-    };
-    #[cfg(target_arch = "aarch64")]
-    let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
-        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
-        unsafe { aarch64::hex_decode_neon_blocks(src, dst, case, core::convert::identity) }
-    } else {
-        decode_checked(src, dst, case).map_err(|()| 0)
-    };
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    let decoded = decode_checked(src, dst, case).map_err(|()| 0);
-    decoded
 }
 
 /// Checks every digit before writing anything.
