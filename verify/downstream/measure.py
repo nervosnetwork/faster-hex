@@ -64,6 +64,8 @@ host_command = ["lscpu"] if linux else ["sysctl", "-n", "machdep.cpu.brand_strin
 host_probe = subprocess.run(host_command, capture_output=True, text=True)
 host = host_probe.stdout if host_probe.returncode == 0 else platform.platform() + "\n"
 (results / "host.txt").write_text(host + call(["rustc", "-vV"]))
+if os.environ.get("BUILD_CALLERS_ONLY"):
+    raise SystemExit(0)
 pairs = [(a, b, 20) for a, b in (("release", "pr"), ("pr", "visitor"), ("release", "visitor"))]
 pairs += [(role, role, 8) for role in roles]
 rng = random.Random(64370)

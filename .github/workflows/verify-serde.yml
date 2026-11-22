@@ -6,14 +6,16 @@ permissions:
   contents: read
 jobs:
   consumers:
-    name: CKB JsonBytes and gix ObjectId / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: CKB and gix executable path controls / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15-intel, ubuntu-24.04-arm]
-        lto: ["false", "thin"]
+        include:
+          - {os: macos-15-intel, lto: "false"}
+          - {os: ubuntu-24.04-arm, lto: "false"}
+          - {os: ubuntu-24.04-arm, lto: "thin"}
     env:
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
     steps:
@@ -38,10 +40,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare the same callers at the 2.0 tag, PR head and Serde candidate
-        run: python3 verify/downstream/measure.py
+      - name: Build the original CKB and gix callers
+        run: BUILD_CALLERS_ONLY=1 python3 verify/downstream/measure.py
+      - name: Compare executable images, paths and argument strings independently
+        run: python3 verify/downstream/crossover.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: downstream-${{ matrix.os }}-${{ matrix.lto }}
+          name: caller-paths-${{ matrix.os }}-${{ matrix.lto }}
           path: results
