@@ -1,4 +1,4 @@
-name: Verify slice decoding across downstream caller positions
+name: Verify appended output and first invalid byte on native runners
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   controls:
-    name: Link the same objects / ${{ matrix.os }} / ${{ matrix.profile }}
+    name: Append and error positions / ${{ matrix.os }} / ${{ matrix.profile }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
@@ -15,7 +15,8 @@ jobs:
         include:
           - {os: ubuntu-22.04, profile: default}
           - {os: ubuntu-22.04, profile: thin}
-          - {os: ubuntu-24.04, profile: default}
+          - {os: ubuntu-24.04-arm, profile: default}
+          - {os: macos-15-intel, profile: thin}
           - {os: ubuntu-24.04, profile: thin}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -25,15 +26,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Test private and public call boundaries across four loop positions
+      - name: Compare short error scans and streaming failure offsets
         shell: bash
         env:
           PROFILE: ${{ matrix.profile }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/placement_candidates.py
+          python3 verify/append_cases.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: candidate-${{ matrix.os }}-${{ matrix.profile }}
-          path: layout-work/results
+          name: append-${{ matrix.os }}-${{ matrix.profile }}
+          path: append-work/results
