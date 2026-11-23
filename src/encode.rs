@@ -514,11 +514,29 @@ pub(crate) fn encode_prefix<'a>(
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
     let (pairs, tail) = output.as_chunks_mut::<2>();
-    hex_encode(&src[..pairs.len()], pairs.as_flattened_mut())?;
+    encode_prefix_pairs(&src[..pairs.len()], pairs.as_flattened_mut())?;
     if let [digit] = tail {
         *digit = TABLE_LOWER[usize::from(src[pairs.len()] >> 4)];
     }
     // SAFETY: The encoder initialized every pair as ASCII, and the only possible
     // remainder is one digit from the ASCII table.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
+}
+
+// On NEON, a hash prefix of one to two vectors can be written using its first
+// and last full vector. Their overlap produces exactly the same hex digits.
+#[inline]
+fn encode_prefix_pairs(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    if let (16..=32, Some(first), Some(last)) =
+        (src.len(), src.first_chunk::<16>(), src.last_chunk::<16>())
+    {
+        hex_encode(first, dst)?;
+        if src.len() > 16 {
+            let offset = (src.len() - 16) * 2;
+            hex_encode(last, &mut dst[offset..])?;
+        }
+        return Ok(());
+    }
+    hex_encode(src, dst).map(|_| ())
 }
