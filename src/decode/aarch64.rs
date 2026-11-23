@@ -191,8 +191,8 @@ pub(crate) unsafe fn hex_decode_neon_owned(
     case: CheckCase,
 ) -> Result<(), ()> {
     let (blocks, tail) = src.as_chunks::<64>();
-    let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
-    for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
+    let (outputs, rest) = dst.as_chunks_mut::<32>();
+    for (input, output) in blocks.iter().zip(outputs) {
         hex_decode_bounded_neon(input, output, case)?;
     }
     // SAFETY: Each block consumes 64 input bytes and 32 output bytes.
