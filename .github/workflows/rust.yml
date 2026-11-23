@@ -1,4 +1,4 @@
-name: Diagnose the measured checked decode programs
+name: Verify paired high and low NEON loads on checked decode calls
 on: workflow_dispatch
 permissions:
   contents: read
@@ -8,14 +8,13 @@ jobs:
   compare:
     name: ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-15-intel, lto: thin }
-          - { os: macos-15-intel, lto: "false" }
-          - { os: ubuntu-24.04-arm, lto: thin }
+          - { os: ubuntu-24.04-arm, lto: "false" }
+          - { os: ubuntu-24.04-arm, lto: "thin" }
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -29,13 +28,13 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.11"
-      - name: Profile the checked backends and compare their code placement at the same crate identity
+      - name: Compare the release, checked candidate and single kernel change
         env:
           CELL: ${{ matrix.os }}-lto-${{ matrix.lto }}
-        run: python verify/layout-probe.py "$CELL"
+        run: python verify/kernel-experiment.py "$CELL"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: placement-${{ matrix.os }}-lto-${{ matrix.lto }}
+          name: kernel-${{ matrix.os }}-lto-${{ matrix.lto }}
           path: out
           if-no-files-found: error

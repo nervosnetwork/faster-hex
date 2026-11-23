@@ -1,0 +1,61 @@
+{
+  "proposal": "4320de9c59adde4a5ef22013cf73532e124ac9ba",
+  "cases": {
+    "ubuntu-24.04-arm-lto-false": [
+      "decode_vec/faster_hex/4096",
+      "decode/faster_hex_mixed/32",
+      "decode_array/faster_hex/32",
+      "invalid/decode/last/4096",
+      "serde_json/deserialize/32"
+    ],
+    "ubuntu-24.04-arm-lto-thin": [
+      "decode_vec/faster_hex/4096",
+      "decode/faster_hex_mixed/32",
+      "decode_array/faster_hex/32",
+      "invalid/decode/last/4096",
+      "serde_json/deserialize/32"
+    ]
+  },
+  "anchors": {
+    "ubuntu-24.04-arm-lto-false": {
+      "base": {
+        "file": "07b7c6d3605c1ac4a78a398a74ca83f07fa5fdb4bd1b16e6d13c98a048e8b45b",
+        "text": [
+          291776,
+          2350724,
+          "1b9ab183889026ce16e64a94de91fa8e8f6856d0a0c9fa06bf0279aeb3511aad"
+        ]
+      },
+      "head": {
+        "file": "8cc6fcf1091bcd9c89ddbdfceb22d237ce4435ebb4710a2daeb7ae9022d15dad",
+        "text": [
+          291776,
+          2338372,
+          "f502a632ae472a83f7406c9cb3685a340e22c80b43165cb20442ead103eb6f66"
+        ]
+      }
+    },
+    "ubuntu-24.04-arm-lto-thin": {
+      "base": {
+        "file": "9dceea88e372e28ba0b5c0a7a5aa4010ffb7750c395ed263ee7676dc826d4c70",
+        "text": [
+          287808,
+          2442840,
+          "27821202087111bd70ec01f48fedad94010b4f9bae1d845f3d6f2ed3322989b5"
+        ]
+      },
+      "head": {
+        "file": "24447359d45106ce59b46d48a5374bf50b612b1ed9a0cd329481f34e8a38675c",
+        "text": [
+          287808,
+          2442760,
+          "7357e3e653d95471b6b6ed82dfd718fd514566dabec5c26fc2ac96675b0538a4"
+        ]
+      }
+    }
+  },
+  "locks": {
+    "ubuntu-24.04-arm-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "ubuntu-24.04-arm-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402"
+  }
+}
