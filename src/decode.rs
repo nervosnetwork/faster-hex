@@ -745,7 +745,12 @@ pub fn hex_decode_append<'a>(
     let result = if suffix.len() > OWNED_DECODE_THRESHOLD {
         decode_appended_blocks(src, suffix)
     } else {
-        hex_decode(src, suffix).map(|_| ())
+        decode_checked(src, suffix, CheckCase::None).or_else(|()| {
+            diagnose_invalid(src)?;
+            // A backend rejected valid input. Fill the exact-size suffix before returning it.
+            hex_decode_fallback(src, suffix);
+            Ok(())
+        })
     };
     if let Err(error) = result {
         dst.truncate(start);
