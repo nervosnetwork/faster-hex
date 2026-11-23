@@ -1,0 +1,914 @@
+{
+  "refs": {
+    "retained": "52c60128f1db630116456eda9b448f4286277ecf",
+    "x86": "3a455a76b423e0f699ec9d743908c9cf68b7a64c",
+    "framing": "24d12bbc21c48a8e582d0ce3997e1477ff3a49d3",
+    "bulk_base": "14fd8387bd89cf1c3f792b36c4e74ca13a3df3dc",
+    "bulk": "d019950d9e273f45318d5f4abe80b9f5c9f35483",
+    "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14"
+  },
+  "anchors": {
+    "ubuntu-22.04-thin-runtime": {
+      "release/array_read_reader": {
+        ".text": [
+          117936,
+          331400,
+          "39b8ffa841d6b2d7a4c273c33602d5ea0510b611d00384a393975fb0c4d03100"
+        ]
+      },
+      "release/array_read_slice": {
+        ".text": [
+          118544,
+          332696,
+          "ae470d8a8a03d0d04f15d3c83012c9f3aaf6c76bbec123f33a4fc4e74fc5ce75"
+        ]
+      },
+      "release/array_round_reader": {
+        ".text": [
+          120384,
+          334984,
+          "2feb73cbec92ded4cb8be092da3ebcf3108ecccf3126a517b0c15540cc3742b9"
+        ]
+      },
+      "release/array_round_slice": {
+        ".text": [
+          121344,
+          338680,
+          "604532666eeb1ae55e507876b93fde856643c60dbd9023436658fdec65682e2c"
+        ]
+      },
+      "release/array_write": {
+        ".text": [
+          86464,
+          292344,
+          "fc5e20142377054827223fc91062f5ab74e2f2bc8b005a0c2c6d428e1ac734e2"
+        ]
+      },
+      "release/ckb_caller": {
+        ".text": [
+          119376,
+          325960,
+          "86a44fb9cda06adb1239fe5291a54ccf065d10c25caf80a419310981d2050161"
+        ]
+      },
+      "release/full_buffer": {
+        ".text": [
+          82656,
+          284392,
+          "e2bafcd6178eb300f8330bc669d73200994534f3d6af2e24f4823650432cb779"
+        ],
+        ".rodata": [
+          21440,
+          27324,
+          "176dce16e3f3b38cdc528b263698042bff4e2e70d09307966871edd9be5cf746"
+        ]
+      },
+      "release/full_format": {
+        ".text": [
+          84128,
+          287816,
+          "2859448bb8233469758c9d14d0467280e74f8cbf6958c673c52b865a42773cca"
+        ]
+      },
+      "release/gix_caller": {
+        ".text": [
+          92144,
+          311544,
+          "238e29509b7c839a46aa762a47ac37d48b3c6b1fb2635e75679fec16bb4955eb"
+        ]
+      },
+      "release/gix_prefix": {
+        ".text": [
+          92272,
+          312296,
+          "182f58e3f55906a53a113b1b0f7593f545bae3f7c1c68565dfdaf8ae1a21dbe8"
+        ],
+        ".rodata": [
+          23040,
+          30268,
+          "f60268ccf8a5924be042efbb20cda1f96c496fb1606ecdf1c9016e768598e3f0"
+        ]
+      },
+      "release/legacy_check": {
+        ".text": [
+          81552,
+          280072,
+          "22464f577693b0fb0aa2a8e1a919bcb3cdba16ef81b93ccd132c1e642c2e840a"
+        ]
+      },
+      "release/owned_blocks": {
+        ".text": [
+          86112,
+          300920,
+          "edc9dbd049567c76153da8bea7ff3b74b250253d004f5adf84a029bab13d6b96"
+        ]
+      },
+      "release/qualified_decode": {
+        ".text": [
+          85152,
+          291672,
+          "abaf2afd2849d10d30deedfca918cc10a1d4527f38fdf8dd68597b83cf27d023"
+        ]
+      },
+      "release/vec_read_reader": {
+        ".text": [
+          115776,
+          321240,
+          "84fe04eaed441246b0fb16d6998bd3188a89ad015ba3ebb2d299fc90155bb7ba"
+        ]
+      },
+      "release/vec_read_slice": {
+        ".text": [
+          116992,
+          323944,
+          "0d62e288bc4ee120b25026f8372f4c5e10c75fe96e2424c98a21c11e2aa52ddd"
+        ]
+      },
+      "release/vec_round_reader": {
+        ".text": [
+          118192,
+          325960,
+          "add9dbbf1929f1452a80897235f8c13f3fef7600cb9513ad69a1faece37f13b0"
+        ]
+      },
+      "release/vec_round_slice": {
+        ".text": [
+          119296,
+          329064,
+          "c1615a43b0c3626f8c4e3ff96080dc72060def943d185037d3c5e52b1f1f4b75"
+        ],
+        ".rodata": [
+          23872,
+          53888,
+          "82e689b198358c6714bb3e9d84b66777dacfcaa800ac9f199321dffe1754dc31"
+        ]
+      },
+      "release/vec_write": {
+        ".text": [
+          87312,
+          293576,
+          "e7d32f2d453237f291ee8601ad231b955b1c2b8464f2b43e1d6ef4d05aad786d"
+        ]
+      },
+      "parent/gix_prefix": {
+        ".text": [
+          92688,
+          313784,
+          "75f216cc2df762024a28a674d5be859beae0964fd673e22fb04e07d2cd19204f"
+        ],
+        ".rodata": [
+          23136,
+          30380,
+          "66b232df7aa2036f9ab8cd8a1d8152083698227c8de6b9375b0b1890179e2f28"
+        ]
+      },
+      "parent/prefix_buffer": {
+        ".text": [
+          82832,
+          284632,
+          "103795b4fa9035e2ddca2cbdaaae249fb85808c7f55abd48d55608b70f76baf0"
+        ],
+        ".rodata": [
+          21536,
+          27324,
+          "1b6a17477aac1512f29521340534aa41b5770d05293fd2cfbe98793fa0708c19"
+        ]
+      },
+      "parent/full_buffer": {
+        ".text": [
+          82656,
+          284392,
+          "9cefa89d82163bf7808cdf15505fb630832d394b411dbcdca27b4dfac6fca902"
+        ],
+        ".rodata": [
+          21440,
+          27324,
+          "01885c73ddc7be2df5ff000e5edb98e978b6c76e34cacaad025b6ff72cd64c1d"
+        ]
+      },
+      "parent/vec_round_slice": {
+        ".text": [
+          119296,
+          329048,
+          "a57fd557de10bb17ed38fcd733cf37656be2c606ba2ac39fa09709bf49953c26"
+        ],
+        ".rodata": [
+          23872,
+          53888,
+          "d46b1daf960932d97984c29ac55194ae16f5c86667ef5eadc5daa626c808b25a"
+        ]
+      },
+      "parent/append_call": {
+        ".text": [
+          85312,
+          294648,
+          "ddd8de82afd60aa1c40034c904864beb38517623b27504684c462431502e5841"
+        ],
+        ".rodata": [
+          21760,
+          29388,
+          "e072fc63f099d95cef310c3cb1189b3b6804fe88f4291d53af4566a5f74c853d"
+        ]
+      }
+    },
+    "ubuntu-24.04-thin-runtime": {},
+    "ubuntu-24.04-arm-default-runtime": {
+      "release/array_read_reader": {
+        ".text": [
+          19840,
+          284740,
+          "77619ae03174afd6ea97f4961581900e8524fe876ef2f45fb0e9f44e1b0ef899"
+        ],
+        ".rodata": [
+          304640,
+          52536,
+          "6024adf898e935e7205945fea381ae43ad8b1ac6d0e489fdc4510a43fd93f524"
+        ]
+      },
+      "release/array_read_slice": {
+        ".text": [
+          19904,
+          281188,
+          "b0a9b2ce7f142bf5e7835aa0352b23b1e0228370ca017b85e9af2a89109b22e3"
+        ],
+        ".rodata": [
+          301120,
+          52472,
+          "9e0a26a900b12934d3ebe53e210f8a52a453bf09ff5ddd067c1206cd31c03239"
+        ]
+      },
+      "release/array_round_reader": {
+        ".text": [
+          19968,
+          288420,
+          "4f018e65cdf2603e49632cd02d730c63b90b659ea3adb8e7eede41fffd06bc4e"
+        ],
+        ".rodata": [
+          308416,
+          52792,
+          "18c38dc062ab4149702b3ca77f177c30f6e7d0aa423d4901510c2ace3709805c"
+        ]
+      },
+      "release/array_round_slice": {
+        ".text": [
+          20160,
+          285252,
+          "9b075265d35dacff76f4cbf52c0d1717ca54a3a1c63380e3578d0219d94c8f59"
+        ],
+        ".rodata": [
+          305472,
+          52792,
+          "a93ea774b6310c9c4e18b5ed3f1b7d2b23d042b2e0ab6cc510993054dbdd577b"
+        ]
+      },
+      "release/array_write": {
+        ".text": [
+          18688,
+          258788,
+          "a0f645116e4a4ee10fb24fe0bafcb0f2821761f2a961903935095fb2d3b2a6f3"
+        ],
+        ".rodata": [
+          277504,
+          29032,
+          "b78f4e1f2739d3a48382892728bc3763cbebe1c2c2ee500064bd905beca28254"
+        ]
+      },
+      "release/ckb_caller": {
+        ".text": [
+          20800,
+          279716,
+          "e07bac9ca0dd68c124424e9041b120828ee8b7c80efea24be614c157b29cc463"
+        ],
+        ".rodata": [
+          300544,
+          53872,
+          "969fe85896c8ea4468a487a95967de6ea0899f656f90f92550e5f70beeace008"
+        ]
+      },
+      "release/full_buffer": {
+        ".text": [
+          18432,
+          248100,
+          "36d4b9691ad113079576fb67ee3d4e31216393f66155d1fb542545be01058874"
+        ]
+      },
+      "release/full_format": {
+        ".text": [
+          18752,
+          253252,
+          "a700f7bfa3f5ebe75daed80dd6c509c781b917b5e5863b17ab84ce146afc0f37"
+        ],
+        ".rodata": [
+          272032,
+          29048,
+          "a847e5e001f71580dc55a42e74bc8819f882e0aa0529122e0dfc0a3175774d7a"
+        ]
+      },
+      "release/gix_caller": {
+        ".text": [
+          19520,
+          267492,
+          "3bb2dff4320ced55e69ec1be2db4c2342cbecfdd3fda6192b72f392332a96a40"
+        ]
+      },
+      "release/gix_prefix": {
+        ".text": [
+          19776,
+          274004,
+          "1dc94d724890936a39212e0a292f799b936af727ba45567d14f3691d595f107e"
+        ]
+      },
+      "release/legacy_check": {
+        ".text": [
+          18112,
+          244324,
+          "d24bbd030d0918843508305c2e4a604d25ed31290daf0d98c8bc46c1050758ef"
+        ]
+      },
+      "release/owned_blocks": {
+        ".text": [
+          18560,
+          257812,
+          "dec974da764d64a536ab64054e575b3aeb5b361245d955a488f55fad987ef28b"
+        ]
+      },
+      "release/qualified_decode": {
+        ".text": [
+          18560,
+          249572,
+          "c3621bb5e041a3ac90c2da1ab5c15bbda02a7f9ec17542bb54ebe1190cd278bf"
+        ],
+        ".rodata": [
+          268160,
+          29024,
+          "9d253c3de49a8f51d8b336be3437cc0850755ce5fd72e14602d72435f8ac59c0"
+        ]
+      },
+      "release/vec_read_reader": {
+        ".text": [
+          19712,
+          279716,
+          "cfbd977324565148dbca2b89c4a67b892364544f84ad2bcb65e0899927cc4e1a"
+        ],
+        ".rodata": [
+          299456,
+          52272,
+          "b750eabb1444b10d106dec7fbced59ba4e80b3500c1ed76041d32d7f8c12f5bc"
+        ]
+      },
+      "release/vec_read_slice": {
+        ".text": [
+          19904,
+          277444,
+          "1ae47edb29345ee06b135ea95e08e4192fdbbffcb3bd21d1407b6efceea65291"
+        ],
+        ".rodata": [
+          297408,
+          52272,
+          "54f270b5ad8eec80c2966e4d3a29d95885411f6cd1c58dea1dd8d414168dae84"
+        ]
+      },
+      "release/vec_round_reader": {
+        ".text": [
+          19968,
+          283636,
+          "cf64ed700c264a4165c7386afa29120bb6acd47ba36ac47cf348d39bb0d5d8b8"
+        ],
+        ".rodata": [
+          303680,
+          53712,
+          "c8e4c28922b8890f46eacb5d2e325fa9c0f9a8c7c8567d6d252daef98119ca75"
+        ]
+      },
+      "release/vec_round_slice": {
+        ".text": [
+          20096,
+          281124,
+          "b7698ba46845b64d2b39e1c98d8806c3487ce9d380e6bcd24c24ae0099dafaf3"
+        ],
+        ".rodata": [
+          301248,
+          53712,
+          "86c092d30cc59f829aec7817125b2160f27510ddfaca184fe264e1f3bc3a679c"
+        ]
+      },
+      "release/vec_write": {
+        ".text": [
+          19264,
+          257460,
+          "14f9c8d57bea3d003689e4090b792813cd7d36b1ea44d51ca33d943c50750914"
+        ],
+        ".rodata": [
+          276752,
+          30440,
+          "8e094af97320d6a85059ce83bae665e69e0ce98174aa3aae2024b76afb716479"
+        ]
+      },
+      "parent/array_read_reader": {
+        ".text": [
+          19840,
+          284740,
+          "2f9aecef009d19ccac7ae0fc0a3bae8c869a4e6f4ff84fd26a91d28689a34909"
+        ],
+        ".rodata": [
+          304640,
+          52536,
+          "944fa11bb13cd756d9f986fdc470c7530487be795a85f56a469ab2f154e21b2d"
+        ]
+      },
+      "parent/array_read_slice": {
+        ".text": [
+          19904,
+          281188,
+          "d56dc120daedead43a5e198c15edd62b5ff7ea4b48b73815426dd8c152823206"
+        ],
+        ".rodata": [
+          301120,
+          52472,
+          "90d8f19031bfed952d3072da8fb9ae70ef1749a1000f8993eaa7a1ad22659b5c"
+        ]
+      },
+      "parent/array_round_reader": {
+        ".text": [
+          19968,
+          288420,
+          "e86bc761817a7026d70a3737505f9e78ed1b8c4a45d507c918ebc2fb37046650"
+        ],
+        ".rodata": [
+          308416,
+          52792,
+          "6f99b196b1b4028bee8724bc6f9af4d031009fab6dfac958820c60bcde0f7f15"
+        ]
+      },
+      "parent/array_round_slice": {
+        ".text": [
+          20160,
+          285252,
+          "755f13e71ab0e10681a7aefbfb47e227ddda028a7b2b02c05addf61d771bd05c"
+        ],
+        ".rodata": [
+          305472,
+          52792,
+          "a0e75e7fad50d36c0a4e1a0c130d1d7d97717b9502cc99a30e7e370737544b70"
+        ]
+      },
+      "parent/array_write": {
+        ".text": [
+          18688,
+          258788,
+          "32f6dbd15fd0b99da7b04e45ae576e262611ce3419e8e57d722ffa97f2fda1f3"
+        ],
+        ".rodata": [
+          277504,
+          29032,
+          "b78f4e1f2739d3a48382892728bc3763cbebe1c2c2ee500064bd905beca28254"
+        ]
+      },
+      "parent/ckb_caller": {
+        ".text": [
+          20800,
+          279716,
+          "9835145b8908fc34e2aa01ba603f346663998cf4e0773be860e72eb0cc1ef8af"
+        ],
+        ".rodata": [
+          300544,
+          53872,
+          "3a4bd16eeb45abbff045c76eae4646f66d82ab4cf28cdf64d17a4983fa901c63"
+        ]
+      },
+      "parent/full_format": {
+        ".text": [
+          18752,
+          254772,
+          "24a566d568945a810eff76b0aaa283c5de4ba1602871a2525bb6ed8ce76a75d6"
+        ],
+        ".rodata": [
+          273552,
+          29048,
+          "953ae904d103f43e6f791c68ef033b8d3ccd6e3cd2df8376d821d9a2b1710a53"
+        ]
+      },
+      "parent/qualified_decode": {
+        ".text": [
+          18560,
+          249572,
+          "d371ed1ac93b7a3ea4202b435b26993b30fb3a587e42af87334833b2ffd9cc62"
+        ],
+        ".rodata": [
+          268160,
+          29024,
+          "869417e6895e2982a826144a899eea2657ab33b45179e7ca9b1f91bc7dea3ff5"
+        ]
+      },
+      "parent/vec_read_reader": {
+        ".text": [
+          19712,
+          279716,
+          "f18e4e96a8508ff203509a87b85f9243fa501ef355819a285fae5a205c73a98b"
+        ],
+        ".rodata": [
+          299456,
+          52272,
+          "f65d2c8d308d911f07fc9d4694ae4ea7879f7e4622cebc9b423ed4452084dd65"
+        ]
+      },
+      "parent/vec_read_slice": {
+        ".text": [
+          19904,
+          277444,
+          "878b0a48d0e99c9bcfdffc98def8f1ab0782f28f45673ac6cf31cafe74febddc"
+        ],
+        ".rodata": [
+          297408,
+          52272,
+          "8880b7d85b65ce1d6ccd6b794dfafc0333eaa7ac6560aa40b90f78c4927db6fa"
+        ]
+      },
+      "parent/vec_round_reader": {
+        ".text": [
+          19968,
+          283636,
+          "09057b5175ef25327dbf09c5d7d58732b23794fed93489cc5667566c1d7b5ed2"
+        ],
+        ".rodata": [
+          303680,
+          53712,
+          "0989f64310b25fb6b9f421c9a865ce76fafda869377c15fa2dd1f149ec1e054e"
+        ]
+      },
+      "parent/vec_round_slice": {
+        ".text": [
+          20096,
+          281124,
+          "dc2b7658d32bbad14d64df1b75b05a4d5ff72700700f18d7954f50cd88d26f35"
+        ],
+        ".rodata": [
+          301248,
+          53712,
+          "f20de31282963ec837552b66a4367142c7a179480d960b417912beece323cb8a"
+        ]
+      },
+      "parent/vec_write": {
+        ".text": [
+          19264,
+          257460,
+          "dd5acf464a5afd7ad80679c829a3eb00f57fd4ee5f3f5ee9bbcfacce784c3c63"
+        ],
+        ".rodata": [
+          276752,
+          30440,
+          "041aa8fb920ecc0681def8791f383756c0b2a3c19f15e48d10cc5af346f11090"
+        ]
+      }
+    },
+    "ubuntu-24.04-arm-thin-runtime": {
+      "release/array_read_reader": {
+        ".text": [
+          19648,
+          285768,
+          "d827ea862029498d7dafbc1afa05168fbf93f84d8e34b0c82a6d8e81bae04f72"
+        ],
+        ".rodata": [
+          305472,
+          45504,
+          "6b4d28b44642e51716ca05999b626a23f181ad2bbedd777dceab524a44eec870"
+        ]
+      },
+      "release/array_read_slice": {
+        ".text": [
+          19712,
+          280776,
+          "9151e128b27602fc0262470f36fa7bf023426bcf5d267d28f8b5a33db53f1ed7"
+        ],
+        ".rodata": [
+          300544,
+          45504,
+          "b45a545b68f3fe5d2a5cfccf61ed82607754330bc8e3bcd244d23ebbbbfe4f1b"
+        ]
+      },
+      "release/array_round_reader": {
+        ".text": [
+          19840,
+          289496,
+          "840f9e33517804181ea3d6ae85b828d452b02b3dbae36c505abe9e24a7ab86d8"
+        ],
+        ".rodata": [
+          309376,
+          45824,
+          "b1d2e1357212af2c3d36ff52c66ab3d5c18a03581899837dba49b625af892e6e"
+        ]
+      },
+      "release/array_round_slice": {
+        ".text": [
+          19968,
+          285000,
+          "9113df4347810aa956641c8289b70625832380a7241e17ec9289f3646bc6173c"
+        ],
+        ".rodata": [
+          305024,
+          45760,
+          "de5ac7537db9fc7bd8770f1403d30fb1f532a30dfc2c2e14eb861cde1f3ad88d"
+        ]
+      },
+      "release/array_write": {
+        ".text": [
+          18496,
+          255192,
+          "95a30174a6032b787cfb23e11d8657ef8b56804a6fd5216b21334bbce79423d4"
+        ],
+        ".rodata": [
+          273712,
+          22316,
+          "7583cef20a1d615af73a0727d6e5bbd1ea914015879d9bf855a9d0f16ee91971"
+        ]
+      },
+      "release/ckb_caller": {
+        ".text": [
+          20416,
+          279352,
+          "768f38f2cee61f7e72f4ef478df3f2d48c1dec9479c8008649cc020e72106536"
+        ],
+        ".rodata": [
+          299840,
+          46656,
+          "548277908a02ea5a94d63191d5f9bc0ce36549d8996713c77937d4832aeec249"
+        ]
+      },
+      "release/full_buffer": {
+        ".text": [
+          18240,
+          249448,
+          "2e0799acdd37c04236212c611b11b9726c69cafe9225d1ec99b479cecd75828c"
+        ]
+      },
+      "release/full_format": {
+        ".text": [
+          18560,
+          253320,
+          "ff274187d4f81f0e09f20206647e6c4803701c88370a3d961d89dd4592b8e20a"
+        ],
+        ".rodata": [
+          271904,
+          22436,
+          "9a11be04726ce0ae228698e49624cbfb81c5dd64d92c6056eac0a5bfdc0d9826"
+        ]
+      },
+      "release/gix_caller": {
+        ".text": [
+          19200,
+          269848,
+          "acbf1f45fabbc405ea5f389536839719622048521a6933b00be2c943d94ea018"
+        ]
+      },
+      "release/gix_prefix": {
+        ".text": [
+          19456,
+          276136,
+          "48d859c4d92f9f5cf1173cb0f3692bf9dd574919f20995847b8235c7fd5c4ca3"
+        ]
+      },
+      "release/legacy_check": {
+        ".text": [
+          17856,
+          245288,
+          "b991864767482c17fe4592655cb692ea01e62d540e389d32558c1e3b7687c857"
+        ]
+      },
+      "release/owned_blocks": {
+        ".text": [
+          18368,
+          258504,
+          "669640f34038dcbaeb15e93671e5c94bec490e2a7595809ce0d52ef97e09bd44"
+        ]
+      },
+      "release/qualified_decode": {
+        ".text": [
+          18304,
+          251720,
+          "5cb61596c833d2a278c18601c3f461d1113bcb05eb8662df4a40113f97e0bca7"
+        ],
+        ".rodata": [
+          270048,
+          22420,
+          "ca5954e5fec8a5be20af46cd0ad26cdd6d4a6f8daab0a4e64dc468a7eea88b25"
+        ]
+      },
+      "release/vec_read_reader": {
+        ".text": [
+          19520,
+          280680,
+          "f67ab681a557a953f5389c676c74652c6f2c63610c7b7ee57b8d0ec364a5d2c5"
+        ],
+        ".rodata": [
+          300224,
+          45376,
+          "141a1a6a79f3342f0693fe144a423b7fdbf07190c45cc24e3f5695ee67df1d5a"
+        ]
+      },
+      "release/vec_read_slice": {
+        ".text": [
+          19712,
+          277352,
+          "82bd069bc43edbc456a4f9d989341a90e8f4c9d605e82b66c624a9eb255d47bf"
+        ],
+        ".rodata": [
+          297088,
+          45376,
+          "8d5669853a614caf92f10a6225875bf852b3b07fdf162da7e821c514f01a6a53"
+        ]
+      },
+      "release/vec_round_reader": {
+        ".text": [
+          19712,
+          284952,
+          "5ab3fdb2ed9e28844a2f716d1b398a948127f5ffc172bad660c95994b78223a9"
+        ],
+        ".rodata": [
+          304704,
+          46784,
+          "c2f280f9aa9a5660b6642deba4750826f98ca1a136e3935e471f95a62683d666"
+        ]
+      },
+      "release/vec_round_slice": {
+        ".text": [
+          19904,
+          280712,
+          "ef6f71d9904ebcce347c4f2485bb55d0648bf7b8e366abdc358b526ebcbda02b"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "b1e430967f7ef53f3f5c718368ec1f885a67e9ceb7b377914b5b021bca6933f6"
+        ]
+      },
+      "release/vec_write": {
+        ".text": [
+          19072,
+          258472,
+          "5e485b7a4e536a5ce24c1736b2be47b945ce7447a62870128bf078ed370cf72b"
+        ],
+        ".rodata": [
+          277568,
+          23787,
+          "ba37004712faebb56937229d40719cf008c94c7004c443f79e132e4323f1a4ec"
+        ]
+      },
+      "parent/array_read_reader": {
+        ".text": [
+          19648,
+          285768,
+          "2178a83c9e577bf5210d218777a59234e8b4f8ed3d6cd6442be042926874a3e5"
+        ],
+        ".rodata": [
+          305472,
+          45504,
+          "852d136deaa00da864533725d4e55d49f7aef023ecae2a85396035034224a073"
+        ]
+      },
+      "parent/array_read_slice": {
+        ".text": [
+          19712,
+          280776,
+          "7bb429e1d41697e2d0ef34f4e17dc23fd1664749a7226c91303f1621bb6f566c"
+        ],
+        ".rodata": [
+          300544,
+          45504,
+          "8c6ca6c63134cc706a5ec58aa99258f2283ee7056fd2614e21fd61580f69dd33"
+        ]
+      },
+      "parent/array_round_reader": {
+        ".text": [
+          19840,
+          289496,
+          "c2f3c8af5c08b34066deb7270900ce3dc0210488d8597edf1e572063af758462"
+        ],
+        ".rodata": [
+          309376,
+          45824,
+          "21500eba3aa3a4454ccb4cca38f1f55b5d7a72673438267131e91ada7f37172d"
+        ]
+      },
+      "parent/array_round_slice": {
+        ".text": [
+          19968,
+          285000,
+          "de27cf3124ee8e5378d9420a33c731f76a51084ef7d5ba432018210ae354965b"
+        ],
+        ".rodata": [
+          305024,
+          45760,
+          "49d05a45ed2ec310ef1b04a5af239993a569bef8e003ed172f33e1fc1abbbbf5"
+        ]
+      },
+      "parent/array_write": {
+        ".text": [
+          18496,
+          255192,
+          "0ad6c017d52ad8ada5f8fd5a4181d09ba4c583bd9b1f8c74ff8934373bd43ccd"
+        ],
+        ".rodata": [
+          273712,
+          22316,
+          "7583cef20a1d615af73a0727d6e5bbd1ea914015879d9bf855a9d0f16ee91971"
+        ]
+      },
+      "parent/ckb_caller": {
+        ".text": [
+          20416,
+          279352,
+          "ea4eab2fbf05630510bee621946c1b1bd1d931cba0d30dd385f4eb4243aed417"
+        ],
+        ".rodata": [
+          299840,
+          46656,
+          "768d6fad989e07bcd57eede19ed54f4d5c01280cd741878115b50d0dfad0b407"
+        ]
+      },
+      "parent/full_format": {
+        ".text": [
+          18560,
+          253320,
+          "8105695f0ee2caab8f908927995e7dd45e90e9607b1d1f05aa20c879bc3a4826"
+        ],
+        ".rodata": [
+          271904,
+          22436,
+          "0bcf73056f83eba670ddf7ca16eedba036fcb73e853ffcf98f153ba758d53b20"
+        ]
+      },
+      "parent/qualified_decode": {
+        ".text": [
+          18304,
+          251720,
+          "76dacfc0f5ff40bd4fb5717dddf00914f1c65e17da495ea8595100e197a5d340"
+        ],
+        ".rodata": [
+          270048,
+          22420,
+          "064df6f41c016226f52dd76545410d3ba2892a447d5789689ba5a37d959d9b86"
+        ]
+      },
+      "parent/vec_read_reader": {
+        ".text": [
+          19520,
+          280680,
+          "d4239e24a9f04a43ab0c045a653827c5056d6aabfb7ea492329ed6636257b3c2"
+        ],
+        ".rodata": [
+          300224,
+          45376,
+          "a5f668dfaad68210c26634c2bd901f02d6aaad1ba11b31b669e46892847d9882"
+        ]
+      },
+      "parent/vec_read_slice": {
+        ".text": [
+          19712,
+          277352,
+          "bd4b8e62a1b6ea5278050faf487872f51d78a81a25d25fdcaadde8838cb676dd"
+        ],
+        ".rodata": [
+          297088,
+          45376,
+          "3bd68b07a69bf843c5242244fdff35362317aa9c3eabc3dc8b9278caebc6513a"
+        ]
+      },
+      "parent/vec_round_reader": {
+        ".text": [
+          19712,
+          284952,
+          "add57df050d79de0a8eeb5163566e980954bda4235bc4aca88b0339c1e4fa07b"
+        ],
+        ".rodata": [
+          304704,
+          46784,
+          "849d2c20e9ab55bf109becad2cda15512f605562d4fbd3701eb5a9dd9bbe860c"
+        ]
+      },
+      "parent/vec_round_slice": {
+        ".text": [
+          19904,
+          280712,
+          "ece468f05fe27d17eabe6bbf4f139c8786da9b9c1c8f3bc9072f8c31bf51a250"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "9df86aba9c8057803c9db3663a9ab6aacf4e1ecd56a25586eaa8f354e190f41c"
+        ]
+      },
+      "parent/vec_write": {
+        ".text": [
+          19072,
+          258472,
+          "44e592ac4336790dab96f46ce42985d44e0db23521a87237ef521a32a174aeb9"
+        ],
+        ".rodata": [
+          277568,
+          23787,
+          "fcce331c0487bd2bf0a9547505af9baebee40366c2b1932412da16ef6ae09453"
+        ]
+      }
+    }
+  }
+}
