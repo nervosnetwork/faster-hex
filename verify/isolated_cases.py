@@ -150,6 +150,20 @@ elif SCOPE=='release-audit':
             for phase,kind in (('read_slice','plain'),('read_slice','escaped'),('read_reader','reader'),('write','plain'),('round_slice','plain'),('round_slice','escaped'),('round_reader','reader')):
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
+    if os.environ.get('PREFIX_ENTRY')=='1':
+        revisions.update({'donor': '09a50778d4d210a27fcaba7cc993a18e918ca4f6', 'bounded': 'd1ffe8ee992bd5267eced3c3e4b7e34340beb664'})
+        pairs=[('scoped','aa'),('bounded','bounded_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
+        pairs += [(a,b) for a in ('release','version','pr','scoped') for b in ('donor','bounded')]
+        pairs += [('donor','bounded')]
+        controls={('qualified_decode',4096,'valid'),('array_read_slice',32,'escaped'),('vec_read_slice',32,'escaped'),
+                  ('vec_round_slice',32,'escaped'),('array_read_slice',32,'plain'),('vec_read_slice',32,'plain'),
+                  ('vec_round_slice',4096,'plain'),('array_round_slice',4096,'plain'),
+                  ('ckb_caller',32,'plain'),('gix_caller',20,'parse'),('full_format',32,'alternate'),
+                  ('append_call',32,'valid'),('validate_call',32,'last')}
+        cases=[(b,n,k) for b,n,k in cases if b in ('prefix_buffer','prefix_format','gix_prefix','full_buffer') or (b,n,k) in controls]
+        cases += [('prefix_extent',n,k) for n in (7,30,31,32,33,62,63,64,65,66,127,8192) for k in ('exact','spare')]
+        assert len(set(cases))==len(cases)==58
+
     if os.environ.get('DIAGNOSTIC_BOUNDARY')=='1':
         revisions.update({'direct': '407cf594016b39c7bd338e5cdf375af69b40de73', 'split': 'a0b6d03c6a695968ed8de260cdb1085c3d02b0f6'})
         pairs=[('scoped','aa'),('split','split_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
