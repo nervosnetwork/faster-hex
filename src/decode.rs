@@ -758,11 +758,22 @@ pub fn hex_decode_append<'a>(
         // SAFETY: resize added one byte for each pair of the even input.
         unsafe { decode_owned_large(src, suffix, CheckCase::None) }
     } else {
-        hex_decode(src, suffix).map(|_| ())
+        // SAFETY: the suffix has exactly one byte for each input pair.
+        unsafe { decode_checked(src, suffix, CheckCase::None) }
+            .or_else(|()| recover_appended(src, suffix))
     };
     if let Err(error) = result {
         dst.truncate(start);
         return Err(error);
     }
     Ok(&mut dst[start..])
+}
+
+#[cfg(feature = "alloc")]
+#[cold]
+fn recover_appended(src: &[u8], suffix: &mut [u8]) -> Result<(), Error> {
+    diagnose_invalid(src)?;
+    // The input is valid even if a backend rejected it. Fill the entire suffix.
+    hex_decode_fallback(src, suffix);
+    Ok(())
 }
