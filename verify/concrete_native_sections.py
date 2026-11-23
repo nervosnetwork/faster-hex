@@ -29,17 +29,21 @@ def record(folder,images):
 
 def owned_calls(folder, images):
  if not sys.platform.startswith('linux'):return
- # Capture the timed consumer itself, including inlined code for fixed-size arrays.
  target=Path(folder);result={}
- for role in ('release','version','pr','scoped','concrete','entries','boundary'):
-    key=role+'/owned_blocks';assert key in images
+ ops={'owned_blocks','vec_round_slice','vec_read_slice','vec_write','ascii_check'}
+ for key in images:
+    role,op=key.split('/')
+    if op not in ops:continue
     path=target/key.replace('/','-');symbols=[]
     for line in sp.check_output(['nm','-n','-S','-C','--defined-only',path],text=True).splitlines():
-        match=re.match(r'^([0-9a-f]+)\s+([0-9a-f]+)\s+[tT]\s+(\S*owned_blocks\S*)$',line)
+        match=re.match(r'^([0-9a-f]+)\s+([0-9a-f]+)\s+[tT]\s+(.+)$',line)
         if not match:continue
+        sym=match[3]
+        if not any(s in sym for s in (op,'decode_diagnosed','hex_check_with_case','hex_decode_array_with_case','write_escaped_str','run_sample')):continue
         address,size=int(match[1],16),int(match[2],16)
+        if not size:continue
         listing=sp.check_output(['objdump','-d','-w','-C','--start-address='+str(address),'--stop-address='+str(address+size),path],text=True)
-        symbols.append(dict(symbol=match[3],address=address,size=size,disassembly=listing.split('Disassembly of section .text:',1)[-1].strip()))
+        symbols.append(dict(symbol=sym,address=address,size=size,disassembly=listing.split('Disassembly of section .text:',1)[-1].strip()))
     assert symbols,key
-    result[role]=symbols
- (target/'owned-caller-instructions.json').write_text(json.dumps(result,sort_keys=True))
+    result[key]=symbols
+ (target/'timed-consumer-code.json').write_text(json.dumps(result,sort_keys=True))
