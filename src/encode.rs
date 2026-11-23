@@ -507,9 +507,10 @@ pub(crate) fn hex_encode_fallback(src: &[u8], dst: &mut [u8], upper: bool) {
 #[cfg(target_arch = "aarch64")]
 unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: uint8x16_t) {
     let bytes = vcombine_u8(vld1_u8(src.as_ptr()), vdup_n_u8(0));
-    let high = vqtbl1q_u8(table, vshrq_n_u8::<4>(bytes));
-    let low = vqtbl1q_u8(table, vandq_u8(bytes, vdupq_n_u8(15)));
-    vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
+    let high = vshrq_n_u8::<4>(bytes);
+    let low = vandq_u8(bytes, vdupq_n_u8(15));
+    let digits = vqtbl1q_u8(table, vzip1q_u8(high, low));
+    vst1q_u8(dst.as_mut_ptr().cast(), digits);
 }
 
 pub(crate) mod prefix {
