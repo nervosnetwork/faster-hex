@@ -1,0 +1,74 @@
+{
+  "ubuntu-24.04-lto-thin": {
+    "introduced": {
+      "baseline": {
+        "check": [
+          1038848,
+          2236087,
+          "9b0e836a259d7adbeaeb60c30fc77b9604b23367a70aaf86f836f0060e32c319"
+        ]
+      },
+      "candidate": {
+        "check": [
+          1038784,
+          2235879,
+          "fcf8d9b74230e61b30773668e6c4bb1d459d0d8ec2cdc57e3e03e49cad63c6d9"
+        ]
+      }
+    }
+  },
+  "ubuntu-24.04-lto-false": {
+    "introduced": {
+      "baseline": {
+        "format": [
+          1063360,
+          2150055,
+          "b992628b898782abed1b3900a1a1786b41ea214cf961cbf7f73a0e9b1d177290"
+        ]
+      },
+      "candidate": {
+        "format": [
+          1063360,
+          2150055,
+          "7b30eda8753d0c7b764670668390b70e0576d7f66321654ca53ddfb2a7d627e5"
+        ]
+      }
+    }
+  },
+  "ubuntu-24.04-arm-lto-thin": {
+    "released": {
+      "baseline": {
+        "hex": [
+          287808,
+          2442840,
+          "27821202087111bd70ec01f48fedad94010b4f9bae1d845f3d6f2ed3322989b5"
+        ]
+      },
+      "candidate": {
+        "hex": [
+          287808,
+          2442760,
+          "7357e3e653d95471b6b6ed82dfd718fd514566dabec5c26fc2ac96675b0538a4"
+        ]
+      }
+    }
+  },
+  "ubuntu-24.04-arm-lto-false": {
+    "introduced": {
+      "baseline": {
+        "format": [
+          282432,
+          1799940,
+          "32a891212a23be943355f5403b42a27249d45fe53580f554a2f4c8f8216dbde2"
+        ]
+      },
+      "candidate": {
+        "format": [
+          282368,
+          1800340,
+          "98fd761b0019a575fe283755d82fc7951414fa492ae3ba07541765346aa73214"
+        ]
+      }
+    }
+  }
+}

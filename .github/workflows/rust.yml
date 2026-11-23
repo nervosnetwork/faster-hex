@@ -1,4 +1,4 @@
-name: Verify targeted append inlining and linked-image equivalence
+name: Verify the matched Cargo identities and sample the measured Linux callers
 on: workflow_dispatch
 permissions:
   contents: read
@@ -13,12 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-15-intel, lto: "false" }
-          - { os: ubuntu-24.04-arm, lto: "false" }
-          - { os: ubuntu-24.04, lto: "false" }
-          - { os: macos-15-intel, lto: "thin" }
-          - { os: ubuntu-24.04-arm, lto: "thin" }
           - { os: ubuntu-24.04, lto: "thin" }
+          - { os: ubuntu-24.04, lto: "false" }
+          - { os: ubuntu-24.04-arm, lto: "thin" }
+          - { os: ubuntu-24.04-arm, lto: "false" }
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -32,7 +30,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.11"
-      - name: Compare the release, checked candidate and single kernel change
+      - name: Verify same-source Cargo identity and profile matched source builds
         env:
           CELL: ${{ matrix.os }}-lto-${{ matrix.lto }}
         run: python verify/kernel-experiment.py "$CELL"
