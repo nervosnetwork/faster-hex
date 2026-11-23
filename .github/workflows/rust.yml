@@ -204,7 +204,7 @@ jobs:
       - name: Install 32-bit runtime and linker
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y gcc-multilib
+          sudo apt-get install --no-install-recommends -y gcc-multilib qemu-user
       - name: Run 32-bit x86 tests with and without an SSE baseline
         env:
           RUSTFLAGS: -D warnings
@@ -214,6 +214,21 @@ jobs:
             cargo test --release --all-features --target "$target" --lib --tests
             cargo test --release --no-default-features --target "$target" --lib --tests
           done
+      - name: Check x86 dispatch with missing CPU features
+        env:
+          RUSTFLAGS: -D warnings
+        run: |
+          while read -r cpu expected; do
+            CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER="qemu-i386 -cpu $cpu" \
+              FASTER_HEX_EXPECT_BACKEND="$expected" cargo test --release --all-features \
+                --target i686-unknown-linux-gnu --lib tests::feature_detection_matches_host -- --exact
+          done <<'CPUS'
+          max,-sse4.1 None
+          max,-xsave SSE41
+          max,-avx SSE41
+          max,-avx2 SSE41
+          max,-avx512bw AVX2
+          CPUS
 
   api:
     name: API compatibility
