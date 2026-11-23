@@ -450,7 +450,7 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
 unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     // SAFETY: the caller provides exact lengths and private output.
     if unsafe { decode_owned_blocks(src, dst, case) }.is_err() {
-        return decode_diagnosed(src, dst, case);
+        decode_diagnosed(src, dst, case)?;
     }
     Ok(())
 }
