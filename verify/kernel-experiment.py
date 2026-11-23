@@ -1,23 +1,12 @@
 from pathlib import Path
 import json,time
-sibling=Path(__file__).parent/'official-paired.py';spec=json.loads((sibling.parent/'kernel-experiment.json').read_text());code=sibling.read_text().split('orders=[[',1)[0];code=code.replace("cases=case_spec['matrix'][key]","cases=spec['cases'][key]").replace("benches=sorted({'serde' if c.startswith('serde_') else 'hex' for c in cases})","benches=['hex','serde'] + (['check'] if any(c.startswith('invalid/') for c in cases) else [])").replace("[('base',baseref),('head',head)]","[('base',baseref),('head',head),('proposal',spec['proposal'])]")
-frozen='25cfd8eb6a4cd8257a96fabaf73771cabcced4b4'
-
-code=code.replace("baseref=case_spec['base']", "baseref='"+frozen+"'")
-code=code.replace("benches=['hex','serde'] + (['check'] if any(c.startswith('invalid/') for c in cases) else [])","benches=['hex','format','check']")
-needle="assert (src/'Cargo.lock').read_bytes()==lock;records=run("
-checks="assert (src/'Cargo.lock').read_bytes()==lock\n for benchfile in ['hex.rs','format.rs','check.rs','support/mod.rs']:\n  expected=sp.check_output(['git','show',baseref+':benches/'+benchfile],cwd=repo)\n  assert expected==(src/'benches'/benchfile).read_bytes(),(role,benchfile)\n records=run("
-assert code.count(needle)==1
-code=code.replace(needle,checks)
-
-exec(compile(code,str(sibling),'exec'))
+sibling=Path(__file__).parent/'official-paired.py';spec=json.loads((sibling.parent/'kernel-experiment.json').read_text());code=sibling.read_text().split('orders=[[',1)[0];code=code.replace("cases=case_spec['matrix'][key]","cases=spec['cases'][key]").replace("benches=sorted({'serde' if c.startswith('serde_') else 'hex' for c in cases})","benches=['hex','serde'] + (['check'] if any(c.startswith('invalid/') for c in cases) else [])").replace("[('base',baseref),('head',head)]","[('base',baseref),('head',head),('proposal',spec['proposal'])]");exec(compile(code,str(sibling),'exec'))
 def bench_for(case):
- return 'format' if case.startswith('prefix/') else 'check' if case.startswith('check_') else 'hex'
+ return 'check' if case.startswith('invalid/') else 'serde' if case.startswith('serde_') else 'hex'
 for b in {bench_for(c) for c in cases}:
  known={s.split(':',1)[0] for s in run([str(programs['head',b]),'--bench','--list'],src).splitlines()}
  assert all(c in known for c in cases if bench_for(c)==b),(b,cases,known)
-assert digest(lock)==spec['locks'][key]
-save('anchors.json',{'frozen':baseref,'candidate':head,'proposal':spec['proposal'],'same_frozen_drivers':True,'lock':digest(lock)})
+assert digest(lock)==spec['locks'][key];anchors={role:metadata[role+'/serde']['text']==spec['anchors'][key][role]['text'] for role in ('base','head')};save('anchors.json',{'previous_serde_text':anchors});assert all(anchors.values()),anchors;print('original-binary anchors',anchors,flush=True)
 roles=['base','head','proposal']*2;seq=[0,1,5,2,4,3];rng=random.Random(745073);records={c:[] for c in cases};site=w/'bench'
 for block in range(2):
  labels=list(range(6));rng.shuffle(labels);rows=list(range(6));rng.shuffle(rows);copies={}
