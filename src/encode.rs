@@ -503,20 +503,25 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
     vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
 }
 
+// `[[u8; 2]; 256]` has natural alignment 1; aligning the promoted constant keeps
+// every 16-bit pair load naturally aligned without adding an rlib static symbol.
+#[repr(align(64))]
+struct PrefixPairs([[u8; 2]; 256]);
+
 // Selected-prefix encoding keeps short hash prefixes (<= 32 bytes) on direct
 // NEON / pair-table paths without touching 2.0's complete-slice encoders or
 // exporting 2.0's internal static tables from the rlib.
-const PREFIX_PAIRS_LOWER: [[u8; 2]; 256] = encode_pairs(TABLE_LOWER);
+const PREFIX_PAIRS_LOWER: &PrefixPairs = &PrefixPairs(encode_pairs(TABLE_LOWER));
 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-const PREFIX_PAIRS_UPPER: [[u8; 2]; 256] = encode_pairs(TABLE_UPPER);
+const PREFIX_PAIRS_UPPER: &PrefixPairs = &PrefixPairs(encode_pairs(TABLE_UPPER));
 
 #[inline]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
 fn encode_prefix_pairs<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
     let table = if UPPER {
-        &PREFIX_PAIRS_UPPER
+        &PREFIX_PAIRS_UPPER.0
     } else {
-        &PREFIX_PAIRS_LOWER
+        &PREFIX_PAIRS_LOWER.0
     };
     for (&byte, pair) in src.iter().zip(dst.as_chunks_mut::<2>().0) {
         *pair = table[byte as usize].map(MaybeUninit::new);
@@ -567,6 +572,8 @@ pub(crate) fn encode_prefix_uninit<const UPPER: bool>(src: &[u8], dst: &mut [May
     }
 }
 
+// SAFETY: Callers must ensure NEON is enabled, `src.len() >= 8`, and
+// `dst.len() == src.len() * 2`.
 #[inline]
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
@@ -574,30 +581,32 @@ unsafe fn encode_prefix_neon<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUnin
     debug_assert!(src.len() >= 8 && dst.len() == src.len() * 2);
     let table = if UPPER { TABLE_UPPER } else { TABLE_LOWER };
     let table = vld1q_u8(table.as_ptr());
-    if src.len() < 16 {
-        if let (Some(input), Some(output)) = (src.first_chunk::<8>(), dst.first_chunk_mut::<16>()) {
-            encode_neon_8(input, output, table);
-        }
-        if src.len() > 8 {
-            if let (Some(input), Some(output)) = (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
-            {
-                encode_neon_8(input, output, table);
-            }
+    let len = src.len();
+    let dst_len = dst.len();
+    if len < 16 {
+        // SAFETY: `8 <= len < 16` and `dst_len == len * 2 >= 16`.
+        encode_neon_8(&*src.as_ptr().cast(), &mut *dst.as_mut_ptr().cast(), table);
+        if len > 8 {
+            // SAFETY: `len > 8` so both tail windows stay inside `src` and `dst`.
+            encode_neon_8(
+                &*src.as_ptr().add(len - 8).cast(),
+                &mut *dst.as_mut_ptr().add(dst_len - 16).cast(),
+                table,
+            );
         }
         return;
     }
-    if src.len() <= 32 {
+    if len <= 32 {
         // First and last vectors cover a 16..=32 byte prefix without a loop.
-        if let (Some(input), Some(output)) = (src.first_chunk::<16>(), dst.first_chunk_mut::<32>())
-        {
-            encode_neon_16(input, output, table);
-        }
-        if src.len() > 16 {
-            if let (Some(input), Some(output)) =
-                (src.last_chunk::<16>(), dst.last_chunk_mut::<32>())
-            {
-                encode_neon_16(input, output, table);
-            }
+        // SAFETY: `16 <= len <= 32` and `dst_len == len * 2 >= 32`.
+        encode_neon_16(&*src.as_ptr().cast(), &mut *dst.as_mut_ptr().cast(), table);
+        if len > 16 {
+            // SAFETY: `len > 16` so both tail windows stay inside `src` and `dst`.
+            encode_neon_16(
+                &*src.as_ptr().add(len - 16).cast(),
+                &mut *dst.as_mut_ptr().add(dst_len - 32).cast(),
+                table,
+            );
         }
         return;
     }
@@ -606,9 +615,12 @@ unsafe fn encode_prefix_neon<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUnin
         encode_neon_16(input, output, table);
     }
     if !tail.is_empty() {
-        if let (Some(input), Some(output)) = (src.last_chunk::<16>(), dst.last_chunk_mut::<32>()) {
-            encode_neon_16(input, output, table);
-        }
+        // SAFETY: `len > 32` and `dst_len == len * 2 > 64`, so the final window stays in bounds.
+        encode_neon_16(
+            &*src.as_ptr().add(len - 16).cast(),
+            &mut *dst.as_mut_ptr().add(dst_len - 32).cast(),
+            table,
+        );
     }
 }
 
@@ -638,7 +650,7 @@ pub(crate) fn encode_prefix_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a
     let uninit =
         unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), pair_digits) };
     encode_prefix_uninit::<false>(pairs, uninit);
-    output[pair_digits] = PREFIX_PAIRS_LOWER[usize::from(last)][0];
+    output[pair_digits] = PREFIX_PAIRS_LOWER.0[usize::from(last)][0];
     // SAFETY: encode_prefix_uninit wrote the complete pairs as ASCII, and the final
     // byte came from the ASCII pair table's high-nibble slot.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
