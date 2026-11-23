@@ -492,9 +492,11 @@ pub fn hex_decode_append<'a>(
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
     // SAFETY: resize added one byte for each pair of the even input.
-    if let Err(error) = unsafe { decode_owned(src, &mut dst[start..], CheckCase::None) } {
-        dst.truncate(start);
-        return Err(error);
+    if unsafe { decode_private_checked(src, &mut dst[start..], CheckCase::None) }.is_err() {
+        if let Err(error) = recover_private(src, &mut dst[start..], CheckCase::None) {
+            dst.truncate(start);
+            return Err(error);
+        }
     }
     Ok(&mut dst[start..])
 }
@@ -508,9 +510,23 @@ pub fn hex_decode_append<'a>(
 #[inline(always)]
 unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    // Short outputs share the slice decoder's bounded kernels.
-    if dst.len() <= 1024 {
+    if dst.len() <= OWNED_DECODE_THRESHOLD {
         return hex_decode_with_case(src, dst, case).map(|_| ());
+    }
+    if decode_private_checked(src, dst, case).is_err() {
+        return decode_diagnosed(src, dst, case);
+    }
+    Ok(())
+}
+
+/// Decodes into a private destination that is discarded on rejection.
+///
+/// # Safety
+/// The source length must be exactly twice the destination length.
+#[inline(always)]
+unsafe fn decode_private_checked(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
+    if dst.len() <= OWNED_DECODE_THRESHOLD {
+        return decode_checked(src, dst, case);
     }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
@@ -534,9 +550,16 @@ unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<()
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     let decoded = decode_checked(src, dst, case);
-    if decoded.is_err() {
-        decode_diagnosed(src, dst, case)?;
-    }
+    decoded
+}
+
+const OWNED_DECODE_THRESHOLD: usize = 1024;
+
+#[cfg(feature = "alloc")]
+#[cold]
+fn recover_private(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    diagnose_invalid(src, case)?;
+    hex_decode_fallback(src, dst);
     Ok(())
 }
 
