@@ -27,6 +27,7 @@
 //! | Decode an exact-length array | [`hex_decode_array`], [`hex_decode_array_with_case`] |
 //! | Format borrowed bytes into text | [`Hex`] with [`Display`](core::fmt::Display), [`LowerHex`](core::fmt::LowerHex) or [`UpperHex`](core::fmt::UpperHex) |
 //! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
+//! | Validate complete byte pairs with error positions | [`hex_validate`] |
 //!
 //! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
 //! `hex_append` and `hex_append_upper` reuse a string's capacity;
@@ -183,7 +184,7 @@ mod serde;
 
 pub use crate::decode::{
     hex_check, hex_check_with_case, hex_decode, hex_decode_array, hex_decode_array_with_case,
-    hex_decode_with_case, CheckCase,
+    hex_decode_with_case, hex_validate, CheckCase,
 };
 pub use crate::encode::{hex_encode, hex_encode_upper};
 

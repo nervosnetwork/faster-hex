@@ -80,6 +80,33 @@ pub fn hex_check(src: &[u8]) -> bool {
     hex_check_with_case(src, CheckCase::None)
 }
 
+/// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
+///
+/// Accepts mixed case and empty input without allocating. Use [`hex_check`]
+/// to check individual digits, or [`hex_decode`] when the bytes are needed.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] first. Otherwise, the first invalid
+/// byte is reported as [`Error::InvalidChar`], with its byte index in `src`.
+///
+/// ```
+/// use faster_hex::{hex_validate, Error};
+/// assert_eq!(hex_validate(b"0aBF"), Ok(()));
+/// assert_eq!(hex_validate(b"abc"), Err(Error::OddLength));
+/// ```
+#[inline]
+pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    if hex_check(src) {
+        Ok(())
+    } else {
+        diagnose_invalid(src, CheckCase::None)
+    }
+}
+
 /// Checks ASCII hex digits against an explicit letter-case policy.
 ///
 /// Digits are accepted under every [`CheckCase`] policy. Empty input succeeds;
@@ -564,16 +591,28 @@ pub(crate) fn hex_decode_short_scalar(
 
 // Backends report validity; diagnostics belong to the public boundary. The
 // successful SIMD path does not track byte positions or construct an error.
-#[cold]
+#[inline]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    diagnose_invalid(src, case)?;
+    // Recover if a backend rejected valid input; the caller needs initialized bytes.
+    hex_decode_fallback(src, dst);
+    Ok(())
+}
+
+#[cold]
+fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
-    // Skip valid blocks so locating a late error retains SIMD throughput.
-    // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
+        // Catch a malformed leading pair before setting up a second SIMD scan.
+        for (index, &byte) in src[..2].iter().enumerate() {
+            if table[usize::from(byte)] == NIL {
+                return Err(Error::InvalidChar { index, byte });
+            }
+        }
         src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
             .count()
@@ -587,9 +626,6 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
             return Err(Error::InvalidChar { index, byte });
         }
     }
-    // Every byte was validated. A scalar conversion also handles a backend
-    // rejecting valid input; never return an unwritten output prefix.
-    hex_decode_fallback(src, dst);
     Ok(())
 }
 
