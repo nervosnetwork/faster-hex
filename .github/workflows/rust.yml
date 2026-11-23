@@ -1,4 +1,4 @@
-name: Verify Return after the last complete NEON block when no digits remain
+name: Verify the append entry point and the original AVX2 link order
 on: workflow_dispatch
 permissions:
   contents: read
@@ -13,8 +13,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - { os: macos-15-intel, lto: "false" }
           - { os: ubuntu-24.04-arm, lto: "false" }
+          - { os: ubuntu-24.04, lto: "false" }
+          - { os: macos-15-intel, lto: "thin" }
           - { os: ubuntu-24.04-arm, lto: "thin" }
+          - { os: ubuntu-24.04, lto: "thin" }
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
