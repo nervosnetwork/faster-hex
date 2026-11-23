@@ -88,73 +88,85 @@ pub fn hex_string_upper(src: &[u8]) -> String {
     hex_string_custom_case(src, true)
 }
 
-#[inline]
-pub(crate) fn hex_encode_custom<'a>(
-    src: &[u8],
-    dst: &'a mut [u8],
-    upper_case: bool,
-) -> Result<&'a mut str, Error> {
-    // SAFETY: MaybeUninit has the same layout as u8. encode only writes initialized
-    // ASCII bytes; it never makes an existing byte uninitialized, including on error.
-    let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
-    encode(src, output, upper_case)
+// Keep size validation and the initialized-ASCII contract in one place. The
+// complete-buffer and prefix entry points inline separate NEON schedules.
+macro_rules! encoding_entries {
+    ($neon:path) => {
+        #[inline]
+        pub(crate) fn hex_encode_custom<'a>(
+            src: &[u8],
+            dst: &'a mut [u8],
+            upper_case: bool,
+        ) -> Result<&'a mut str, Error> {
+            // SAFETY: MaybeUninit has the same layout as u8. encode only writes initialized
+            // ASCII bytes; it never makes an existing byte uninitialized, including on error.
+            let output =
+                unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
+            encode(src, output, upper_case)
+        }
+
+        // The checked extent is shared by caller buffers, spare capacity and digit views.
+        #[inline]
+        pub(crate) fn encode<'a>(
+            src: &[u8],
+            dst: &'a mut [MaybeUninit<u8>],
+            upper_case: bool,
+        ) -> Result<&'a mut str, Error> {
+            let len = src.len().checked_mul(2).ok_or(Error::Overflow)?;
+            if dst.len() < len {
+                return Err(Error::OutputTooSmall { required: len });
+            }
+            let dst = &mut dst[..len];
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            {
+                match crate::vectorization_support() {
+                    crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
+                        // SAFETY: Dispatch checked AVX2 and the OS register state.
+                        unsafe { hex_encode_avx2(src, dst, upper_case) }
+                    }
+                    crate::Vectorization::SSE41 => {
+                        // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
+                        unsafe { hex_encode_sse41(src, dst, upper_case) }
+                    }
+                    crate::Vectorization::None => {
+                        hex_encode_custom_case_fallback(src, dst, upper_case)
+                    }
+                }
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                if src.len() < 8 {
+                    hex_encode_pairs(src, dst, upper_case);
+                } else {
+                    match crate::vectorization_support() {
+                        crate::Vectorization::Neon => {
+                            // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
+                            unsafe { $neon(src, dst, upper_case) }
+                        }
+                        crate::Vectorization::None => {
+                            hex_encode_custom_case_fallback(src, dst, upper_case)
+                        }
+                    }
+                }
+            }
+            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+            {
+                hex_encode_custom_case_fallback(src, dst, upper_case);
+            }
+            // SAFETY: Every backend initialized all len elements with ASCII, using the
+            // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
+            // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
+            Ok(unsafe {
+                core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(
+                    dst.as_mut_ptr().cast(),
+                    len,
+                ))
+            })
+        }
+    };
 }
 
-// One boundary for caller-owned bytes, allocation spare capacity and formatting:
-// validate the size, initialize the exact ASCII prefix, then return its string view.
-#[inline]
-pub(crate) fn encode<'a>(
-    src: &[u8],
-    dst: &'a mut [MaybeUninit<u8>],
-    upper_case: bool,
-) -> Result<&'a mut str, Error> {
-    let len = src.len().checked_mul(2).ok_or(Error::Overflow)?;
-    if dst.len() < len {
-        return Err(Error::OutputTooSmall { required: len });
-    }
-    let dst = &mut dst[..len];
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        match crate::vectorization_support() {
-            crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
-                // SAFETY: Dispatch checked AVX2 and the OS register state.
-                unsafe { hex_encode_avx2(src, dst, upper_case) }
-            }
-            crate::Vectorization::SSE41 => {
-                // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
-                unsafe { hex_encode_sse41(src, dst, upper_case) }
-            }
-            crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
-        }
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        if src.len() < 8 {
-            hex_encode_pairs(src, dst, upper_case);
-        } else {
-            match crate::vectorization_support() {
-                crate::Vectorization::Neon => {
-                    // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
-                    unsafe { hex_encode_neon(src, dst, upper_case) }
-                }
-                crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
-            }
-        }
-    }
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        hex_encode_custom_case_fallback(src, dst, upper_case);
-    }
-    // SAFETY: Every backend initialized all len elements with ASCII, using the
-    // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
-    // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
-    Ok(unsafe {
-        core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(
-            dst.as_mut_ptr().cast(),
-            len,
-        ))
-    })
-}
+encoding_entries!(hex_encode_neon);
 
 /// Encodes all of `src` as lowercase hex into `dst` without allocation.
 ///
@@ -506,75 +518,7 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
 pub(crate) mod prefix {
     use super::*;
 
-    #[inline]
-    pub(crate) fn hex_encode_custom<'a>(
-        src: &[u8],
-        dst: &'a mut [u8],
-        upper_case: bool,
-    ) -> Result<&'a mut str, Error> {
-        // SAFETY: MaybeUninit has the same layout as u8. encode only writes initialized
-        // ASCII bytes; it never makes an existing byte uninitialized, including on error.
-        let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
-        encode(src, output, upper_case)
-    }
-
-    // One boundary for caller-owned bytes, allocation spare capacity and formatting:
-    // validate the size, initialize the exact ASCII prefix, then return its string view.
-    #[inline]
-    pub(crate) fn encode<'a>(
-        src: &[u8],
-        dst: &'a mut [MaybeUninit<u8>],
-        upper_case: bool,
-    ) -> Result<&'a mut str, Error> {
-        let len = src.len().checked_mul(2).ok_or(Error::Overflow)?;
-        if dst.len() < len {
-            return Err(Error::OutputTooSmall { required: len });
-        }
-        let dst = &mut dst[..len];
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            match crate::vectorization_support() {
-                crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
-                    // SAFETY: Dispatch checked AVX2 and the OS register state.
-                    unsafe { hex_encode_avx2(src, dst, upper_case) }
-                }
-                crate::Vectorization::SSE41 => {
-                    // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
-                    unsafe { hex_encode_sse41(src, dst, upper_case) }
-                }
-                crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
-            }
-        }
-        #[cfg(target_arch = "aarch64")]
-        {
-            if src.len() < 8 {
-                hex_encode_pairs(src, dst, upper_case);
-            } else {
-                match crate::vectorization_support() {
-                    crate::Vectorization::Neon => {
-                        // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
-                        unsafe { hex_encode_neon(src, dst, upper_case) }
-                    }
-                    crate::Vectorization::None => {
-                        hex_encode_custom_case_fallback(src, dst, upper_case)
-                    }
-                }
-            }
-        }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            hex_encode_custom_case_fallback(src, dst, upper_case);
-        }
-        // SAFETY: Every backend initialized all len elements with ASCII, using the
-        // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
-        // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
-        Ok(unsafe {
-            core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(
-                dst.as_mut_ptr().cast(),
-                len,
-            ))
-        })
-    }
+    encoding_entries!(hex_encode_neon);
 
     // An odd digit count always selects at least the high nibble of the last byte.
     #[inline]
