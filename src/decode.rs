@@ -385,8 +385,12 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
+    if N > OWNED_DECODE_THRESHOLD {
+        // SAFETY: The length check above matched the number of input pairs to N.
+        unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
 }
 
@@ -452,8 +456,12 @@ pub fn hex_decode_vec_with_case(
         return Err(Error::OddLength);
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
-    // SAFETY: The vector has one byte for each pair of the even input.
-    unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
+    if bytes.len() > OWNED_DECODE_THRESHOLD {
+        // SAFETY: The vector has one byte for each pair of the even input.
+        unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
 }
 
@@ -499,6 +507,8 @@ pub fn hex_decode_append<'a>(
     Ok(&mut dst[start..])
 }
 
+const OWNED_DECODE_THRESHOLD: usize = 1024;
+
 /// Decodes into private output that the caller discards on error. Large inputs
 /// can commit a checked block at a time without re-reading valid input.
 ///
@@ -512,10 +522,10 @@ unsafe fn decode_owned<const GROUP_DIGITS: bool>(
     case: CheckCase,
 ) -> Result<(), Error> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    if !GROUP_DIGITS && dst.len() <= 1024 {
+    if !GROUP_DIGITS && dst.len() <= OWNED_DECODE_THRESHOLD {
         return hex_decode_with_case(src, dst, case).map(|_| ());
     }
-    let decoded = if dst.len() <= 1024 {
+    let decoded = if dst.len() <= OWNED_DECODE_THRESHOLD {
         // The caller established the exact lengths used by the bounded kernels.
         decode_checked(src, dst, case)
     } else {
