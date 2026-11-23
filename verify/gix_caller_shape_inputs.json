@@ -1,0 +1,32 @@
+{
+  "refs": {
+    "pr": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
+    "retained": "52c60128f1db630116456eda9b448f4286277ecf"
+  },
+  "anchors": {
+    "pr": {
+      ".text": [
+        19584,
+        276312,
+        "972a5af04db1c51eb87fa59255733e8b4d648b11168ae0f477c23135cb4d6397"
+      ],
+      ".rodata": [
+        295920,
+        24844,
+        "0483845ca7912de69fe0319f2905697cb33f66dcc154dd0009fa6611d0f73f0c"
+      ]
+    },
+    "retained": {
+      ".text": [
+        19584,
+        277096,
+        "4c0c11c6c5c032ec43bc0a6edcb2ae0e91196a55df80e25bc8b5d2313596a922"
+      ],
+      ".rodata": [
+        296704,
+        25356,
+        "cee28a6fb1b51b11173765b8dbbaf07f9bf6810531b9c4f02df3537058ee9015"
+      ]
+    }
+  }
+}
