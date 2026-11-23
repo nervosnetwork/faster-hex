@@ -25,12 +25,12 @@
 //! | Encode into a byte buffer | [`hex_encode`], [`hex_encode_upper`] |
 //! | Decode into a byte buffer | [`hex_decode`], [`hex_decode_with_case`] |
 //! | Decode an exact-length array | [`hex_decode_array`], [`hex_decode_array_with_case`] |
-//! | Format borrowed bytes into text | [`Hex`] with [`Display`](core::fmt::Display), [`LowerHex`](core::fmt::LowerHex) or [`UpperHex`](core::fmt::UpperHex) |
-//! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
+//! | Format bytes or a prefix of any digit count | [`Hex`], [`Hex::leading_digits`], [`LeadingDigits::encode_to`] |
+//! | Validate byte pairs or check individual digits | [`hex_validate`], [`hex_check`], [`hex_check_with_case`] |
 //!
 //! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
 //! `hex_append` and `hex_append_upper` reuse a string's capacity;
-//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors.
+//! `hex_decode_vec` creates a byte vector; `hex_decode_append` reuses one.
 //! The `heapless-09` feature provides fixed-capacity strings in `heapless_09`.
 //!
 //! # Conversion contracts
@@ -84,7 +84,7 @@
 //! selection, SIMD thresholds and instruction sequences are implementation details;
 //! no public backend selection or architecture-specific call is required.
 //!
-//! The minimum supported Rust version is 1.95.0 throughout the 2.0.x line.
+//! The minimum supported Rust version is 1.95.0.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
