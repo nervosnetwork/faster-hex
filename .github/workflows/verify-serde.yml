@@ -1,4 +1,4 @@
-name: Compare native error masks at the decode and recovery boundaries
+name: Check bulk encoding remainders and existing PR workloads
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -20,10 +20,10 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      COLD_MASK: 3c163709927c1c2eb9bcff6ef037690d57046003
-      DIRECT_MASK: 014fc8ca8d3e10887ef2350c098027547ce5d292
-      AUDIT_SHA: f6781c7ddde45013012afd390bc59fe68d155378
-      DIAGNOSTIC_ROUTE: "1"
+      SCALAR_REMAINDER: 9fe0c2fd7dbe306579fbd6e0a96a6be98ac48845
+      VECTOR_REMAINDER: 7e56debd7ed955d2ad8aee35804bb6e52f29b075
+      PR_BULK_REMAINDER: "1"
+      AUDIT_SHA: 2680b238f7c5c211aed329a70c8a30c669570ec9
       EPHEMERAL_BUILD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -45,24 +45,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Check exact error positions, output and rollback
+      - name: Check every encoding remainder, case, and output boundary
         shell: bash
         run: |
-          for role in cold direct; do
-            if [[ "$role" == cold ]]; then revision="$COLD_MASK"; else revision="$DIRECT_MASK"; fi
+          for revision in "$SCALAR_REMAINDER" "$VECTOR_REMAINDER"; do
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
-            (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/diag-tests" cargo test --release --all-features)
-            rustc --edition 2018 --crate-name faster_hex --crate-type rlib -O --cfg 'feature="alloc"' --cfg 'feature="std"' "$RUNNER_TEMP/$revision/src/lib.rs" -o "$RUNNER_TEMP/libfaster_hex.rlib"
-            rustc --edition 2021 -O --extern "faster_hex=$RUNNER_TEMP/libfaster_hex.rlib" verify/diagnostic_lookup_oracle.rs -o "$RUNNER_TEMP/check-errors"
-            "$RUNNER_TEMP/check-errors"
-            rustc --edition 2021 -O --extern "faster_hex=$RUNNER_TEMP/libfaster_hex.rlib" verify/owned_lane_oracle.rs -o "$RUNNER_TEMP/check-lanes"
-            "$RUNNER_TEMP/check-lanes"
-            python3 verify/native_mask_probe.py "$RUNNER_TEMP/$revision" "$role" | tee "$RUNNER_TEMP/mask-$role.txt"
+            (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/encode-tests" cargo test --release --all-features)
+            rustc --edition 2018 --crate-type rlib --crate-name faster_hex -O --cfg 'feature="std"' --cfg 'feature="alloc"' "$RUNNER_TEMP/$revision/src/lib.rs" -o "$RUNNER_TEMP/libfaster_hex.rlib"
+            rustc --edition 2021 -O --extern "faster_hex=$RUNNER_TEMP/libfaster_hex.rlib" verify/encode_residual_oracle.rs -o "$RUNNER_TEMP/encode-boundaries"
+            "$RUNNER_TEMP/encode-boundaries" | tee "$RUNNER_TEMP/encode-$revision.txt"
           done
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
-          cp "$RUNNER_TEMP"/mask-*.txt real/qualification/
+          cp "$RUNNER_TEMP"/encode-*.txt real/qualification/
         shell: bash
         env:
           ISOLATE: release-audit
@@ -70,9 +66,9 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: owned-masks-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: pr-encode-remainder-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
-            real/qualification/mask-*.txt
+            real/qualification/encode-*.txt
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt

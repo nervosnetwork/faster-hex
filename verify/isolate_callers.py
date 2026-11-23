@@ -182,7 +182,7 @@ for role,(version,files,checksum) in packages.items():
         sections[role+"/"+b]=section(img)
     if transient is not None: transient.cleanup()
 save(out/"sections.json",sections)
-if any(env.get(k)=='1' for k in ['INTEGRATED_CONFIRM','DIAGNOSTIC_BOUNDARY','PREFIX_ENTRY','DIAGNOSTIC_STEPS','DIAGNOSTIC_ROUTE']):
+if any(env.get(k)=='1' for k in ['INTEGRATED_CONFIRM','DIAGNOSTIC_BOUNDARY','PREFIX_ENTRY','DIAGNOSTIC_STEPS','DIAGNOSTIC_ROUTE','PR_BULK_REMAINDER']):
     fingerprints={}
     for key,text_section in sections.items():
         role,binary=key.split('/')
@@ -206,6 +206,8 @@ for b,n,k in cases:
     same_binary = SCOPE=='prefix-length' and b=='gix_prefix' and k.endswith('-adopt')
     def sample(role,repeat):
         how=k
+        if env.get("PR_BULK_REMAINDER")=="1" and role.endswith("_control"):
+            role=role.removesuffix("_control")
         if env.get('DIAGNOSTIC_ROUTE')=='1' and role=='local_control':role='local'
         if env.get('DIAGNOSTIC_ROUTE')=='1' and role=='cold_control':role='cold'
         if env.get('DIAGNOSTIC_STEPS')=='1' and role=='groups_control':role='groups'
@@ -248,6 +250,9 @@ for b,n,k in cases:
         if env.get('PREFIX_ENTRY')=='1':order.append('bounded_control')
         if env.get('DIAGNOSTIC_STEPS')=='1': order.append('groups_control')
         if env.get('DIAGNOSTIC_ROUTE')=='1': order += ['local_control','cold_control']
+        if env.get("PR_BULK_REMAINDER")=="1":
+            from pr_encode_residual_cases import controls
+            order.extend(r+"_control" for r in controls if r in order)
         if same_binary: order += ['pr-legacy','scoped-legacy','candidate-legacy']
         rng.shuffle(order);groups={r:[] for r in order}
         for role in order+order[::-1]:groups[role].append(sample(role,count))

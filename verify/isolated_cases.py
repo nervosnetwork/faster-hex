@@ -398,3 +398,6 @@ elif SCOPE == 'fmt-join':
     cases += [('prefix_format',n,'display') for n in (7,12,1023)]
     cases += [('gix_prefix',7,'sha1-adopt'),('full_buffer',65,'buffer'),('append_call',256,'valid')]
     assert len(cases)==len(set(cases))==50
+
+if os.environ.get("PR_BULK_REMAINDER") == "1":
+    from pr_encode_residual_cases import revisions, cases, pairs
