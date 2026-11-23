@@ -714,6 +714,14 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Re
             })
             .count();
         skipped + 4 * valid
+    } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
+        // Narrow a rejected block to one native 16-digit check before the byte scan.
+        let lanes = src[skipped..].as_chunks::<16>().0;
+        let valid = lanes
+            .iter()
+            .take_while(|lane| hex_check_with_case(lane.as_slice(), case))
+            .count();
+        skipped + 16 * valid
     } else {
         skipped
     };
