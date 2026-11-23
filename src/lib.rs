@@ -26,14 +26,11 @@
 //! | Decode into a byte buffer | [`hex_decode`], [`hex_decode_with_case`] |
 //! | Decode an exact-length array | [`hex_decode_array`], [`hex_decode_array_with_case`] |
 //! | Format borrowed bytes into text | [`Hex`] with [`Display`](core::fmt::Display), [`LowerHex`](core::fmt::LowerHex) or [`UpperHex`](core::fmt::UpperHex) |
-//! | Format the first few hex digits or write them into a buffer | [`Hex::leading_digits`], [`LeadingDigits::encode_to`] |
 //! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
-//! | Validate complete byte pairs with error positions | [`hex_validate`] |
 //!
-//! With `alloc`, `hex_string` and `hex_string_upper` create owned strings.
-//! `hex_append` and `hex_append_upper` reuse a string's capacity.
-//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors,
-//! and `hex_decode_append` appends to an existing one.
+//! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
+//! `hex_append` and `hex_append_upper` reuse a string's capacity;
+//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors.
 //! The `heapless-09` feature provides fixed-capacity strings in `heapless_09`.
 //!
 //! # Conversion contracts
@@ -65,7 +62,7 @@
 //! | Feature | Provides |
 //! | --- | --- |
 //! | None | Slice and fixed-array conversion, borrowed formatting, and `core::error::Error` |
-//! | `alloc` | Owned strings and byte vectors, including appending to either |
+//! | `alloc` | Owned strings and byte vectors; appending to strings |
 //! | `std` | `alloc` and standard-library support in enabled dependencies |
 //! | `serde` | Serde adapters and `alloc`; also works without `std` |
 //! | `heapless-09` | Fixed-capacity strings using `heapless` 0.9, without requiring `alloc` |
@@ -87,7 +84,7 @@
 //! selection, SIMD thresholds and instruction sequences are implementation details;
 //! no public backend selection or architecture-specific call is required.
 //!
-//! The minimum supported Rust version is 1.95.0.
+//! The minimum supported Rust version is 1.95.0 throughout the 2.0.x line.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -301,12 +298,27 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
         return Vectorization::None;
     }
 
-    x86::basic(
-        __cpuid_count(0, 0).eax,
-        || __cpuid_count(1, 0).ecx,
-        // SAFETY: basic checks XSAVE, OSXSAVE, AVX and CPUID leaf 7.
-        || unsafe { avx_support_no_cache_x86() },
-    )
+    // Query only supported basic leaves: out-of-range CPUID results may describe
+    // a different leaf, whose bits must not be interpreted as AVX2 support.
+    let max_leaf = __cpuid_count(0, 0).eax;
+    if max_leaf < 1 {
+        return Vectorization::None;
+    }
+    let proc_info_ecx = __cpuid_count(1, 0).ecx;
+    let have_sse4 = (proc_info_ecx >> 19) & 1 == 1;
+    // If there's no SSE4 there can't be AVX2.
+    if !have_sse4 {
+        return Vectorization::None;
+    }
+
+    let have_xsave = (proc_info_ecx >> 26) & 1 == 1;
+    let have_osxsave = (proc_info_ecx >> 27) & 1 == 1;
+    let have_avx = (proc_info_ecx >> 28) & 1 == 1;
+    if max_leaf >= 7 && have_xsave && have_osxsave && have_avx {
+        // SAFETY: XSAVE is available and enabled by the OS; leaf 7 exists.
+        return unsafe { avx_support_no_cache_x86() };
+    }
+    Vectorization::SSE41
 }
 
 // We enable xsave so it can inline the _xgetbv call.
@@ -325,16 +337,23 @@ unsafe fn avx_support_no_cache_x86() -> Vectorization {
     #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::{__cpuid_count, _xgetbv};
 
-    x86::extended(_xgetbv(0), || __cpuid_count(7, 0).ebx)
+    let xcr0 = _xgetbv(0);
+    let os_avx_support = xcr0 & 6 == 6;
+    if os_avx_support {
+        let extended_features_ebx = __cpuid_count(7, 0).ebx;
+        let have_avx2 = (extended_features_ebx >> 5) & 1 == 1;
+        if have_avx2 {
+            // AVX-512 needs opmask and both ZMM state components in addition
+            // to SSE/AVX state. CPUID alone is insufficient for safe dispatch.
+            let avx512 = (1 << 16) | (1 << 30); // AVX-512F and AVX-512BW.
+            if xcr0 & 0xe6 == 0xe6 && extended_features_ebx & avx512 == avx512 {
+                return Vectorization::AVX512;
+            }
+            return Vectorization::AVX2;
+        }
+    }
+    Vectorization::SSE41
 }
-
-#[cfg(all(
-    any(target_arch = "x86", target_arch = "x86_64"),
-    target_feature = "sse",
-    not(target_feature = "avx2"),
-    not(miri)
-))]
-mod x86;
 
 #[cfg(test)]
 mod tests;

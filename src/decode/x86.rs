@@ -620,8 +620,7 @@ pub(crate) unsafe fn hex_decode_avx2_owned(
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
         hex_decode_avx2_checked(input, output, case)?;
     }
-    // SAFETY: Each block consumes 64 input bytes and 32 output bytes.
-    unsafe { super::decode_checked(tail, rest, case) }
+    super::decode_checked(tail, rest, case)
 }
 
 #[target_feature(enable = "avx512f,avx512bw")]
@@ -635,6 +634,5 @@ pub(crate) unsafe fn hex_decode_avx512_owned(
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<64>().0) {
         hex_decode_avx512_checked(input, output, case)?;
     }
-    // SAFETY: Each block consumes 128 input bytes and 64 output bytes.
-    unsafe { super::decode_checked(tail, rest, case) }
+    super::decode_checked(tail, rest, case)
 }
