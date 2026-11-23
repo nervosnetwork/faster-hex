@@ -107,10 +107,9 @@ impl<'a> Hex<'a> {
     /// ```
     pub const fn leading_digits(self, count: usize) -> LeadingDigits<'a> {
         let available = self.bytes.len().saturating_mul(2);
-        LeadingDigits {
-            bytes: self.bytes,
-            digits: if count < available { count } else { available },
-        }
+        let digits = if count < available { count } else { available };
+        let (bytes, _) = self.bytes.split_at(digits.div_ceil(2));
+        LeadingDigits { bytes, digits }
     }
 }
 
@@ -272,14 +271,14 @@ impl LeadingDigits<'_> {
     #[inline]
     pub fn encode_to(self, dst: &mut [u8]) -> Result<&mut str, crate::Error> {
         let (pairs, tail) = self.bytes.split_at(self.digits / 2);
-        match (self.digits % 2, tail) {
-            (1, [last, ..]) => crate::encode::encode_odd(pairs, *last, dst),
-            _ => crate::hex_encode(pairs, dst),
+        match tail.first() {
+            Some(&last) => crate::encode::encode_odd(pairs, last, dst),
+            None => crate::hex_encode(pairs, dst),
         }
     }
 
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
-        let hex = Hex::new(&self.bytes[..self.digits.div_ceil(2)]);
+        let hex = Hex::new(self.bytes);
         if self.digits.is_multiple_of(2) {
             hex.format::<false>(f, upper)
         } else {
