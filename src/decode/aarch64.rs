@@ -97,10 +97,10 @@ unsafe fn decode_neon_block(high: uint8x16_t, low: uint8x16_t) -> uint8x16_t {
 }
 
 // 17..=32 decoded bytes fit in four input registers. Overlapping end
-// blocks cover the complete input; validate all registers before either store.
+// blocks cover the complete input. A caller-owned destination must survive an error.
 #[inline]
 #[target_feature(enable = "neon")]
-pub(super) unsafe fn hex_decode_bounded_neon(
+pub(super) unsafe fn hex_decode_bounded_neon<const PRIVATE_OUTPUT: bool>(
     src: &[u8],
     dst: &mut [u8],
     case: CheckCase,
@@ -109,12 +109,16 @@ pub(super) unsafe fn hex_decode_bounded_neon(
     let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), case);
     let c = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 32)), case);
     let d = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
-    if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
+    let invalid = vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15;
+    if !PRIVATE_OUTPUT && invalid {
         return Err(());
     }
     let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
     vst1q_u8(dst.as_mut_ptr(), pack(a, b));
     vst1q_u8(dst.as_mut_ptr().add(dst.len() - 16), pack(c, d));
+    if PRIVATE_OUTPUT && invalid {
+        return Err(());
+    }
     Ok(())
 }
 
@@ -193,7 +197,8 @@ pub(crate) unsafe fn hex_decode_neon_owned(
     let (blocks, tail) = src.as_chunks::<64>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
-        hex_decode_bounded_neon(input, output, case)?;
+        // The caller discards this output on error, so stores can precede the validity check.
+        hex_decode_bounded_neon::<true>(input, output, case)?;
     }
     // SAFETY: Each block consumes 64 input bytes and 32 output bytes.
     unsafe { super::decode_checked(tail, rest, case) }

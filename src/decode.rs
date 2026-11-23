@@ -539,7 +539,7 @@ pub(crate) unsafe fn decode_checked(
         if (17..=32).contains(&len) && crate::vectorization_support() == crate::Vectorization::Neon
         {
             // SAFETY: NEON is available; src has 34..=64 bytes and dst is its exact half.
-            return unsafe { aarch64::hex_decode_bounded_neon(src, dst, check_case) };
+            return unsafe { aarch64::hex_decode_bounded_neon::<false>(src, dst, check_case) };
         }
 
         #[cfg(target_arch = "aarch64")]
