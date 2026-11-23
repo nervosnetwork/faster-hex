@@ -150,6 +150,20 @@ elif SCOPE=='release-audit':
             for phase,kind in (('read_slice','plain'),('read_slice','escaped'),('read_reader','reader'),('write','plain'),('round_slice','plain'),('round_slice','escaped'),('round_reader','reader')):
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
+    if os.environ.get('DIAGNOSTIC_BOUNDARY')=='1':
+        revisions.update({'direct': '407cf594016b39c7bd338e5cdf375af69b40de73', 'split': 'a0b6d03c6a695968ed8de260cdb1085c3d02b0f6'})
+        pairs=[('scoped','aa'),('split','split_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
+        pairs += [(a,b) for a in ('release','version','pr','scoped') for b in ('direct','split')]
+        pairs += [('direct','split')]
+        selected={
+            ('qualified_decode',32,'valid'),('qualified_decode',4096,'valid'),
+            ('gix_caller',20,'parse'),('gix_prefix',7,'sha1-adopt'),('full_format',32,'alternate'),
+            ('validate_call',32,'valid'),('validate_call',32,'first'),('validate_call',32,'last'),('validate_call',4096,'last'),
+            ('append_call',32,'valid'),('append_call',1025,'valid'),('append_call',4097,'valid'),
+            ('append_call',32,'first'),('append_call',256,'middle'),('append_call',4096,'rollback')}
+        cases=[(op,n,k) for op,n,k in cases if op.startswith(('array_','vec_')) or op in ('owned_blocks','ckb_caller') or (op,n,k) in selected]
+        assert len(set(cases))==55
+
 
 elif SCOPE in ('legacy-errors','bounded-errors'):
     revisions={'release':RELEASE,'version':SAME_VERSION,'narrow':SCOPE_BASE,'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4','scoped':'fc834c71026b6d7f81738b53bd73237f408474ff','group':'8800debd7a36c84ba8a0ec455b9d1c4705cad6ba','one':'5ea9c7a3bb98706a5dcfa7eb36b0b37920109f4d'}
