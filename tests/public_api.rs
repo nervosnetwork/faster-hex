@@ -94,6 +94,23 @@ fn errors_have_stable_precedence_and_do_not_write() {
 }
 
 #[test]
+fn whole_input_validation_reports_the_first_invalid_byte() {
+    use faster_hex::hex_validate;
+    assert_eq!(hex_validate(b""), Ok(()));
+    assert_eq!(hex_validate(b"!ab"), Err(Error::OddLength));
+    let mut text = b"aF".repeat(4096);
+    assert_eq!(hex_validate(&text), Ok(()));
+    for index in [
+        0, 1, 15, 16, 17, 63, 64, 65, 255, 256, 257, 1023, 1024, 8190,
+    ] {
+        text[index] = 0xff;
+        text[index + 1] = b'!';
+        assert_invalid(hex_validate(&text).unwrap_err(), index, 0xff);
+        text[index..=index + 1].copy_from_slice(b"aF");
+    }
+}
+
+#[test]
 #[cfg(feature = "defmt-03")]
 fn defmt_formats_on_host_without_an_embedded_logger() {
     let error = hex_decode(b"0g", &mut [0]).unwrap_err();
@@ -239,15 +256,20 @@ fn diagnostics_identify_the_first_invalid_byte_for_each_policy() {
 
 #[test]
 fn diagnostic_block_skipping_keeps_byte_offsets_and_first_error() {
-    for len in [64, 66, 128, 130, 8192] {
-        for position in [0, 31, 32, 63, 64, 65, len - 1] {
+    for len in [2, 4, 6, 64, 66, 128, 130, 8192] {
+        for position in [0, 1, 2, 3, 4, 5, 31, 32, 63, 64, 65, len - 1] {
             if position >= len {
                 continue;
             }
+            let mut input = vec![b'0'; len];
+            input[len - 1] = 0xff;
+            input[position] = b'!';
+            assert_invalid(
+                faster_hex::hex_validate(&input).unwrap_err(),
+                position,
+                b'!',
+            );
             for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
-                let mut input = vec![b'0'; len];
-                input[len - 1] = 0xff;
-                input[position] = b'!';
                 let mut output = vec![0xa5; len / 2 + 3];
                 assert_invalid(
                     hex_decode_with_case(&input, &mut output, case).unwrap_err(),

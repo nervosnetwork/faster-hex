@@ -13,6 +13,7 @@ use core::arch::aarch64::*;
 use alloc::{string::String, vec::Vec};
 
 use core::mem::MaybeUninit;
+use core::slice::from_raw_parts_mut;
 
 use crate::error::Error;
 
@@ -88,73 +89,81 @@ pub fn hex_string_upper(src: &[u8]) -> String {
     hex_string_custom_case(src, true)
 }
 
-#[inline]
-pub(crate) fn hex_encode_custom<'a>(
-    src: &[u8],
-    dst: &'a mut [u8],
-    upper_case: bool,
-) -> Result<&'a mut str, Error> {
-    // SAFETY: MaybeUninit has the same layout as u8. encode only writes initialized
-    // ASCII bytes; it never makes an existing byte uninitialized, including on error.
-    let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
-    encode(src, output, upper_case)
+// Keep size validation and the initialized-ASCII contract in one place. The
+// complete-buffer and prefix entry points inline separate NEON schedules.
+macro_rules! encoding_entries {
+    ($neon:path) => {
+        #[inline]
+        pub(crate) fn hex_encode_custom<'a>(
+            src: &[u8],
+            dst: &'a mut [u8],
+            upper_case: bool,
+        ) -> Result<&'a mut str, Error> {
+            // SAFETY: MaybeUninit has the same layout as u8. encode only writes initialized
+            // ASCII bytes; it never makes an existing byte uninitialized, including on error.
+            let output = unsafe { from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
+            encode(src, output, upper_case)
+        }
+
+        // The checked extent is shared by caller buffers, spare capacity and digit views.
+        #[inline]
+        pub(crate) fn encode<'a>(
+            src: &[u8],
+            dst: &'a mut [MaybeUninit<u8>],
+            upper_case: bool,
+        ) -> Result<&'a mut str, Error> {
+            let len = src.len().checked_mul(2).ok_or(Error::Overflow)?;
+            if dst.len() < len {
+                return Err(Error::OutputTooSmall { required: len });
+            }
+            let dst = &mut dst[..len];
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            {
+                match crate::vectorization_support() {
+                    crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
+                        // SAFETY: Dispatch checked AVX2 and the OS register state.
+                        unsafe { hex_encode_avx2(src, dst, upper_case) }
+                    }
+                    crate::Vectorization::SSE41 => {
+                        // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
+                        unsafe { hex_encode_sse41(src, dst, upper_case) }
+                    }
+                    crate::Vectorization::None => {
+                        hex_encode_custom_case_fallback(src, dst, upper_case)
+                    }
+                }
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                if src.len() < 8 {
+                    hex_encode_pairs(src, dst, upper_case);
+                } else {
+                    match crate::vectorization_support() {
+                        crate::Vectorization::Neon => {
+                            // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
+                            unsafe { $neon(src, dst, upper_case) }
+                        }
+                        crate::Vectorization::None => {
+                            hex_encode_custom_case_fallback(src, dst, upper_case)
+                        }
+                    }
+                }
+            }
+            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+            {
+                hex_encode_custom_case_fallback(src, dst, upper_case);
+            }
+            // SAFETY: Every backend initialized all len elements with ASCII, using the
+            // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
+            // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
+            Ok(unsafe {
+                core::str::from_utf8_unchecked_mut(from_raw_parts_mut(dst.as_mut_ptr().cast(), len))
+            })
+        }
+    };
 }
 
-// One boundary for caller-owned bytes, allocation spare capacity and formatting:
-// validate the size, initialize the exact ASCII prefix, then return its string view.
-#[inline]
-pub(crate) fn encode<'a>(
-    src: &[u8],
-    dst: &'a mut [MaybeUninit<u8>],
-    upper_case: bool,
-) -> Result<&'a mut str, Error> {
-    let len = src.len().checked_mul(2).ok_or(Error::Overflow)?;
-    if dst.len() < len {
-        return Err(Error::OutputTooSmall { required: len });
-    }
-    let dst = &mut dst[..len];
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        match crate::vectorization_support() {
-            crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
-                // SAFETY: Dispatch checked AVX2 and the OS register state.
-                unsafe { hex_encode_avx2(src, dst, upper_case) }
-            }
-            crate::Vectorization::SSE41 => {
-                // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
-                unsafe { hex_encode_sse41(src, dst, upper_case) }
-            }
-            crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
-        }
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        if src.len() < 8 {
-            hex_encode_pairs(src, dst, upper_case);
-        } else {
-            match crate::vectorization_support() {
-                crate::Vectorization::Neon => {
-                    // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes.
-                    unsafe { hex_encode_neon(src, dst, upper_case) }
-                }
-                crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, upper_case),
-            }
-        }
-    }
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        hex_encode_custom_case_fallback(src, dst, upper_case);
-    }
-    // SAFETY: Every backend initialized all len elements with ASCII, using the
-    // exact 1:2 length ratio established above. MaybeUninit<u8> has u8's layout,
-    // and ASCII is valid UTF-8. Spare capacity is excluded from this string.
-    Ok(unsafe {
-        core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(
-            dst.as_mut_ptr().cast(),
-            len,
-        ))
-    })
-}
+encoding_entries!(hex_encode_neon);
 
 /// Encodes all of `src` as lowercase hex into `dst` without allocation.
 ///
@@ -489,7 +498,7 @@ fn hex_encode_pairs(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
 pub(crate) fn hex_encode_fallback(src: &[u8], dst: &mut [u8], upper: bool) {
     // SAFETY: The scalar encoder only writes initialized ASCII to complete pairs;
     // untouched bytes retain their previous initialized values, even for short dst.
-    let output = unsafe { core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
+    let output = unsafe { from_raw_parts_mut(dst.as_mut_ptr().cast(), dst.len()) };
     hex_encode_custom_case_fallback(src, output, upper);
 }
 
@@ -501,4 +510,101 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
     let high = vqtbl1q_u8(table, vshrq_n_u8::<4>(bytes));
     let low = vqtbl1q_u8(table, vandq_u8(bytes, vdupq_n_u8(15)));
     vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
+}
+
+pub(crate) mod prefix {
+    use super::*;
+
+    encoding_entries!(hex_encode_neon);
+
+    // An odd digit count always selects at least the high nibble of the last byte.
+    #[inline]
+    pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+        let (&last, pairs) = src.split_last().expect("an odd prefix selects a byte");
+        let required = pairs.len() * 2 + 1;
+        let output = dst
+            .get_mut(..required)
+            .ok_or(Error::OutputTooSmall { required })?;
+        let written = hex_encode(pairs, output)?.len();
+        output[written] = TABLE_LOWER[usize::from(last >> 4)];
+        // SAFETY: hex_encode wrote the complete pairs as ASCII. The only
+        // remaining byte was filled from the ASCII digit table.
+        Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
+    }
+
+    #[inline]
+    pub(crate) fn hex_encode<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+        hex_encode_custom(src, dst, false)
+    }
+
+    #[inline]
+    #[target_feature(enable = "neon")]
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) unsafe fn hex_encode_neon(
+        src: &[u8],
+        dst: &mut [MaybeUninit<u8>],
+        upper_case: bool,
+    ) {
+        let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
+        let table = vld1q_u8(table.as_ptr());
+        if src.len() > 32 {
+            return encode_neon_bulk(src, dst, table);
+        }
+        if src.len() < 8 {
+            return hex_encode_custom_case_fallback(src, dst, upper_case);
+        }
+        if src.len() < 16 {
+            if let (Some(input), Some(output)) =
+                (src.first_chunk::<8>(), dst.first_chunk_mut::<16>())
+            {
+                encode_neon_8(input, output, table);
+            }
+            if src.len() > 8 {
+                if let (Some(input), Some(output)) =
+                    (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
+                {
+                    encode_neon_8(input, output, table);
+                }
+            }
+            return;
+        }
+        // First and last vectors cover a short hash. Overlap writes the same digits.
+        if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
+            encode_neon_16(input, output, table);
+        }
+        if src.len() > 16 {
+            if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+                encode_neon_16(input, output, table);
+            }
+        }
+    }
+
+    #[inline]
+    #[target_feature(enable = "neon")]
+    #[cfg(target_arch = "aarch64")]
+    unsafe fn encode_neon_bulk(src: &[u8], dst: &mut [MaybeUninit<u8>], table: uint8x16_t) {
+        let (batches, rest) = src.as_chunks::<64>();
+        let (outputs, remaining) = dst.as_chunks_mut::<128>();
+        for (input, output) in batches.iter().zip(outputs) {
+            for (input, output) in input
+                .as_chunks::<16>()
+                .0
+                .iter()
+                .zip(output.as_chunks_mut::<32>().0)
+            {
+                encode_neon_16(input, output, table);
+            }
+        }
+        let (blocks, tail) = rest.as_chunks::<16>();
+        for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<32>().0) {
+            encode_neon_16(input, output, table);
+        }
+        if !tail.is_empty() {
+            // Re-encode the last complete block to cover a short tail. The overlap
+            // writes the same bytes and never accesses outside either slice.
+            if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+                encode_neon_16(input, output, table);
+            }
+        }
+    }
 }
