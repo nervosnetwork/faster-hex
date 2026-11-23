@@ -508,32 +508,34 @@ pub fn hex_decode_append<'a>(
 #[inline(always)]
 unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    // Short outputs share the slice decoder's bounded kernels.
-    if dst.len() <= 1024 {
-        return hex_decode_with_case(src, dst, case).map(|_| ());
-    }
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let decoded = match crate::vectorization_support() {
-        crate::Vectorization::AVX512 => {
-            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
-            // have the exact 2:1 ratio, and output is private until success.
-            unsafe { x86::hex_decode_avx512_owned(src, dst, case) }
-        }
-        crate::Vectorization::AVX2 => {
-            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
-            unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
-        }
-        _ => decode_checked(src, dst, case),
-    };
-    #[cfg(target_arch = "aarch64")]
-    let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
-        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
-        unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
-    } else {
+    let decoded = if dst.len() <= 1024 {
+        // The caller established the exact lengths used by the bounded kernels.
         decode_checked(src, dst, case)
+    } else {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        let decoded = match crate::vectorization_support() {
+            crate::Vectorization::AVX512 => {
+                // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
+                // have the exact 2:1 ratio, and output is private until success.
+                unsafe { x86::hex_decode_avx512_owned(src, dst, case) }
+            }
+            crate::Vectorization::AVX2 => {
+                // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
+                unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
+            }
+            _ => decode_checked(src, dst, case),
+        };
+        #[cfg(target_arch = "aarch64")]
+        let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
+            // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
+            unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
+        } else {
+            decode_checked(src, dst, case)
+        };
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+        let decoded = decode_checked(src, dst, case);
+        decoded
     };
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    let decoded = decode_checked(src, dst, case);
     if decoded.is_err() {
         decode_diagnosed(src, dst, case)?;
     }
