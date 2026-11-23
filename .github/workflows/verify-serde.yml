@@ -1,4 +1,4 @@
-name: Measure selected-prefix and complete buffer encoding separately
+name: Measure gix prefix adoption through the public method
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -17,12 +17,6 @@ jobs:
           - { os: ubuntu-24.04, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
-    env:
-      DONOR_SHA: 09a50778d4d210a27fcaba7cc993a18e918ca4f6
-      BOUNDED_SHA: d1ffe8ee992bd5267eced3c3e4b7e34340beb664
-      AUDIT_SHA: 88eccb90f29402f8e2a0b00d1d5d0a72b05f91bd
-      PREFIX_ENTRY: "1"
-      EPHEMERAL_BUILD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -43,17 +37,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Check prefix writes against guard pages
-        shell: bash
-        run: |
-          for revision in "$DONOR_SHA" "$BOUNDED_SHA"; do
-            git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
-            cat verify/guarded_prefix_addition.rs >> "$RUNNER_TEMP/$revision/src/tests/guarded.rs"
-            (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/fmt-tests" cargo test --release --all-features)
-          done
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/isolate_callers.py
+          python3 verify/gix_adoption.py
         shell: bash
         env:
           ISOLATE: release-audit
@@ -61,8 +47,8 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: prefix-entry-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: gix-adoption-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
-            real/qualification/archives.json
-            real/qualification/*/*.json
-            real/qualification/*/*.txt
+            gix-check/qualification/archives.json
+            gix-check/qualification/*/*.json
+            gix-check/qualification/*/*.txt
