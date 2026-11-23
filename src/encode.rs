@@ -546,19 +546,30 @@ pub(crate) fn encode_prefix_pairs<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&
 #[cfg(target_arch = "aarch64")]
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn encode_prefix_neon(src: &[u8], output: &mut [MaybeUninit<u8>]) {
-    if (16..=32).contains(&src.len()) {
-        // First and last vectors cover the whole hash. Overlap writes identical digits.
-        let table = vld1q_u8(TABLE_LOWER.as_ptr());
-        if let (Some(input), Some(first)) = (src.first_chunk(), output.first_chunk_mut()) {
-            encode_neon_16(input, first, table);
+unsafe fn encode_prefix_neon(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+    if src.len() > 32 {
+        return hex_encode_neon(src, dst, false);
+    }
+    let table = vld1q_u8(TABLE_LOWER.as_ptr());
+    if src.len() < 16 {
+        if let (Some(input), Some(output)) = (src.first_chunk::<8>(), dst.first_chunk_mut::<16>()) {
+            encode_neon_8(input, output, table);
         }
-        if src.len() > 16 {
-            if let (Some(input), Some(last)) = (src.last_chunk(), output.last_chunk_mut()) {
-                encode_neon_16(input, last, table);
+        if src.len() > 8 {
+            if let (Some(input), Some(output)) = (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
+            {
+                encode_neon_8(input, output, table);
             }
         }
-    } else {
-        hex_encode_neon(src, output, false);
+        return;
+    }
+    // First and last vectors cover a short hash. Overlap writes the same digits.
+    if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
+        encode_neon_16(input, output, table);
+    }
+    if src.len() > 16 {
+        if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+            encode_neon_16(input, output, table);
+        }
     }
 }

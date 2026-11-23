@@ -272,9 +272,6 @@ impl LeadingDigits<'_> {
 
     #[inline]
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
-        if !self.omit_low_nibble {
-            return self.hex.format(f, upper);
-        }
         let prefix = match (f.sign_plus(), f.alternate()) {
             (false, false) => "",
             (false, true) => "0x",
@@ -282,12 +279,20 @@ impl LeadingDigits<'_> {
             (true, true) => "+0x",
         };
         if let Some(width) = f.width() {
-            return self.format_padded(f, upper, prefix, width);
+            return if self.omit_low_nibble {
+                self.format_padded(f, upper, prefix, width)
+            } else {
+                self.hex.format_padded(f, upper, width)
+            };
         }
         if !prefix.is_empty() {
             f.write_str(prefix)?;
         }
-        self.write_odd(f, upper)
+        if self.omit_low_nibble {
+            self.write_odd(f, upper)
+        } else {
+            self.hex.write_hex(f, upper)
+        }
     }
 
     #[inline(never)]
