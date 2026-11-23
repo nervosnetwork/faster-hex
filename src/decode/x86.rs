@@ -320,6 +320,55 @@ pub(crate) unsafe fn hex_decode_sse41_checked(
     Ok(())
 }
 
+// Decode one 64-digit block. A set bit identifies an invalid source byte.
+// On rejection the caller retains its entire original output.
+pub(super) fn decode_block_mask(
+    src: &[u8; 64],
+    dst: &mut [u8; 32],
+    case: CheckCase,
+) -> Option<u64> {
+    match crate::vectorization_support() {
+        // SAFETY: dispatch checks the instruction set and OS register state.
+        crate::Vectorization::AVX512 => Some(unsafe { decode_block_mask_avx512(src, dst, case) }),
+        // SAFETY: dispatch checks AVX2 and OS register state.
+        crate::Vectorization::AVX2 => Some(unsafe { decode_block_mask_avx2(src, dst, case) }),
+        _ => None,
+    }
+}
+
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_block_mask_avx2(src: &[u8; 64], dst: &mut [u8; 32], case: CheckCase) -> u64 {
+    // SAFETY: the two loads consume disjoint halves of the input array.
+    let (a, a_checked) =
+        unsafe { decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case) };
+    // SAFETY: the second complete register starts 32 bytes into the array.
+    let (b, b_checked) =
+        unsafe { decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case) };
+    if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
+        let low = _mm256_movemask_epi8(a_checked) as u32;
+        let high = _mm256_movemask_epi8(b_checked) as u32;
+        return u64::from(low) | (u64::from(high) << 32);
+    }
+    // SAFETY: every digit was valid and the packed bytes fill the output array.
+    unsafe { _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b)) };
+    0
+}
+
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn decode_block_mask_avx512(src: &[u8; 64], dst: &mut [u8; 32], case: CheckCase) -> u64 {
+    // SAFETY: the unaligned load fits the input array.
+    let (nibbles, checked) =
+        unsafe { decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case) };
+    let invalid = _mm512_movepi8_mask(checked);
+    if invalid == 0 {
+        // SAFETY: the checked packed result fits the output array.
+        unsafe { _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(nibbles)) };
+    }
+    invalid
+}
+
 #[target_feature(enable = "avx2")]
 #[inline]
 pub(crate) unsafe fn hex_decode_avx2_checked(
@@ -330,15 +379,10 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
     debug_assert!(src.len() >= 16);
     // Common fixed sizes use constant offsets and avoid duplicate tail loads.
     // Every branch validates the complete input before its first store.
-    if src.len() == 64 {
-        let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        let (b, b_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
-        if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
-            return Err(());
-        }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
-        return Ok(());
+    if let (Some(input), Some(output)) = (src.as_array::<64>(), dst.as_mut_array::<32>()) {
+        // SAFETY: this function requires AVX2.
+        let invalid = unsafe { decode_block_mask_avx2(input, output, case) };
+        return if invalid == 0 { Ok(()) } else { Err(()) };
     }
     if src.len() == 32 {
         let (nibbles, checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
@@ -439,14 +483,12 @@ pub(crate) unsafe fn hex_decode_avx512_checked(
     if src.len() < 64 {
         return hex_decode_avx2_checked(src, dst, case);
     }
-    if src.len() == 64 {
-        let (nibbles, checked) =
-            decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
-        if _mm512_movepi8_mask(checked) != 0 {
-            return Err(());
-        }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(nibbles));
-    } else if src.len() <= 128 {
+    if let (Some(input), Some(output)) = (src.as_array::<64>(), dst.as_mut_array::<32>()) {
+        // SAFETY: this function requires AVX-512F and AVX-512BW.
+        let invalid = unsafe { decode_block_mask_avx512(input, output, case) };
+        return if invalid == 0 { Ok(()) } else { Err(()) };
+    }
+    if src.len() <= 128 {
         let (a, a_checked) = decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
         let (b, b_checked) = decode_avx512_nibbles(
             _mm512_loadu_si512(src.as_ptr().add(src.len() - 64).cast()),

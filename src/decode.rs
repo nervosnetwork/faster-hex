@@ -298,6 +298,19 @@ pub fn hex_decode_with_case<'a>(
     let dst = dst
         .get_mut(..len)
         .ok_or(Error::OutputTooSmall { required: len })?;
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if let (Some(input), Some(output)) = (src.as_array::<64>(), dst.as_mut_array::<32>()) {
+        if let Some(invalid) = x86::decode_block_mask(input, output, check_case) {
+            if invalid != 0 {
+                let index = invalid.trailing_zeros() as usize;
+                return Err(Error::InvalidChar {
+                    index,
+                    byte: input[index],
+                });
+            }
+            return Ok(dst);
+        }
+    }
     // SAFETY: The input is even and dst is the exact output prefix checked above.
     if unsafe { decode_checked(src, dst, check_case) }.is_err() {
         decode_diagnosed(src, dst, check_case)?;
