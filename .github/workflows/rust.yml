@@ -219,15 +219,16 @@ jobs:
           RUSTFLAGS: -D warnings
         run: |
           while read -r cpu expected; do
-            CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER="qemu-i386 -cpu $cpu" \
+            echo "$cpu -> $expected"
+            CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="qemu-x86_64 -cpu $cpu" \
               FASTER_HEX_EXPECT_BACKEND="$expected" cargo test --release --all-features \
-                --target i686-unknown-linux-gnu --lib tests::feature_detection_matches_host -- --exact
+                --target x86_64-unknown-linux-gnu --lib tests::feature_detection_matches_host -- --exact
           done <<'CPUS'
-          max,-sse4.1 None
-          max,-xsave SSE41
-          max,-avx SSE41
-          max,-avx2 SSE41
-          max,-avx512bw AVX2
+          Conroe None
+          Nehalem SSE41
+          SandyBridge,-xsave,-avx SSE41
+          SandyBridge SSE41
+          Haswell-noTSX AVX2
           CPUS
 
   api:
