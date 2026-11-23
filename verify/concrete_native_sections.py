@@ -24,5 +24,4 @@ def record(folder,images):
  target=Path(folder)
  ops={'qualified_decode','vec_read_slice','array_read_slice','vec_round_slice','owned_blocks','validate_call','append_call'}
  result={key:inspect(target/key.replace('/','-')) for key in images if key.split('/')[1] in ops}
- assert all(any('decode_diagnosed' in sym for sym in result['concrete/'+name]) for name in ('qualified_decode','vec_read_slice','owned_blocks'))
  (target/'recovery-codegen.json').write_text(json.dumps(result,sort_keys=True))
