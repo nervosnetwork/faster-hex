@@ -61,6 +61,15 @@ pub struct Hex<'a> {
     bytes: &'a [u8],
 }
 
+/// A borrowed view of the leading hexadecimal digits selected by [`Hex::leading_digits`].
+/// Supports the same formatting flags as [`Hex`].
+#[derive(Clone, Copy, Debug)]
+#[must_use]
+pub struct LeadingDigits<'a> {
+    bytes: &'a [u8],
+    omit_low_nibble: bool,
+}
+
 impl<'a> Hex<'a> {
     /// Borrows bytes for hexadecimal formatting without copying or allocating.
     ///
@@ -80,6 +89,37 @@ impl<'a> Hex<'a> {
         Self { bytes }
     }
 
+    /// Shows at most `count` leading hex digits, excluding any sign or `0x`.
+    ///
+    /// An odd count includes only the high nibble of the last byte. A larger
+    /// count shows the complete input. Width and padding apply to the visible digits.
+    ///
+    /// ```
+    /// use faster_hex::Hex;
+    /// let short = Hex::new(&[0xde, 0xad, 0xbe, 0xef]).leading_digits(7);
+    /// assert_eq!(format!("{short}"), "deadbee");
+    /// assert_eq!(format!("{short:#X}"), "0xDEADBEE");
+    /// ```
+    pub const fn leading_digits(self, count: usize) -> LeadingDigits<'a> {
+        if count / 2 >= self.bytes.len() {
+            return self.all_digits();
+        }
+        LeadingDigits {
+            bytes: self.bytes.split_at(count.div_ceil(2)).0,
+            omit_low_nibble: !count.is_multiple_of(2),
+        }
+    }
+
+    const fn all_digits(self) -> LeadingDigits<'a> {
+        LeadingDigits {
+            bytes: self.bytes,
+            omit_low_nibble: false,
+        }
+    }
+}
+
+impl LeadingDigits<'_> {
+    #[inline]
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         // The usual hash/logging format has no field width. It needs neither
         // encoded-length arithmetic nor alignment/padding calculations.
@@ -102,10 +142,8 @@ impl<'a> Hex<'a> {
         let sign = if f.sign_plus() { "+" } else { "" };
         // Saturation is sufficient for width comparison: if the complete output
         // exceeds usize::MAX characters, no representable width adds padding.
-        let len = self
-            .bytes
-            .len()
-            .saturating_mul(2)
+        let digits = self.bytes.len().saturating_mul(2) - usize::from(self.omit_low_nibble);
+        let len = digits
             .saturating_add(prefix.len())
             .saturating_add(sign.len());
         let padding = width.saturating_sub(len);
@@ -145,7 +183,7 @@ impl<'a> Hex<'a> {
             let mut buffer = [MaybeUninit::uninit(); 256];
             let text = encode(self.bytes, &mut buffer, upper)
                 .expect("short input fits the fixed encoding buffer");
-            return f.write_str(text);
+            return f.write_str(&text[..text.len() - usize::from(self.omit_low_nibble)]);
         }
         self.write_long(f, upper)
     }
@@ -154,13 +192,17 @@ impl<'a> Hex<'a> {
     #[inline(never)]
     fn write_long(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         let mut buffer = [MaybeUninit::uninit(); 1024];
-        for chunk in self.bytes.chunks(buffer.len() / 2) {
+        let mut remaining = self.bytes;
+        while !remaining.is_empty() {
+            let (chunk, tail) = remaining.split_at(remaining.len().min(buffer.len() / 2));
+            remaining = tail;
             // Each chunk is at most half this fixed, nonempty buffer. Its
             // encoded length cannot overflow or exceed capacity. Keep the
             // checked encoder's initialization boundary intact.
             let text = encode(chunk, &mut buffer, upper)
                 .expect("each chunk fits the fixed encoding buffer");
-            f.write_str(text)?;
+            let trim = self.omit_low_nibble && remaining.is_empty();
+            f.write_str(&text[..text.len() - usize::from(trim)])?;
         }
         Ok(())
     }
@@ -190,17 +232,35 @@ fn write_fill(f: &mut fmt::Formatter<'_>, fill: char, mut count: usize) -> fmt::
 
 impl fmt::Display for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format(f, false)
+        self.all_digits().format(f, false)
     }
 }
 
 impl fmt::LowerHex for Hex<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format(f, false)
+        self.all_digits().format(f, false)
     }
 }
 
 impl fmt::UpperHex for Hex<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.all_digits().format(f, true)
+    }
+}
+
+impl fmt::Display for LeadingDigits<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.format(f, false)
+    }
+}
+
+impl fmt::LowerHex for LeadingDigits<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.format(f, false)
+    }
+}
+
+impl fmt::UpperHex for LeadingDigits<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f, true)
     }
