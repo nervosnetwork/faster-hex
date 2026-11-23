@@ -1,42 +1,103 @@
-name: Verify the matched Cargo identities and sample the measured Linux callers
+name: Compare 4 KiB JSON with matched and published package versions on N2
 on: workflow_dispatch
 permissions:
   contents: read
-env:
-  RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
-  compare:
-    name: ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  checks:
+    name: ${{ matrix.os }} / ${{ matrix.profile }} / ${{ matrix.isa }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04, lto: "thin" }
-          - { os: ubuntu-24.04, lto: "false" }
-          - { os: ubuntu-24.04-arm, lto: "thin" }
-          - { os: ubuntu-24.04-arm, lto: "false" }
+          - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
+      EPHEMERAL_BUILD: "1"
+      AUDIT_SHA: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nervosnetwork/ckb
+          ref: 2061bc092a5dd447a741fad03b02628203b35e96
+          path: real/ckb
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: GitoxideLabs/gitoxide
+          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
+          path: real/gitoxide
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
-        with:
-          python-version: "3.11"
-      - name: Verify same-source Cargo identity and profile matched source builds
+      - name: Prepare the original pinned downstream workload
+        run: |
+          git archive de46dc1b04130b289ee18f0ede65c3654e00ad16 verify | tar -x
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import json
+          path = Path('verify/source_version_inputs.json')
+          spec = json.loads(path.read_text())
+          spec['refs']['candidate'] = 'd63e0a69bd3fab4d1b3261782f99f10701e1e400'
+          del spec['refs']['pr']
+          path.write_text(json.dumps(spec))
+          path = Path('verify/measure_source_version.py')
+          script = path.read_text()
+          pair = ', ("version/native","pr/native")'
+          assert script.count(pair) == 1
+          path.write_text(script.replace(pair, ''))
+          PYCODE
+      - name: Prepare the original and candidate manifests
+        run: |
+          mkdir baseline candidate
+          git archive 6d84260fe321669e7f93ecfb8aecb4db0f582f14 | tar -x -C baseline
+          git archive d63e0a69bd3fab4d1b3261782f99f10701e1e400 | tar -x -C candidate
+      - name: Match the package version and dependencies for source comparisons
+        shell: bash
+        run: |
+          package_version() {
+            cargo metadata --manifest-path "$1/Cargo.toml" --no-deps --format-version 1 |
+              jq -er '.packages[] | select(.name == "faster-hex").version'
+          }
+          before=$(package_version baseline)
+          version=$(package_version candidate)
+          echo "Source comparison uses faster-hex $version for both builds (baseline ref declares $before)"
+          if [[ "$before" != "$version" ]]; then
+            # Cargo includes the package version in the crate identity used for code generation.
+            awk -v version="$version" '
+              /^[[:space:]]*\[/ { package = $0 ~ /^[[:space:]]*\[package\][[:space:]]*(#.*)?$/ }
+              package && /^[[:space:]]*version[[:space:]]*=/ { $0 = "version = \"" version "\"" }
+              { print }
+            ' baseline/Cargo.toml > baseline/Cargo.toml.bench
+            mv baseline/Cargo.toml.bench baseline/Cargo.toml
+            [[ "$(package_version baseline)" == "$version" ]]
+          fi
+          cargo fetch --manifest-path baseline/Cargo.toml
+          cp baseline/Cargo.lock candidate/Cargo.lock
+          cargo fetch --locked --manifest-path candidate/Cargo.toml
+      - name: Verify the matched manifest against the measured package
+        run: |
+          git show f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93:Cargo.toml | cmp - baseline/Cargo.toml
+      - name: Measure matched source, the published crate and controlled link order
+        shell: bash
         env:
-          CELL: ${{ matrix.os }}-lto-${{ matrix.lto }}
-        run: python verify/kernel-experiment.py "$CELL"
+          ISOLATE: release-audit
+          PROFILE: ${{ matrix.profile }}
+          HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+        run: |
+          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
+          python3 verify/measure_source_version.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: kernel-${{ matrix.os }}-lto-${{ matrix.lto }}
-          path: out
-          if-no-files-found: error
+          name: current-version-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          path: |
+            real/qualification/archives.json
+            real/qualification/*/*.log
+            real/qualification/*/*.json
+            real/qualification/*/*-vs-*/*.json
