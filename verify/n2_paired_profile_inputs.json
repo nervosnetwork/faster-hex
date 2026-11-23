@@ -1,0 +1,47 @@
+{
+  "refs": {
+    "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
+    "version": "f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93",
+    "combined_paths": "14fd8387bd89cf1c3f792b36c4e74ca13a3df3dc"
+  },
+  "anchors": {
+    "ubuntu-24.04-arm-thin-runtime": {
+      "release/vec_round_slice": {
+        ".text": [
+          19904,
+          280712,
+          "ef6f71d9904ebcce347c4f2485bb55d0648bf7b8e366abdc358b526ebcbda02b"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "b1e430967f7ef53f3f5c718368ec1f885a67e9ceb7b377914b5b021bca6933f6"
+        ]
+      },
+      "version/vec_round_slice": {
+        ".text": [
+          19904,
+          280712,
+          "beb314a5cb52e740fe5e231ff6e676680e305a886bee3a6f92d148a01fb05a95"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "5ee4c120da8b8e307824141b6419c7a8c63c73b52666c3999602e15ef01e18d1"
+        ]
+      },
+      "combined_paths/vec_round_slice": {
+        ".text": [
+          19904,
+          280712,
+          "ece468f05fe27d17eabe6bbf4f139c8786da9b9c1c8f3bc9072f8c31bf51a250"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "9df86aba9c8057803c9db3663a9ab6aacf4e1ecd56a25586eaa8f354e190f41c"
+        ]
+      }
+    }
+  }
+}
