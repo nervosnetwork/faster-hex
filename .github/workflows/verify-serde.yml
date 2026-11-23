@@ -1,4 +1,4 @@
-name: Compare minor crate versions on native N2
+name: Restore the allocator object's input order on native N2
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -37,7 +37,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Compare package versions with the same downstream JSON caller
+      - name: Move one existing object during final linking and time the original caller
         shell: bash
         env:
           ISOLATE: release-audit
@@ -45,11 +45,11 @@ jobs:
           HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/package_version_timing.py
+          python3 verify/measure_allocator_order.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: minor-package-versions-n2-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: allocator-input-order-n2-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
