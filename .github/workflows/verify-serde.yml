@@ -14,7 +14,6 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, profile: thin, isa: runtime }
-          - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
       EPHEMERAL_BUILD: "1"
       AUDIT_SHA: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
@@ -38,6 +37,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
       - name: Compare public Prefix and oid writers with matched package identities
         shell: bash
         env:
