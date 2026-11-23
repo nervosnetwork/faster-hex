@@ -270,6 +270,7 @@ impl LeadingDigits<'_> {
         }
     }
 
+    #[inline]
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         if !self.omit_low_nibble {
             return self.hex.format(f, upper);
@@ -280,13 +281,23 @@ impl LeadingDigits<'_> {
             (true, false) => "+",
             (true, true) => "+0x",
         };
-        let Some(width) = f.width() else {
-            if !prefix.is_empty() {
-                f.write_str(prefix)?;
-            }
-            return self.write_odd(f, upper);
-        };
+        if let Some(width) = f.width() {
+            return self.format_padded(f, upper, prefix, width);
+        }
+        if !prefix.is_empty() {
+            f.write_str(prefix)?;
+        }
+        self.write_odd(f, upper)
+    }
 
+    #[inline(never)]
+    fn format_padded(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        upper: bool,
+        prefix: &str,
+        width: usize,
+    ) -> fmt::Result {
         let digits = self.hex.bytes.len().saturating_mul(2) - 1;
         let padding = width.saturating_sub(digits.saturating_add(prefix.len()));
         let zero_pad = f.sign_aware_zero_pad();
@@ -311,16 +322,31 @@ impl LeadingDigits<'_> {
         write_fill(f, fill, right)
     }
 
+    #[inline]
     fn write_odd(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
         let bytes = self.hex.bytes;
-        let (whole, tail) = bytes.split_at(bytes.len().saturating_sub(128));
-        if !whole.is_empty() {
-            Hex::new(whole).write_hex(f, upper)?;
+        if bytes.len() > 128 {
+            return self.write_long_odd(f, upper);
         }
-        // An odd prefix has a final byte. Only the last low nibble is omitted.
         let mut buffer = [MaybeUninit::uninit(); 256];
-        let digits = encode(tail, &mut buffer, upper).map_err(|_| fmt::Error)?;
+        let digits =
+            encode(bytes, &mut buffer, upper).expect("short input fits the fixed encoding buffer");
         f.write_str(&digits[..digits.len() - 1])
+    }
+
+    #[inline(never)]
+    fn write_long_odd(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
+        let mut buffer = [MaybeUninit::uninit(); 1024];
+        let mut remaining = self.hex.bytes;
+        while !remaining.is_empty() {
+            let (chunk, tail) = remaining.split_at(remaining.len().min(buffer.len() / 2));
+            let text = encode(chunk, &mut buffer, upper)
+                .expect("each chunk fits the fixed encoding buffer");
+            let trim = usize::from(tail.is_empty());
+            f.write_str(&text[..text.len() - trim])?;
+            remaining = tail;
+        }
+        Ok(())
     }
 }
 
