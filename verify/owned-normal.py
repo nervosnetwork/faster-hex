@@ -76,21 +76,22 @@ for tag, ref in targets:
     save('source-locations.json', observed)
     print(tag, observed[tag], flush=True)
 
-# Trace the real benchmark case independently of its mangled symbol hash.
-addr = observed['base']['vec'][0]
-main = next(int(line.split()[0], 16) for line in run(['nm', '-n', str(programs['base'])]).splitlines()
-            if line.endswith(' T main'))
-gdb = w / 'check-caller.gdb'
-gdb.write_text('set pagination off\nset confirm off\nset debuginfod enabled off\nset language c\n'
-               'set disable-randomization off\ntbreak main\nrun\n'
-               + "python slide = int(gdb.parse_and_eval('(unsigned long)&main')) - " + str(main) + '\n'
-               + "python b = gdb.Breakpoint('*'+hex(slide+" + str(addr) + '), temporary=True)\n'
-               + "continue\npython print('OWNED_CALLER',hex(int(gdb.parse_and_eval('$pc'))-slide))\n")
-argv = ['--bench', '^decode_vec/faster_hex/4096$', '--profile-time', '2', '--noplot']
-result = sp.run(['gdb', '-q', '-nx', '--batch', '-x', str(gdb), '--args', str(programs['base']), *argv],
-                cwd=src, stdout=sp.PIPE, stderr=sp.STDOUT, text=True)
-(out / 'actual-caller.txt').write_text(result.stdout[-3000:])
-assert 'OWNED_CALLER '+hex(addr) in result.stdout, result.stdout[-1800:]
+def confirm_actual():
+    # Trace the real benchmark case independently of its mangled symbol hash.
+    addr = observed['base']['vec'][0]
+    main = next(int(line.split()[0], 16) for line in run(['nm', '-n', str(programs['base'])]).splitlines()
+                if line.endswith(' T main'))
+    gdb = w / 'check-caller.gdb'
+    gdb.write_text('set pagination off\nset confirm off\nset debuginfod enabled off\nset language c\n'
+                   'set disable-randomization off\ntbreak main\nrun\n'
+                   + "python slide = int(gdb.parse_and_eval('(unsigned long)&main')) - " + str(main) + '\n'
+                   + "python b = gdb.Breakpoint('*'+hex(slide+" + str(addr) + '), temporary=True)\n'
+                   + "continue\npython print('OWNED_CALLER',hex(int(gdb.parse_and_eval('$pc'))-slide))\n")
+    argv = ['--bench', '^decode_vec/faster_hex/4096$', '--profile-time', '2', '--noplot']
+    result = sp.run(['gdb', '-q', '-nx', '--batch', '-x', str(gdb), '--args', str(programs['base']), *argv],
+                    cwd=src, stdout=sp.PIPE, stderr=sp.STDOUT, text=True)
+    (out / 'actual-caller.txt').write_text(result.stdout[-3000:])
+    assert 'OWNED_CALLER '+hex(addr) in result.stdout, result.stdout[-1800:]
 
 base = observed['base']
 head = observed['head']
@@ -99,6 +100,7 @@ restored = [k for k in ('shared-try', 'direct-try', 'direct-return')
             if observed[k]['vec'] == base['vec'] and observed[k]['lower'] == base['lower']]
 save('verdict.json', {'caller': neighbour, 'normal_links_restored': restored, 'input_lock': digest(lock)})
 if not restored:
+    confirm_actual()
     sys.exit(0)
 selected = restored[0]
 labels = ['base', 'head', selected] * 2
@@ -151,3 +153,5 @@ for case, data in rows.items():
                      for i, j in ((0,1),(0,2),(1,2))}
     effects[case]['copies'] = {labels[i]:summarize(r[i]/r[i+3] for r in data) for i in range(3)}
 save('effects.json', effects)
+
+confirm_actual()
