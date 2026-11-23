@@ -1,87 +1,45 @@
-name: Check the owned return change in the original ordinary JSON binary
+name: Verify the ARM-only return path against the original x86 binaries
 on: workflow_dispatch
 permissions:
   contents: read
+env:
+  RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
-  checks:
-    name: ${{ matrix.os }} / ${{ matrix.profile }} / ${{ matrix.isa }}
+  compare:
+    name: ${{ matrix.change }} / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 70
+    timeout-minutes: 48
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
+          - { os: ubuntu-24.04, lto: "false", change: owned }
+          - { os: ubuntu-24.04, lto: "thin", change: owned }
+          - { os: macos-15-intel, lto: "false", change: owned }
+          - { os: macos-15-intel, lto: "thin", change: owned }
+          - { os: ubuntu-24.04-arm, lto: "false", change: owned }
+          - { os: ubuntu-24.04-arm, lto: "thin", change: owned }
     env:
-      EPHEMERAL_BUILD: "1"
-      AUDIT_SHA: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
+      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: nervosnetwork/ckb
-          ref: 2061bc092a5dd447a741fad03b02628203b35e96
-          path: real/ckb
-          persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: GitoxideLabs/gitoxide
-          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
-          path: real/gitoxide
-          persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Prepare the original pinned downstream workload
-        run: |
-          git archive de46dc1b04130b289ee18f0ede65c3654e00ad16 verify | tar -x
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          import json
-          path = Path('verify/source_version_inputs.json')
-          spec = json.loads(path.read_text())
-          spec['refs']['candidate'] = 'dfa586da5e3166e8e42e95f7e4f4cd223d7ef544'
-          del spec['refs']['pr']
-          spec['anchors'].pop('candidate', None)
-          path.write_text(json.dumps(spec))
-          PYCODE
-      - name: Verify all three benchmark inputs against the exact packaged implementations
-        shell: bash
-        run: |
-          for mode in source version release; do
-            mkdir -p "$RUNNER_TEMP/$mode/baseline" "$RUNNER_TEMP/$mode/candidate"
-            git archive 6d84260fe321669e7f93ecfb8aecb4db0f582f14 | tar -x -C "$RUNNER_TEMP/$mode/baseline"
-            git archive dfa586da5e3166e8e42e95f7e4f4cd223d7ef544 | tar -x -C "$RUNNER_TEMP/$mode/candidate"
-            (cd "$RUNNER_TEMP/$mode" && python3 candidate/ci/prepare_benchmarks.py "$mode")
-          done
-          for role in 'release 6d84260fe321669e7f93ecfb8aecb4db0f582f14' 'version f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93' 'candidate dfa586da5e3166e8e42e95f7e4f4cd223d7ef544'; do
-            read -r name ref <<< "$role"
-            mkdir -p "$RUNNER_TEMP/$name-reference"
-            git archive "$ref" Cargo.toml src | tar -x -C "$RUNNER_TEMP/$name-reference"
-          done
-          for pair in 'source/baseline version' 'source/head candidate' 'version/baseline release' 'version/head version' 'release/baseline release' 'release/head candidate'; do
-            read -r build role <<< "$pair"
-            cmp "$RUNNER_TEMP/$build/Cargo.toml" "$RUNNER_TEMP/$role-reference/Cargo.toml"
-            diff -qr "$RUNNER_TEMP/$build/src" "$RUNNER_TEMP/$role-reference/src"
-          done
-      - name: Measure matched source, the published crate and controlled link order
-        shell: bash
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.11"
+      - name: Compare the original API, current candidate and one isolated source edit
         env:
-          ISOLATE: release-audit
-          PROFILE: ${{ matrix.profile }}
-          HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
-        run: |
-          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/normal-return-json.py
+          CHANGE: ${{ matrix.change }}
+          CELL: ${{ matrix.os }}-lto-${{ matrix.lto }}
+        run: python verify/scoped-return.py "$CELL"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: owned-return-json-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
-          path: |
-            real/qualification/archives.json
-            real/qualification/*/*.log
-            real/qualification/*/*.json
-            real/qualification/*/*-vs-*/*.json
+          name: arm-owned-${{ matrix.change }}-${{ matrix.os }}-lto-${{ matrix.lto }}
+          path: out
+          if-no-files-found: error

@@ -1,7 +1,7 @@
 {
   "parent": "b7bac93ce485dcd1fcdddcdb390f0b4aaf01e019",
   "edits": {
-    "owned": "dfa586da5e3166e8e42e95f7e4f4cd223d7ef544"
+    "owned": "17976d264f47a896218bcc5a3edb388f3b8b2e06"
   },
   "frozen": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
   "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
@@ -468,5 +468,6 @@
     "macos-15-intel-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
     "ubuntu-24.04-arm-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
     "ubuntu-24.04-arm-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402"
-  }
+  },
+  "arm_expected": "dfa586da5e3166e8e42e95f7e4f4cd223d7ef544"
 }
