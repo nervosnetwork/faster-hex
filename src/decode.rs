@@ -512,6 +512,9 @@ unsafe fn decode_owned<const GROUP_DIGITS: bool>(
     case: CheckCase,
 ) -> Result<(), Error> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+    if !GROUP_DIGITS && dst.len() <= 1024 {
+        return hex_decode_with_case(src, dst, case).map(|_| ());
+    }
     let decoded = if dst.len() <= 1024 {
         // The caller established the exact lengths used by the bounded kernels.
         decode_checked(src, dst, case)
