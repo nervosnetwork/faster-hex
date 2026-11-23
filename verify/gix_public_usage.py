@@ -18,7 +18,7 @@ from cross_file_copies import crossover
 
 spec=json.loads((v/'gix_public_usage_inputs.json').read_text())
 scope.revisions=spec['refs']
-scope.cases=[('gix_prefix',7,'sha1-adopt')]
+scope.cases=[(op,n,mode) for op,seq in spec['standard_cases'].items() for n,mode in seq]
 scope.pairs=[]
 cases={'public_prefix':[(7,'sha1-adopt'),(0,'sha256-adopt')],
        'public_coexist':[(7,'sha1-adopt'),(0,'sha256-adopt'),(40,'sha1-full'),(64,'sha256-full')],
@@ -86,15 +86,23 @@ exec(compile(source,str(driver),'exec'),ctx)
 out,work=ctx['out'],ctx['work']
 assert {p['role']:p['sha'] for p in json.loads((out.parent/'archives.json').read_text())}==scope.revisions
 key=os.environ['HOST_KEY']
-checks={}
-for role,expected in spec['anchors'][key].items():
-    actual={name:section(out/(role+'-gix_prefix'),name) for name in ('.text','.rodata')}
-    checks[role]=actual==expected
+checks={name:section(out/('previous-'+name))==expected for name,expected in spec['anchors'][key].items()}
 save(out/'source-anchors.json',checks)
 assert all(checks.values()),checks
-pin();report={}
-for name,seq in cases.items():
-    a=out/('pr-'+name);b=out/('candidate-'+name)
-    report[name]={'file_sha256':[hash_bytes(p.read_bytes()) for p in (a,b)],'text':[section(p) for p in (a,b)]}
-    save(out/'public-programs.json',report)
-    if a.read_bytes()!=b.read_bytes():crossover([a,b],out/'same-program',work/'caller',out/('pr-vs-candidate-'+name),seq)
+pin();report={};all_cases={**spec['standard_cases'],**cases}
+for name,seq in all_cases.items():
+    a=out/('previous-'+name);b=out/('candidate-'+name)
+    files=[hash_bytes(p.read_bytes()) for p in (a,b)]
+    loaded={k:[section(p,k) for p in (a,b)] for k in ('.text','.rodata','.data.rel.ro','.data')}
+    report[name]={'file_sha256':files,'sections':loaded}
+    save(out/'runtime-sections.json',report)
+    if any(left!=right for left,right in loaded.values()):
+        crossover([a,b],out/'same-program',work/'caller',out/('previous-vs-candidate-'+name),seq,count_last=name=='ckb_caller')
+qa=work/'product-qa';qa.mkdir()
+with tarfile.open(fileobj=io.BytesIO(subprocess.check_output(['git','archive',spec['refs']['candidate']],cwd=v.parent))) as t:
+    t.extractall(qa,filter='data')
+env={**os.environ,'CARGO_TARGET_DIR':str(work/'product-qa-target')}
+env.pop('CARGO_PROFILE_RELEASE_LTO',None)
+for label,args in [('all-features',['--all-features']),('core-only',['--no-default-features'])]:
+    p=subprocess.run(['cargo','test','--release',*args,'--lib','--tests'],cwd=qa,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    (out/(label+'.log')).write_text(p.stdout);assert p.returncode==0,p.stdout[-1800:]
