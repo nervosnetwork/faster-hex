@@ -682,6 +682,15 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if src.len() >= 64 && crate::vectorization_support() == crate::Vectorization::AVX512 {
+        // SAFETY: Dispatch checked AVX-512F, AVX-512BW and the OS register state.
+        let index = unsafe { x86::valid_prefix_len_avx512(src) };
+        return match src.get(index) {
+            Some(&byte) => Err(Error::InvalidChar { index, byte }),
+            None => Ok(()),
+        };
+    }
     if hex_check(src) {
         Ok(())
     } else {
