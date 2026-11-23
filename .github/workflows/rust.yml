@@ -1,4 +1,4 @@
-name: Verify fixed input and output block extents on AArch64
+name: Relink the sampled Intel benchmark functions at equal addresses
 on: workflow_dispatch
 permissions:
   contents: read
@@ -12,9 +12,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-24.04-arm, lto: "false" }
-          - { os: ubuntu-24.04-arm, lto: "thin" }
+        os: [macos-15-intel]
+        lto: ["false", thin]
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -28,13 +27,13 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.11"
-      - name: Compare the release, checked candidate and single kernel change
+      - name: Link the same object files twice, verify the sampled addresses, and compare in both run orders
         env:
           CELL: ${{ matrix.os }}-lto-${{ matrix.lto }}
-        run: python verify/kernel-experiment.py "$CELL"
+        run: python verify/measure-mac-order.py "$CELL"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: kernel-${{ matrix.os }}-lto-${{ matrix.lto }}
+          name: mac-order-${{ matrix.os }}-lto-${{ matrix.lto }}
           path: out
           if-no-files-found: error

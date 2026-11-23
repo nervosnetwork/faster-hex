@@ -1,0 +1,66 @@
+{
+  "cases": {
+    "macos-15-intel-lto-false": [
+      "encode/faster_hex/32",
+      "decode/faster_hex_mixed/256"
+    ],
+    "macos-15-intel-lto-thin": [
+      "decode/faster_hex_mixed/4096",
+      "decode/faster_hex_mixed/256"
+    ]
+  },
+  "anchor": {
+    "macos-15-intel-lto-false": {
+      "base": [
+        4294969440,
+        2934128,
+        "28e5e666d20b41c495eb1d42838520b6f0ed5fe11978e10ea66d04b0d15e700f"
+      ],
+      "head": [
+        4294969440,
+        2934192,
+        "24fcd5a5d185ad9dfb411c35c8d101ac2b214ff01e2fdf501a376c7a553d73ae"
+      ]
+    },
+    "macos-15-intel-lto-thin": {
+      "base": [
+        4294969440,
+        3015328,
+        "80805b804da83c94c64d8d3df98d79414f15be8c68ea683184d4a49fea468364"
+      ],
+      "head": [
+        4294969440,
+        3015392,
+        "5af778c9cecb27289af387c875c33d46fa05c20820ce290ffbf49fe16e2990da"
+      ]
+    }
+  },
+  "active": {
+    "macos-15-intel-lto-false": {
+      "base": {
+        "criterion::bencher::Bencher$LT$M$GT$::iter::h9f63ebad35fa530c": 4295632160,
+        "faster_hex::encode::hex_encode_avx2::h86e351240bb87cb2": 4295521664
+      },
+      "head": {
+        "criterion::bencher::Bencher$LT$M$GT$::iter::h9f63ebad35fa530c": 4295632176,
+        "faster_hex::encode::hex_encode_avx2::h86e351240bb87cb2": 4295521664
+      }
+    },
+    "macos-15-intel-lto-thin": {
+      "base": {
+        "faster_hex::decode::x86::hex_decode_avx2::h196728011176a801": 4296102112,
+        "faster_hex::decode::x86::hex_decode_avx2_checked::h5bc0e0a8e0187052": 4296717312,
+        "criterion::bencher::Bencher$LT$M$GT$::iter::h33d0b118d1409233": 4296733552
+      },
+      "head": {
+        "faster_hex::decode::x86::hex_decode_avx2::h196728011176a801": 4296102384,
+        "faster_hex::decode::x86::hex_decode_avx2_checked::h5bc0e0a8e0187052": 4296717312,
+        "criterion::bencher::Bencher$LT$M$GT$::iter::h33d0b118d1409233": 4296733552
+      }
+    }
+  },
+  "locks": {
+    "macos-15-intel-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "macos-15-intel-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402"
+  }
+}
