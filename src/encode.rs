@@ -92,7 +92,7 @@ pub fn hex_string_upper(src: &[u8]) -> String {
 // Keep size validation and the initialized-ASCII contract in one place. The
 // complete-buffer and prefix entry points inline separate NEON schedules.
 macro_rules! encoding_entries {
-    ($neon:path) => {
+    ($neon:path, $prefix:literal) => {
         #[inline]
         pub(crate) fn hex_encode_custom<'a>(
             src: &[u8],
@@ -119,7 +119,13 @@ macro_rules! encoding_entries {
             let dst = &mut dst[..len];
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             {
-                match crate::vectorization_support() {
+                // Both x86 vector encoders use scalar pairs below one SSE register.
+                let backend = if $prefix && src.len() < 16 {
+                    crate::Vectorization::None
+                } else {
+                    crate::vectorization_support()
+                };
+                match backend {
                     crate::Vectorization::AVX2 | crate::Vectorization::AVX512 => {
                         // SAFETY: Dispatch checked AVX2 and the OS register state.
                         unsafe { hex_encode_avx2(src, dst, upper_case) }
@@ -163,7 +169,7 @@ macro_rules! encoding_entries {
     };
 }
 
-encoding_entries!(hex_encode_neon);
+encoding_entries!(hex_encode_neon, false);
 
 /// Encodes all of `src` as lowercase hex into `dst` without allocation.
 ///
@@ -515,7 +521,7 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
 pub(crate) mod prefix {
     use super::*;
 
-    encoding_entries!(hex_encode_neon);
+    encoding_entries!(hex_encode_neon, true);
 
     // An odd digit count always selects at least the high nibble of the last byte.
     #[inline]
