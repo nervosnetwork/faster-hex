@@ -641,6 +641,7 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
 
 #[cfg(feature = "alloc")]
 mod append;
+mod validate;
 
 /// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
 ///
@@ -662,51 +663,11 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
-    if hex_check(src) {
+    if validate::check_mixed(src) {
         Ok(())
     } else {
-        diagnose_invalid(src)
+        validate::diagnose_invalid(src)
     }
-}
-
-#[inline(always)]
-fn diagnose_invalid(src: &[u8]) -> Result<(), Error> {
-    let table = &UNHEX;
-    // Report a malformed first pair before scanning any SIMD blocks.
-    for (index, &byte) in src.iter().take(2).enumerate() {
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
-        }
-    }
-    // Skip valid blocks so locating a late error retains SIMD throughput.
-    let skipped = if src.len() > 64 {
-        src.chunks_exact(64)
-            .take_while(|chunk| hex_check(chunk))
-            .count()
-            * 64
-    } else {
-        0
-    };
-    // Four independent lookups skip valid digits before the exact byte scan.
-    // A rejected digit sets all bits. Valid entries use only the low nibble.
-    let groups = src[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
-    for (offset, &byte) in src[start..].iter().enumerate() {
-        let index = start + offset;
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
-        }
-    }
-    Ok(())
 }
 
 /// Appends decoded bytes to `dst` and returns just the new suffix.
