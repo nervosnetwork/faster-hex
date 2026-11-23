@@ -77,6 +77,10 @@ fn scalar_encoder_preserves_incomplete_destination_pairs() {
 fn feature_detection_matches_host() {
     use crate::{vectorization_support, Vectorization};
     eprintln!("selected backend: {:?}", vectorization_support());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if let Ok(expected) = std::env::var("FASTER_HEX_EXPECT_BACKEND") {
+        assert_eq!(format!("{:?}", vectorization_support()), expected);
+    }
     for backend in crate::fuzzing::backends() {
         eprintln!("available test backend: {}", backend.name());
     }

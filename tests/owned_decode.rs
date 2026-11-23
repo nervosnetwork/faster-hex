@@ -159,6 +159,15 @@ fn append_commits_only_the_new_suffix_and_can_retry_after_a_late_error() {
         let mut input = b"aB".repeat(size);
         let last = input.len() - 1;
         input[last] = 0xff;
+        // An earlier error still wins when reporting an offset in a later block.
+        for earlier in [2047, 2048, 4097].iter().copied().filter(|&i| i < last) {
+            let digit = input[earlier];
+            input[earlier] = b'!';
+            assert!(matches!(hex_decode_append(&input, &mut dst),
+                Err(Error::InvalidChar { index, byte: b'!', .. }) if index == earlier));
+            assert_eq!(dst, [0xfe]);
+            input[earlier] = digit;
+        }
         assert!(matches!(hex_decode_append(&input, &mut dst),
             Err(Error::InvalidChar { index, byte: 0xff, .. }) if index == last));
         assert_eq!(dst, [0xfe]);
