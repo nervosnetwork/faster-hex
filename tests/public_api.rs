@@ -111,6 +111,21 @@ fn whole_input_validation_reports_the_first_invalid_byte() {
 }
 
 #[test]
+fn validation_keeps_the_first_error_at_every_block_and_tail_offset() {
+    for len in (64..192).step_by(2) {
+        let mut text = vec![b'F'; len];
+        assert_eq!(faster_hex::hex_validate(&text), Ok(()));
+        // Leave later errors in place so each new byte must be reported first.
+        for index in (0..len).rev() {
+            let byte = if index % 2 == 0 { 0x80 } else { b'g' };
+            text[index] = byte;
+            assert_invalid(faster_hex::hex_validate(&text).unwrap_err(), index, byte);
+        }
+        assert_eq!(faster_hex::hex_validate(&text[1..]), Err(Error::OddLength));
+    }
+}
+
+#[test]
 #[cfg(feature = "defmt-03")]
 fn defmt_formats_on_host_without_an_embedded_logger() {
     let error = hex_decode(b"0g", &mut [0]).unwrap_err();
