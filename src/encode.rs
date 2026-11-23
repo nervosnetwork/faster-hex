@@ -524,20 +524,32 @@ pub(crate) use self::hex_encode as encode_prefix_pairs;
 #[cfg(target_arch = "aarch64")]
 #[inline]
 pub(crate) fn encode_prefix_pairs<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
-    if !(16..=32).contains(&src.len())
-        || crate::vectorization_support() != crate::Vectorization::Neon
-    {
-        return hex_encode(src, dst);
-    }
-    let required = src.len() * 2;
+    let required = src.len().checked_mul(2).ok_or(Error::Overflow)?;
     let out = dst
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
-    // SAFETY: NEON is available. The first and last 16-byte blocks cover the
-    // entire input, and both stores write the same ASCII digits where they overlap.
-    unsafe {
+    // SAFETY: the slice stays initialized throughout. Each kernel writes two
+    // ASCII digits for every source byte, preserving UTF-8.
+    let output = unsafe { core::slice::from_raw_parts_mut(out.as_mut_ptr().cast(), out.len()) };
+    if src.len() < 8 {
+        hex_encode_pairs(src, output, false);
+    } else if crate::vectorization_support() == crate::Vectorization::Neon {
+        // SAFETY: dispatch established NEON, and output has two slots per byte.
+        unsafe { encode_prefix_neon(src, output) };
+    } else {
+        hex_encode_custom_case_fallback(src, output, false);
+    }
+    // SAFETY: each path above filled the entire output with ASCII.
+    Ok(unsafe { core::str::from_utf8_unchecked_mut(out) })
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn encode_prefix_neon(src: &[u8], output: &mut [MaybeUninit<u8>]) {
+    if (16..=32).contains(&src.len()) {
+        // First and last vectors cover the whole hash. Overlap writes identical digits.
         let table = vld1q_u8(TABLE_LOWER.as_ptr());
-        let output = core::slice::from_raw_parts_mut(out.as_mut_ptr().cast(), out.len());
         if let (Some(input), Some(first)) = (src.first_chunk(), output.first_chunk_mut()) {
             encode_neon_16(input, first, table);
         }
@@ -546,6 +558,7 @@ pub(crate) fn encode_prefix_pairs<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&
                 encode_neon_16(input, last, table);
             }
         }
-        Ok(core::str::from_utf8_unchecked_mut(out))
+    } else {
+        hex_encode_neon(src, output, false);
     }
 }
