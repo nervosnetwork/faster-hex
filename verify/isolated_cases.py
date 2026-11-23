@@ -151,13 +151,17 @@ elif SCOPE=='release-audit':
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
     if os.environ.get('DIAGNOSTIC_ROUTE')=='1':
-        revisions['local']='6781415032ba193c1bf0032a220ed1be4efc5c14'
-        pairs=[('scoped','aa'),('local','local_control'),('release','version'),('release','pr'),('release','scoped'),('release','local'),('pr','scoped'),('pr','local'),('scoped','local')]
+        revisions.update({'narrow': '976abc9503a22c1b24beb54182add19af097f098', 'lanes': '6781415032ba193c1bf0032a220ed1be4efc5c14', 'cold': '3c163709927c1c2eb9bcff6ef037690d57046003', 'local': '014fc8ca8d3e10887ef2350c098027547ce5d292'})
+        pairs=[('scoped','aa'),('local','local_control'),('cold','cold_control'),('release','version'),('release','pr'),('release','narrow'),('version','narrow')]
+        pairs += [(a,b) for a in ('release','version','pr','narrow') for b in ('scoped','lanes','cold','local')]
+        pairs += [('scoped','lanes'),('scoped','cold'),('scoped','local'),('lanes','cold'),('lanes','local'),('cold','local')]
         cases=[('owned_blocks',n,kind) for n in (32,4096) for kind in ('array-valid','array-late','vec-valid','vec-late')]
         cases+=[('owned_failure',n,kind) for n in (32,4096) for kind in ('array-first','array-middle','vec-first','vec-middle')]
         cases+=[(op,n,kind) for op in ('vec_read_slice','array_read_slice','vec_round_slice','array_round_slice') for n,kind in ((32,'escaped'),(4096,'plain'))]
         cases += [('qualified_decode',n,'valid') for n in (16,32,4096)]
         cases += [('vec_write',4096,'plain'),('vec_read_slice',32,'plain'),('vec_round_slice',4096,'escaped'),('ckb_caller',32,'plain'),('ckb_caller',4096,'plain'),('gix_caller',20,'parse'),('append_call',32,'first'),('append_call',256,'first'),('gix_prefix',7,'sha1-adopt')]
+        cases += [('mask_slice',n,kind) for n in (31,32,33) for kind in ('mixed-valid','upper-last','lower-first')]
+        cases += [('mask_slice',32,'mixed-both')]
     if os.environ.get('DIAGNOSTIC_STEPS')=='1':
         revisions.update({'plain': '10346c96e8b2ea41558211936a975de94a440163', 'first': 'a3d45d8deaff30834d8d330f3401d629f031c246', 'groups': '075ab5a3bb18542a634f2a3af5d73bd283a47c83'})
         pairs=[('scoped','aa'),('groups','groups_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]

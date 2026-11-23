@@ -1,4 +1,4 @@
-name: Measure a bounded scalar scan on previously rejected input
+name: Compare native error masks at the decode and recovery boundaries
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -20,8 +20,8 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      COMPARE_INLINE: f6781c7ddde45013012afd390bc59fe68d155378
-      COMPARE_LOCAL: 6781415032ba193c1bf0032a220ed1be4efc5c14
+      COLD_MASK: 3c163709927c1c2eb9bcff6ef037690d57046003
+      DIRECT_MASK: 014fc8ca8d3e10887ef2350c098027547ce5d292
       AUDIT_SHA: f6781c7ddde45013012afd390bc59fe68d155378
       DIAGNOSTIC_ROUTE: "1"
       EPHEMERAL_BUILD: "1"
@@ -48,7 +48,8 @@ jobs:
       - name: Check exact error positions, output and rollback
         shell: bash
         run: |
-          for revision in "$COMPARE_INLINE" "$COMPARE_LOCAL"; do
+          for role in cold direct; do
+            if [[ "$role" == cold ]]; then revision="$COLD_MASK"; else revision="$DIRECT_MASK"; fi
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
             (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/diag-tests" cargo test --release --all-features)
             rustc --edition 2018 --crate-name faster_hex --crate-type rlib -O --cfg 'feature="alloc"' --cfg 'feature="std"' "$RUNNER_TEMP/$revision/src/lib.rs" -o "$RUNNER_TEMP/libfaster_hex.rlib"
@@ -56,10 +57,12 @@ jobs:
             "$RUNNER_TEMP/check-errors"
             rustc --edition 2021 -O --extern "faster_hex=$RUNNER_TEMP/libfaster_hex.rlib" verify/owned_lane_oracle.rs -o "$RUNNER_TEMP/check-lanes"
             "$RUNNER_TEMP/check-lanes"
+            python3 verify/native_mask_probe.py "$RUNNER_TEMP/$revision" "$role" | tee "$RUNNER_TEMP/mask-$role.txt"
           done
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
+          cp "$RUNNER_TEMP"/mask-*.txt real/qualification/
         shell: bash
         env:
           ISOLATE: release-audit
@@ -67,8 +70,9 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: owned-lanes-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: owned-masks-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
+            real/qualification/mask-*.txt
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
