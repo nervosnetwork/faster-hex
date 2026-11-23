@@ -1,39 +1,337 @@
 {
   "parent": "b7bac93ce485dcd1fcdddcdb390f0b4aaf01e019",
   "edits": {
-    "owned": "bae4edddb07d578df8a5621484e0c0c152010d2c"
+    "owned": "dfa586da5e3166e8e42e95f7e4f4cd223d7ef544"
   },
   "frozen": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
   "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
   "matrix": {
     "owned": {
-      "ubuntu-24.04-arm-lto-false": [
+      "ubuntu-24.04-lto-false": [
         "decode_vec/faster_hex/4096",
-        "decode/faster_hex_mixed/32",
+        "decode_array/faster_hex/32",
         "encode/faster_hex/8",
+        "encode/faster_hex/32",
+        "serde_json/deserialize_escaped/32",
+        "serde_json/deserialize/4096",
         "decode_append/32",
         "decode_append/4096",
-        "owned_error/first/4096",
-        "owned_error/second_block/4096",
-        "owned_error/last/4096",
-        "append_error/first/4096",
-        "append_error/last/4096"
+        "prefix/buffer/7"
+      ],
+      "ubuntu-24.04-lto-thin": [
+        "decode_vec/faster_hex/4096",
+        "decode_array/faster_hex/32",
+        "encode/faster_hex/8",
+        "encode/faster_hex/32",
+        "serde_json/deserialize_escaped/32",
+        "serde_json/deserialize/4096",
+        "decode_append/32",
+        "decode_append/4096",
+        "prefix/buffer/7"
+      ],
+      "macos-15-intel-lto-false": [
+        "decode_vec/faster_hex/4096",
+        "decode_array/faster_hex/32",
+        "encode/faster_hex/8",
+        "encode/faster_hex/32",
+        "serde_json/deserialize_escaped/32",
+        "serde_json/deserialize/4096",
+        "decode_append/32",
+        "decode_append/4096",
+        "prefix/buffer/7"
+      ],
+      "macos-15-intel-lto-thin": [
+        "decode_vec/faster_hex/4096",
+        "decode_array/faster_hex/32",
+        "encode/faster_hex/8",
+        "encode/faster_hex/32",
+        "serde_json/deserialize_escaped/32",
+        "serde_json/deserialize/4096",
+        "decode_append/32",
+        "decode_append/4096",
+        "prefix/buffer/7"
+      ],
+      "ubuntu-24.04-arm-lto-false": [
+        "decode_vec/faster_hex/4096",
+        "decode_array/faster_hex/32",
+        "encode/faster_hex/8",
+        "encode/faster_hex/32",
+        "serde_json/deserialize_escaped/32",
+        "serde_json/deserialize/4096",
+        "decode_append/32",
+        "decode_append/4096",
+        "prefix/buffer/7"
       ],
       "ubuntu-24.04-arm-lto-thin": [
         "decode_vec/faster_hex/4096",
-        "decode/faster_hex_mixed/32",
+        "decode_array/faster_hex/32",
         "encode/faster_hex/8",
+        "encode/faster_hex/32",
+        "serde_json/deserialize_escaped/32",
+        "serde_json/deserialize/4096",
         "decode_append/32",
         "decode_append/4096",
-        "owned_error/first/4096",
-        "owned_error/second_block/4096",
-        "owned_error/last/4096",
-        "append_error/first/4096",
-        "append_error/last/4096"
+        "prefix/buffer/7"
       ]
     }
   },
   "anchors": {
+    "ubuntu-24.04-lto-false": {
+      "released": {
+        "baseline": {
+          "serde": [
+            1066032,
+            2149335,
+            "f06ff91c2ab1db164d7f8a8e3c770a74e6d17a17ca0b3d3330833f0f14d7e555"
+          ],
+          "hex": [
+            1160944,
+            2983463,
+            "cbe25a7757424874245a9d65587bef9aea1b5d958db15de44bbbefe86d35ebc9"
+          ]
+        },
+        "parent": {
+          "serde": [
+            1066864,
+            2149319,
+            "d096c8de898f6fdb43967f1ca2477e36ff7b212967cc87197f45b9a5e4245faa"
+          ],
+          "hex": [
+            1161712,
+            2983479,
+            "bfea990251d4d0d8fb90137a0224ca8251d5fbdad035c085ad27848ae7d1f857"
+          ]
+        }
+      },
+      "new": {
+        "baseline": {
+          "format": [
+            1063360,
+            2150055,
+            "b992628b898782abed1b3900a1a1786b41ea214cf961cbf7f73a0e9b1d177290"
+          ],
+          "check": [
+            1073952,
+            2198135,
+            "a69c84b086dbb6d7ba6e188eed95de1fc5b455044f9549a89e5396b968957cf8"
+          ],
+          "hex": [
+            1163536,
+            3000103,
+            "80b898b53d6368e8bb0eebe6f5261d3c4dd13e4df5835ab9cfbbe543e3d92699"
+          ]
+        },
+        "parent": {
+          "check": [
+            1073952,
+            2197927,
+            "3109972ca3b6d396af165c177ab5bda32e162f3307d3a473c14d95f757bd1fbb"
+          ],
+          "format": [
+            1063360,
+            2150055,
+            "7b30eda8753d0c7b764670668390b70e0576d7f66321654ca53ddfb2a7d627e5"
+          ],
+          "hex": [
+            1163680,
+            3000551,
+            "24a07933f13fa10ab861704175525c0417434c3552534fc6932b484b40175d93"
+          ]
+        }
+      }
+    },
+    "ubuntu-24.04-lto-thin": {
+      "released": {
+        "baseline": {
+          "serde": [
+            1032576,
+            2179991,
+            "5802bf857c3c902e63bdca5149f5095ec7ad7436d6635c54258f399792990936"
+          ],
+          "hex": [
+            1127344,
+            3078055,
+            "e95e62c31fc3af8734af75eb62b2b0222ba155e7be90d716bba761b293a5f967"
+          ]
+        },
+        "parent": {
+          "serde": [
+            1032512,
+            2179975,
+            "524dd57abfdfa563a913fb3b0b7a0d96b9dedd437cf3c2bc63bd1271812c6eb2"
+          ],
+          "hex": [
+            1127280,
+            3078087,
+            "78936c69fb6099701182888beff3ea888a679e09742929ef6814211328b873fe"
+          ]
+        }
+      },
+      "new": {
+        "baseline": {
+          "check": [
+            1038848,
+            2236087,
+            "9b0e836a259d7adbeaeb60c30fc77b9604b23367a70aaf86f836f0060e32c319"
+          ],
+          "format": [
+            1030368,
+            2180535,
+            "cad9a87c1e6b436d5e5c7e4db3969fc289f904a3a2e7605144231b3a70a17378"
+          ],
+          "hex": [
+            1129936,
+            3095543,
+            "0097d10632fd4bbee2672d4d955dee264f0e1f929d33ae82530c180b5ac41bd7"
+          ]
+        },
+        "parent": {
+          "format": [
+            1030384,
+            2180567,
+            "903ff34ec77454ceaf6bf02f35796dc1f7816470551f8491b72eb8d8d54308a3"
+          ],
+          "check": [
+            1038784,
+            2235879,
+            "fcf8d9b74230e61b30773668e6c4bb1d459d0d8ec2cdc57e3e03e49cad63c6d9"
+          ],
+          "hex": [
+            1130080,
+            3096039,
+            "179af31c9073e5f7ede0a9252d2a18cce6edd8ddee63633c582a37c3badbf099"
+          ]
+        }
+      }
+    },
+    "macos-15-intel-lto-false": {
+      "released": {
+        "baseline": {
+          "serde": [
+            4294969440,
+            2141808,
+            "c01f8df1614e82e9f1deba12f677ee7b633e0eecde9ecfc708ae8ddbba5e857e"
+          ],
+          "hex": [
+            4294969440,
+            2934128,
+            "28e5e666d20b41c495eb1d42838520b6f0ed5fe11978e10ea66d04b0d15e700f"
+          ]
+        },
+        "parent": {
+          "serde": [
+            4294969440,
+            2141808,
+            "149e1e70d110e777c8d9bccac870b711ab28c7624f262ca0821c0e61d62bc4c8"
+          ],
+          "hex": [
+            4294969440,
+            2934192,
+            "e8e8a79f2ae79d9785871611e108990b0b31ac459fe40135448ec5334c4b139f"
+          ]
+        }
+      },
+      "new": {
+        "baseline": {
+          "format": [
+            4294969440,
+            2145504,
+            "1513b609be11ebb90641ccbb4634fda5cca5d7fe03258af5065049cb815865a5"
+          ],
+          "check": [
+            4294969440,
+            2189216,
+            "871467bc59a7f330280e462eb668e9a241e2c43603ad96ba72421ae63f2d13e0"
+          ],
+          "hex": [
+            4294969440,
+            2950080,
+            "2e40637ea1f13e3875b2b152c3acb3bb1c56f98f71f5b72c350b9c1c06ee56be"
+          ]
+        },
+        "parent": {
+          "format": [
+            4294969440,
+            2146800,
+            "e118ec5368e01e4ea8a4216acac7ce6c2c0473e6308e31894191a4ebb433ec6c"
+          ],
+          "check": [
+            4294969440,
+            2188992,
+            "1b5b1a2c0c890467b9730cbc7e6fbba5ee68d542e189fb4efc388ba1b45cdae3"
+          ],
+          "hex": [
+            4294969440,
+            2947536,
+            "b0f2fcb60c8074f42f1a2759b226f8f4a0e4831bdfeae11f31d1a0058953ca82"
+          ]
+        }
+      }
+    },
+    "macos-15-intel-lto-thin": {
+      "released": {
+        "baseline": {
+          "serde": [
+            4294969440,
+            2163600,
+            "1b95e4bcf68323603a1794c7669cad19adfc5f186537a36f9eef043feae847c3"
+          ],
+          "hex": [
+            4294969440,
+            3015328,
+            "80805b804da83c94c64d8d3df98d79414f15be8c68ea683184d4a49fea468364"
+          ]
+        },
+        "parent": {
+          "serde": [
+            4294969440,
+            2163600,
+            "70a6ecc5a2f5942ccd4712617a2b2ae4f3279eca1d8871ddc8241346d781f7e3"
+          ],
+          "hex": [
+            4294969440,
+            3015392,
+            "fdd2a48f3bae315f400476ea1a7244b1f6fc2651edb946b4336865dbb00ec573"
+          ]
+        }
+      },
+      "new": {
+        "baseline": {
+          "check": [
+            4294969440,
+            2218992,
+            "037b4716d152c07083924caeceaf71a9a7856d31b7cbd1d1a824d7a837c901df"
+          ],
+          "format": [
+            4294969440,
+            2167008,
+            "36d387c613afd67f3c5ceb9109ba12177236c391ac3138b6c846874838548e4f"
+          ],
+          "hex": [
+            4294969440,
+            3032096,
+            "c360652c3b9d0569465346ede4d9528ec43f1ec370b6526e4266bf118a82f349"
+          ]
+        },
+        "parent": {
+          "check": [
+            4294969440,
+            2218768,
+            "bdc8fb5946cf947c457bc83d50f1b6af0f4a1ea705a61072690ecb218056b5ae"
+          ],
+          "format": [
+            4294969440,
+            2168288,
+            "1c5da1bae01c6f044b03bff0bd5bd4758a631ce9ecb9bea31beb63e0cb472f2d"
+          ],
+          "hex": [
+            4294969440,
+            3029760,
+            "06506e93797dd4cf2cad7a1b7159e49135d4292c3588efe7b239a45a944c05b0"
+          ]
+        }
+      }
+    },
     "ubuntu-24.04-arm-lto-false": {
       "released": {
         "baseline": {
@@ -164,6 +462,10 @@
     }
   },
   "locks": {
+    "ubuntu-24.04-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "ubuntu-24.04-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "macos-15-intel-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "macos-15-intel-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
     "ubuntu-24.04-arm-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
     "ubuntu-24.04-arm-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402"
   }

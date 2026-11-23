@@ -89,6 +89,13 @@ if hasattr(os,'sched_setaffinity'):
 cpu = run(['lscpu']) if platform.system()=='Linux' else run(['sysctl','-n','machdep.cpu.brand_string'])
 save('environment.json',dict(parent=parent,edit=proposal,base_release=release,base_new=frozen,case_ids=cases,
                             cpu=cpu,rustc=run(['rustc','-Vv']),lock=digest(lock),profile=key))
+all_cases = cases.copy()
+identical_text = {}
+for candidate_case in all_cases:
+    family, bench = suite(candidate_case)
+    prefix = f'{family}-{bench}-'
+    identical_text[candidate_case] = images[prefix+'parent']['text'] == images[prefix+'edit']['text']
+save('equal-code.json', identical_text)
 labels=['baseline','parent','edit']*2
 records={c:[] for c in cases}
 rng=random.Random(349387)
