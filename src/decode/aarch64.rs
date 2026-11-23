@@ -29,7 +29,7 @@ unsafe fn valid_neon(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
 
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn decode_neon_nibbles(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
+pub(super) unsafe fn decode_neon_nibbles(bytes: uint8x16_t, case: CheckCase) -> uint8x16_t {
     let digit = vsubq_u8(
         vqsubq_u8(vaddq_u8(bytes, vdupq_n_u8(198)), vdupq_n_u8(6)),
         vdupq_n_u8(240),

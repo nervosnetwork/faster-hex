@@ -639,6 +639,9 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
     }
 }
 
+#[cfg(feature = "alloc")]
+mod append;
+
 /// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
 ///
 /// Accepts mixed case and empty input without allocating. Use [`hex_check`]
@@ -739,17 +742,20 @@ pub fn hex_decode_append<'a>(
     if !src.len().is_multiple_of(2) {
         return Err(Error::OddLength);
     }
+    let decoded = src.len() / 2;
     let start = dst.len();
-    dst.resize(start + src.len() / 2, 0);
-    let suffix = &mut dst[start..];
-    let result = if suffix.len() > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, suffix, CheckCase::None)
-    } else {
-        hex_decode(src, suffix).map(|_| ())
-    };
-    if let Err(error) = result {
-        dst.truncate(start);
-        return Err(error);
+    dst.reserve(decoded);
+    // SAFETY: `reserve(decoded)` ensures `spare_capacity_mut().len() >= decoded`.
+    // Only spare capacity beyond `start` is written, so `dst[..start]` and
+    // `dst.len()` remain unchanged if decoding fails.
+    let spare = unsafe { dst.spare_capacity_mut().get_unchecked_mut(..decoded) };
+    if let Err(from) = append::decode_uninit(src, spare) {
+        append::diagnose_append_error::<64>(src, spare, from)?;
     }
-    Ok(&mut dst[start..])
+    // SAFETY: `decode_uninit` (or the defensive fallback in `diagnose_append_error`)
+    // initialized every byte in `start..start + decoded`.
+    unsafe {
+        dst.set_len(start + decoded);
+        Ok(dst.get_unchecked_mut(start..))
+    }
 }

@@ -194,7 +194,7 @@ pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> 
 // its first six values to 10..=15; unsigned min chooses the valid candidate.
 #[inline]
 #[target_feature(enable = "sse4.1")]
-unsafe fn decode_sse41_nibbles(bytes: __m128i, case: CheckCase) -> __m128i {
+pub(super) unsafe fn decode_sse41_nibbles(bytes: __m128i, case: CheckCase) -> __m128i {
     let digit = _mm_sub_epi8(
         _mm_subs_epu8(_mm_add_epi8(bytes, _mm_set1_epi8(-58)), _mm_set1_epi8(6)),
         _mm_set1_epi8(-16),
@@ -214,7 +214,7 @@ unsafe fn decode_sse41_nibbles(bytes: __m128i, case: CheckCase) -> __m128i {
 // only affect index bits ignored by the 16-entry byte shuffles.
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> (__m256i, __m256i) {
+pub(super) unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> (__m256i, __m256i) {
     let (hash_table, decode_offsets) = alsw_tables();
     let hash_table = _mm256_broadcastsi128_si256(hash_table);
     let check_offsets =
@@ -232,7 +232,7 @@ unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> (__m256i, __m2
 // Same nibble/validity contract as decode_avx2_nibbles, for 64 input bytes.
 #[inline]
 #[target_feature(enable = "avx512f,avx512bw")]
-unsafe fn decode_avx512_nibbles(bytes: __m512i, case: CheckCase) -> (__m512i, __m512i) {
+pub(super) unsafe fn decode_avx512_nibbles(bytes: __m512i, case: CheckCase) -> (__m512i, __m512i) {
     let (hash_table, decode_offsets) = alsw_tables();
     let hash_table = _mm512_broadcast_i32x4(hash_table);
     let check_offsets =
@@ -486,7 +486,7 @@ pub(crate) unsafe fn hex_decode_avx512_checked(
 
 #[inline]
 #[target_feature(enable = "avx512f,avx512bw")]
-unsafe fn pack_avx512(nibbles: __m512i) -> __m256i {
+pub(super) unsafe fn pack_avx512(nibbles: __m512i) -> __m256i {
     _mm512_cvtepi16_epi8(_mm512_maddubs_epi16(nibbles, _mm512_set1_epi16(0x0110)))
 }
 
@@ -547,7 +547,7 @@ unsafe fn decode_avx2_block(a: __m256i, b: __m256i) -> __m256i {
 
 #[inline]
 #[target_feature(enable = "sse4.1")]
-unsafe fn pack_sse41(a: __m128i, b: __m128i) -> __m128i {
+pub(super) unsafe fn pack_sse41(a: __m128i, b: __m128i) -> __m128i {
     // PMADDUBSW combines adjacent nibbles with [16, 1]; no result exceeds 255.
     let weights = _mm_set1_epi16(0x0110);
     _mm_packus_epi16(_mm_maddubs_epi16(a, weights), _mm_maddubs_epi16(b, weights))
@@ -555,7 +555,7 @@ unsafe fn pack_sse41(a: __m128i, b: __m128i) -> __m128i {
 
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn pack_avx2(a: __m256i, b: __m256i) -> __m256i {
+pub(super) unsafe fn pack_avx2(a: __m256i, b: __m256i) -> __m256i {
     let weights = _mm256_set1_epi16(0x0110);
     // Packing is lane-local; restore the original order of the four 8-byte groups.
     _mm256_permute4x64_epi64::<0xd8>(_mm256_packus_epi16(

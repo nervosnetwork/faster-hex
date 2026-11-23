@@ -180,6 +180,70 @@ fn append_commits_only_the_new_suffix_and_can_retry_after_a_late_error() {
     }
 }
 
+#[cfg(feature = "alloc")]
+#[test]
+fn append_covers_every_short_block_and_tail_error_position() {
+    use faster_hex::hex_decode_append;
+    // Exercise every scalar, short, bounded, 64B/128B block and overlapping-tail length.
+    let sizes: Vec<usize> = if cfg!(miri) {
+        vec![0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 128, 129]
+    } else {
+        (0..=130).collect()
+    };
+    for size in sizes {
+        let bytes: Vec<u8> = (0..size).map(|i| (i * 53 + 7) as u8).collect();
+        let text = hex::encode(&bytes);
+        let mut mixed = text.into_bytes();
+        for (i, byte) in mixed.iter_mut().enumerate() {
+            if i % 3 == 0 {
+                byte.make_ascii_uppercase();
+            }
+        }
+        let mut fresh = Vec::new();
+        assert_eq!(hex_decode_append(&mixed, &mut fresh).unwrap(), bytes);
+        assert_eq!(fresh, bytes);
+
+        let mut reused = Vec::with_capacity(size + 3);
+        reused.extend_from_slice(&[0xde, 0xad, 0x42]);
+        assert_eq!(hex_decode_append(&mixed, &mut reused).unwrap(), bytes);
+        assert_eq!(&reused[..3], &[0xde, 0xad, 0x42]);
+        assert_eq!(&reused[3..], bytes.as_slice());
+        reused.truncate(3);
+
+        if size == 0 {
+            continue;
+        }
+        // Check first, middle, block-edge and last positions, plus exhaustive positions on key sizes.
+        let exhaustive = !cfg!(miri)
+            && matches!(
+                size,
+                1 | 7 | 8 | 15 | 16 | 17 | 31 | 32 | 33 | 64 | 65 | 128 | 129
+            );
+        let positions: Vec<usize> = if exhaustive {
+            (0..mixed.len()).collect()
+        } else {
+            vec![0, 1, mixed.len() / 2, mixed.len() - 2, mixed.len() - 1]
+        };
+        for pos in positions {
+            let orig = mixed[pos];
+            let last = mixed.len() - 1;
+            let orig_last = mixed[last];
+            mixed[last] = 0xff;
+            mixed[pos] = b'!';
+            assert!(matches!(
+                hex_decode_append(&mixed, &mut reused),
+                Err(Error::InvalidChar { index, byte: b'!', .. }) if index == pos
+            ));
+            assert_eq!(reused, [0xde, 0xad, 0x42]);
+            mixed[pos] = orig;
+            mixed[last] = orig_last;
+        }
+        // Retry succeeds cleanly after repeated rollbacks into the same spare capacity.
+        assert_eq!(hex_decode_append(&mixed, &mut reused).unwrap(), bytes);
+        assert_eq!(&reused[3..], bytes.as_slice());
+    }
+}
+
 fn owned_block_errors<const N: usize>() {
     let mut input = vec![b'1'; N * 2];
     for (case, invalid) in [

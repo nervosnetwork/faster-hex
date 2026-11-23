@@ -140,8 +140,8 @@ fn owned_decode_tails_and_append_rollback_at_guard_pages() {
 
     let mut source = Guarded::new();
     let prefix = [0xde, 0xad, 0x42];
-    // Above 1024 decoded bytes, cover every remainder of the widest (64-byte) output block.
-    for len in 1025..=1088 {
+    // Cover scalar, short/bounded SIMD, 64B/128B blocks and every remainder above 1024.
+    for len in (0..=130).chain(1025..=1088) {
         let bytes: Vec<_> = (0..len).map(|i| (i * 73 + i / 7) as u8).collect();
         let digits = hex::encode(&bytes).into_bytes();
         for end in [false, true] {
@@ -149,17 +149,18 @@ fn owned_decode_tails_and_append_rollback_at_guard_pages() {
             input.copy_from_slice(&digits);
             let mut dst = prefix.to_vec();
 
-            let last = input.len() - 1;
-            input[last] = b'!';
-            let error = Error::InvalidChar {
-                index: last,
-                byte: b'!',
-            };
-            assert_eq!(hex_decode_vec(input).unwrap_err(), error);
-            assert_eq!(hex_decode_append(input, &mut dst).unwrap_err(), error);
-            assert_eq!(dst, prefix);
-
-            input[last] = digits[last];
+            if !input.is_empty() {
+                let last = input.len() - 1;
+                input[last] = b'!';
+                let error = Error::InvalidChar {
+                    index: last,
+                    byte: b'!',
+                };
+                assert_eq!(hex_decode_vec(input).unwrap_err(), error);
+                assert_eq!(hex_decode_append(input, &mut dst).unwrap_err(), error);
+                assert_eq!(dst, prefix);
+                input[last] = digits[last];
+            }
             assert_eq!(hex_decode_vec(input).unwrap(), bytes);
             assert_eq!(hex_decode_append(input, &mut dst).unwrap(), bytes);
             assert_eq!(
