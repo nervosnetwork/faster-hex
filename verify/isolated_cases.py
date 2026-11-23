@@ -151,21 +151,13 @@ elif SCOPE=='release-audit':
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
     if os.environ.get('DIAGNOSTIC_ROUTE')=='1':
-        revisions.update({'narrow': '976abc9503a22c1b24beb54182add19af097f098', 'entries': 'bf983bd1d228ebd13fb1bfd7a26d1f54f4155da0', 'inline': 'f6781c7ddde45013012afd390bc59fe68d155378', 'local': '95b47feda6b519477c33d0218ab4723ac7745ca8'})
-        pairs=[('scoped','aa'),('local','local_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
-        pairs += [(l,h) for l in ('pr','release','version','scoped') for h in ('narrow','entries','inline','local')]
-        pairs += [(l,h) for l in ('narrow','entries') for h in ('inline','local')]+[('narrow','entries'),('inline','local')]
-        requested={('vec_write',32,'plain'),('vec_write',4096,'plain'),('array_write',4096,'plain'),
-                   ('vec_round_slice',32,'escaped'),('vec_round_slice',4096,'plain'),('vec_round_slice',4096,'escaped'),
-                   ('array_round_slice',4096,'plain'),('array_read_reader',32,'reader'),('vec_read_reader',32,'reader'),
-                   ('gix_prefix',7,'sha1-adopt'),('full_buffer',65,'buffer'),('ckb_caller',32,'plain'),('ckb_caller',4096,'plain'),('gix_caller',20,'parse'),
-                   ('validate_call',32,'valid'),('validate_call',32,'first'),('validate_call',4096,'last'),
-                   ('append_call',32,'valid'),('append_call',32,'first'),('append_call',256,'first'),('append_call',4096,'first'),('append_call',4096,'rollback'),
-                   ('append_call',1025,'valid'),('append_call',4097,'valid')}
-        cases=[(op,n,k) for op,n,k in cases if (op in ('owned_blocks','qualified_decode') or (op in ('vec_read_slice','array_read_slice') and k in ('plain','escaped'))) or (op,n,k) in requested]
-        cases+=[('ascii_check',n,kind) for n in (64,8192) for kind in ('mixed-valid','mixed-first','mixed-last','upper-valid','lower-last')]+[('ascii_check',n,'mixed-valid') for n in (15,16,65)]
-        assert len(cases)==len(set(cases))
-
+        revisions['local']='6781415032ba193c1bf0032a220ed1be4efc5c14'
+        pairs=[('scoped','aa'),('local','local_control'),('release','version'),('release','pr'),('release','scoped'),('release','local'),('pr','scoped'),('pr','local'),('scoped','local')]
+        cases=[('owned_blocks',n,kind) for n in (32,4096) for kind in ('array-valid','array-late','vec-valid','vec-late')]
+        cases+=[('owned_failure',n,kind) for n in (32,4096) for kind in ('array-first','array-middle','vec-first','vec-middle')]
+        cases+=[(op,n,kind) for op in ('vec_read_slice','array_read_slice','vec_round_slice','array_round_slice') for n,kind in ((32,'escaped'),(4096,'plain'))]
+        cases += [('qualified_decode',n,'valid') for n in (16,32,4096)]
+        cases += [('vec_write',4096,'plain'),('vec_read_slice',32,'plain'),('vec_round_slice',4096,'escaped'),('ckb_caller',32,'plain'),('ckb_caller',4096,'plain'),('gix_caller',20,'parse'),('append_call',32,'first'),('append_call',256,'first'),('gix_prefix',7,'sha1-adopt')]
     if os.environ.get('DIAGNOSTIC_STEPS')=='1':
         revisions.update({'plain': '10346c96e8b2ea41558211936a975de94a440163', 'first': 'a3d45d8deaff30834d8d330f3401d629f031c246', 'groups': '075ab5a3bb18542a634f2a3af5d73bd283a47c83'})
         pairs=[('scoped','aa'),('groups','groups_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]

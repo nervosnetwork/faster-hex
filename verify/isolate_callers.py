@@ -199,7 +199,7 @@ if any(env.get(k)=='1' for k in ['INTEGRATED_CONFIRM','DIAGNOSTIC_BOUNDARY','PRE
 if SCOPE=='recovery' and sys.platform.startswith('linux'):
     from isolated_elf import record
     save(out/'elf.json',{role:record(out/(role+'-vec_round_slice')) for role in revisions})
-pin();rng=random.Random(1837209 if env.get('INTEGRATED_CONFIRM')=='1' else (3691748 if env.get('DIAGNOSTIC_BOUNDARY')=='1' else (962539 if env.get('PREFIX_ENTRY')=='1' else (613870 if env.get('DIAGNOSTIC_STEPS')=='1' else (526769 if env.get('DIAGNOSTIC_ROUTE')=='1' else 602105)))))
+pin();rng=random.Random(1837209 if env.get('INTEGRATED_CONFIRM')=='1' else (3691748 if env.get('DIAGNOSTIC_BOUNDARY')=='1' else (962539 if env.get('PREFIX_ENTRY')=='1' else (613870 if env.get('DIAGNOSTIC_STEPS')=='1' else (782533 if env.get('DIAGNOSTIC_ROUTE')=='1' else 602105)))))
 rng.shuffle(cases)
 summary={};samples={}
 for b,n,k in cases:
