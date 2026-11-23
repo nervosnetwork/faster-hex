@@ -670,21 +670,8 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     } else {
         0
     };
-    // Four independent lookups skip valid digits before the exact byte scan.
-    // A rejected digit sets all bits. Valid entries use only the low nibble.
-    let groups = src[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
-    for (offset, &byte) in src[start..].iter().enumerate() {
-        let index = start + offset;
+    for (offset, &byte) in src[skipped..].iter().enumerate() {
+        let index = skipped + offset;
         if table[usize::from(byte)] == NIL {
             return Err(Error::InvalidChar { index, byte });
         }
