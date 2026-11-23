@@ -1,4 +1,4 @@
-name: Check concrete recovery functions in released package consumers
+name: Check released ownership paths and append recovery in package consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -14,11 +14,14 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, profile: thin, isa: runtime }
+          - { os: ubuntu-22.04, profile: default, isa: runtime }
+          - { os: ubuntu-24.04, profile: thin, isa: runtime }
           - { os: ubuntu-24.04, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      CONCRETE_SHA: 192b03101f199c32599cfd8be40fd52dacf73a69
+      BOUNDARY_SHA: 4f101f62383face2a5500b2524436118b58a0b97
+      ENTRIES_SHA: bf983bd1d228ebd13fb1bfd7a26d1f54f4155da0
       AUDIT_SHA: 88eccb90f29402f8e2a0b00d1d5d0a72b05f91bd
       DIAGNOSTIC_ROUTE: "1"
       EPHEMERAL_BUILD: "1"
@@ -45,7 +48,7 @@ jobs:
       - name: Check exact error positions, output and rollback
         shell: bash
         run: |
-          for revision in "$CONCRETE_SHA"; do
+          for revision in "$ENTRIES_SHA" "$BOUNDARY_SHA"; do
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
             (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/diag-tests" cargo test --release --all-features)
             rustc --edition 2018 --crate-name faster_hex --crate-type rlib -O --cfg 'feature="alloc"' --cfg 'feature="std"' "$RUNNER_TEMP/$revision/src/lib.rs" -o "$RUNNER_TEMP/libfaster_hex.rlib"
@@ -62,7 +65,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: concrete-cold-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: owned-route-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json

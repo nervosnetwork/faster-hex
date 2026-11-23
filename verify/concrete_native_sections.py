@@ -25,3 +25,21 @@ def record(folder,images):
  ops={'qualified_decode','vec_read_slice','array_read_slice','vec_round_slice','owned_blocks','validate_call','append_call'}
  result={key:inspect(target/key.replace('/','-')) for key in images if key.split('/')[1] in ops}
  (target/'recovery-codegen.json').write_text(json.dumps(result,sort_keys=True))
+
+
+def owned_calls(folder, images):
+ if not sys.platform.startswith('linux'):return
+ # Capture the timed consumer itself, including inlined code for fixed-size arrays.
+ target=Path(folder);result={}
+ for role in ('release','version','pr','scoped','concrete','entries','boundary'):
+    key=role+'/owned_blocks';assert key in images
+    path=target/key.replace('/','-');symbols=[]
+    for line in sp.check_output(['nm','-n','-S','-C','--defined-only',path],text=True).splitlines():
+        match=re.match(r'^([0-9a-f]+)\s+([0-9a-f]+)\s+[tT]\s+(owned_blocks::.+)$',line)
+        if not match:continue
+        address,size=int(match[1],16),int(match[2],16)
+        listing=sp.check_output(['objdump','-d','-w','-C','--start-address='+str(address),'--stop-address='+str(address+size),path],text=True)
+        symbols.append(dict(symbol=match[3],address=address,size=size,disassembly=listing.split('Disassembly of section .text:',1)[-1].strip()))
+    assert symbols,key
+    result[role]=symbols
+ (target/'owned-caller-instructions.json').write_text(json.dumps(result,sort_keys=True))

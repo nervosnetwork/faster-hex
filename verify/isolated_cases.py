@@ -151,10 +151,10 @@ elif SCOPE=='release-audit':
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
     if os.environ.get('DIAGNOSTIC_ROUTE')=='1':
-        revisions.update({'plain': '10346c96e8b2ea41558211936a975de94a440163', 'entry': 'a4772296baedee4916e38cfc765935ee2458cbd0', 'concrete': '192b03101f199c32599cfd8be40fd52dacf73a69'})
-        pairs=[('scoped','aa'),('concrete','concrete_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
-        pairs += [(l,h) for l in ('pr','release','version','scoped') for h in ('plain','entry','concrete')]
-        pairs += [('plain','entry'),('plain','concrete'),('entry','concrete')]
+        revisions.update({'concrete': '192b03101f199c32599cfd8be40fd52dacf73a69', 'entries': 'bf983bd1d228ebd13fb1bfd7a26d1f54f4155da0', 'boundary': '4f101f62383face2a5500b2524436118b58a0b97'})
+        pairs=[('scoped','aa'),('boundary','boundary_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
+        pairs += [(l,h) for l in ('pr','release','version','scoped') for h in ('concrete','entries','boundary')]
+        pairs += [('concrete','entries'),('entries','boundary'),('concrete','boundary')]
         include={('vec_round_slice',32,'escaped'),('vec_round_slice',4096,'plain'),('array_round_slice',4096,'plain'),
                  ('vec_write',4096,'plain'),('ckb_caller',32,'plain'),('gix_caller',20,'parse'),('full_buffer',65,'buffer'),
                  ('gix_prefix',7,'sha1-adopt'),('append_call',32,'valid'),('append_call',1025,'valid'),('append_call',4097,'valid')}

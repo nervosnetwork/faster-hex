@@ -192,20 +192,21 @@ if any(env.get(k)=='1' for k in ['INTEGRATED_CONFIRM','DIAGNOSTIC_BOUNDARY','PRE
             fingerprints[key]['rodata']=section(img,'.rodata')
     save(out/'program-fingerprints.json',fingerprints)
     if env.get('DIAGNOSTIC_ROUTE')=='1':
-        from concrete_native_sections import record
+        from concrete_native_sections import owned_calls, record
         record(out,sections)
+        owned_calls(out, fingerprints)
 
 if SCOPE=='recovery' and sys.platform.startswith('linux'):
     from isolated_elf import record
     save(out/'elf.json',{role:record(out/(role+'-vec_round_slice')) for role in revisions})
-pin();rng=random.Random(1837209 if env.get('INTEGRATED_CONFIRM')=='1' else (3691748 if env.get('DIAGNOSTIC_BOUNDARY')=='1' else (962539 if env.get('PREFIX_ENTRY')=='1' else (613870 if env.get('DIAGNOSTIC_STEPS')=='1' else (963177 if env.get('DIAGNOSTIC_ROUTE')=='1' else 602105)))))
+pin();rng=random.Random(1837209 if env.get('INTEGRATED_CONFIRM')=='1' else (3691748 if env.get('DIAGNOSTIC_BOUNDARY')=='1' else (962539 if env.get('PREFIX_ENTRY')=='1' else (613870 if env.get('DIAGNOSTIC_STEPS')=='1' else (981264 if env.get('DIAGNOSTIC_ROUTE')=='1' else 602105)))))
 rng.shuffle(cases)
 summary={};samples={}
 for b,n,k in cases:
     same_binary = SCOPE=='prefix-length' and b=='gix_prefix' and k.endswith('-adopt')
     def sample(role,repeat):
         how=k
-        if env.get('DIAGNOSTIC_ROUTE')=='1' and role=='concrete_control':role='concrete'
+        if env.get('DIAGNOSTIC_ROUTE')=='1' and role=='boundary_control':role='boundary'
         if env.get('DIAGNOSTIC_STEPS')=='1' and role=='groups_control':role='groups'
         if env.get('PREFIX_ENTRY')=='1' and role=='bounded_control':role='bounded'
         if env.get('DIAGNOSTIC_BOUNDARY')=='1' and role=='split_control':role='split'
@@ -245,7 +246,7 @@ for b,n,k in cases:
         if env.get('DIAGNOSTIC_BOUNDARY')=='1':order.append('split_control')
         if env.get('PREFIX_ENTRY')=='1':order.append('bounded_control')
         if env.get('DIAGNOSTIC_STEPS')=='1': order.append('groups_control')
-        if env.get('DIAGNOSTIC_ROUTE')=='1': order.append('concrete_control')
+        if env.get('DIAGNOSTIC_ROUTE')=='1': order.append('boundary_control')
         if same_binary: order += ['pr-legacy','scoped-legacy','candidate-legacy']
         rng.shuffle(order);groups={r:[] for r in order}
         for role in order+order[::-1]:groups[role].append(sample(role,count))
