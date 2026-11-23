@@ -15,7 +15,7 @@ from cause_common import measure, pin, save
 
 scope.revisions = {'version':'f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93',
                    'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4',
-                   'candidate':'5f541e65aae0b854d234b8a51406d1e45767729e'}
+                   'candidate':'1355fb28837f100ce0fcf6bd8f6e61adcb174fe2'}
 scope.pairs = []
 scope.cases = [('ckb_caller',32,'plain'), ('ckb_caller',32,'escaped'), ('ckb_caller',4096,'plain'),
                ('gix_caller',20,'parse'), ('gix_caller',32,'parse'),
@@ -25,7 +25,7 @@ scope.cases = [('ckb_caller',32,'plain'), ('ckb_caller',32,'escaped'), ('ckb_cal
                ('gix_prefix',40,'sha1-adopt'), ('gix_prefix',64,'sha256-adopt'),
                ('append_call',32,'valid'), ('append_call',4096,'rollback'),
                ('validate_call',4096,'last')]
-scope.cases = [row for row in scope.cases if row[0] not in ('gix_prefix','validate_call')]
+scope.cases += [('append_call',32,'rollback'), ('append_call',4096,'valid'), ('gix_prefix',7,'sha256-adopt')]
 driver = v/'isolate_callers.py'
 source = driver.read_text().split('\npin();rng=',1)[0]
 guard = "    if SCOPE in ('fmt-join','fmt-field','prefix-length','release-audit','prefix-kernel-exchange','prefix-operation') and role in ('release','version'):"

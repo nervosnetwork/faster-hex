@@ -1,4 +1,4 @@
-name: Check that adding the inline append entry preserves existing APIs
+name: Qualify the three 2.1 APIs against their fixed references
 on: workflow_dispatch
 permissions:
   contents: read
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-entry-${{ matrix.change }}-${{ matrix.os }}-lto-${{ matrix.lto }}
+          name: retained-21-${{ matrix.change }}-${{ matrix.os }}-lto-${{ matrix.lto }}
           path: out
           if-no-files-found: error
 
@@ -92,9 +92,42 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: append-entry-consumers-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: retained-21-consumers-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.log
             real/qualification/*/*.json
             real/qualification/*/*-vs-*/*.json
+
+  fallback:
+    name: Exercise the x86 dispatch fallback cases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 1355fb28837f100ce0fcf6bd8f6e61adcb174fe2
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+        with:
+          toolchain: 1.95.0
+          targets: i686-unknown-linux-gnu
+      - name: Install the test runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y gcc-multilib qemu-user
+      - name: Check x86 dispatch with missing CPU features
+        env:
+          RUSTFLAGS: -D warnings
+        run: |
+          while read -r cpu expected; do
+            CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER="qemu-i386 -cpu $cpu" \
+              FASTER_HEX_EXPECT_BACKEND="$expected" cargo test --release --all-features \
+                --target i686-unknown-linux-gnu --lib tests::feature_detection_matches_host -- --exact
+          done <<'CPUS'
+          max,-sse4.1 None
+          max,-xsave SSE41
+          max,-avx SSE41
+          max,-avx2 SSE41
+          max,-avx512bw AVX2
+          CPUS
