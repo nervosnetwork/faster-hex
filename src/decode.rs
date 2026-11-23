@@ -386,7 +386,7 @@ pub fn hex_decode_array_with_case<const N: usize>(
         return Ok(bytes);
     }
     // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
     Ok(bytes)
 }
 
@@ -453,7 +453,7 @@ pub fn hex_decode_vec_with_case(
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
     // SAFETY: The vector has one byte for each pair of the even input.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
     Ok(bytes)
 }
 
@@ -492,7 +492,7 @@ pub fn hex_decode_append<'a>(
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
     // SAFETY: resize added one byte for each pair of the even input.
-    if let Err(error) = unsafe { decode_owned(src, &mut dst[start..], CheckCase::None) } {
+    if let Err(error) = unsafe { decode_owned::<true>(src, &mut dst[start..], CheckCase::None) } {
         dst.truncate(start);
         return Err(error);
     }
@@ -506,7 +506,11 @@ pub fn hex_decode_append<'a>(
 /// `src.len()` must be twice `dst.len()`, as for [`decode_checked`].
 // Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
-unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+unsafe fn decode_owned<const GROUP_DIGITS: bool>(
+    src: &[u8],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), Error> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     let decoded = if dst.len() <= 1024 {
         // The caller established the exact lengths used by the bounded kernels.
@@ -537,7 +541,7 @@ unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<()
         decoded
     };
     if decoded.is_err() {
-        decode_diagnosed::<true>(src, dst, case)?;
+        decode_diagnosed::<GROUP_DIGITS>(src, dst, case)?;
     }
     Ok(())
 }
