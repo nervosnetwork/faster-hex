@@ -35,7 +35,7 @@ def owned_calls(folder, images):
     key=role+'/owned_blocks';assert key in images
     path=target/key.replace('/','-');symbols=[]
     for line in sp.check_output(['nm','-n','-S','-C','--defined-only',path],text=True).splitlines():
-        match=re.match(r'^([0-9a-f]+)\s+([0-9a-f]+)\s+[tT]\s+(owned_blocks::.+)$',line)
+        match=re.match(r'^([0-9a-f]+)\s+([0-9a-f]+)\s+[tT]\s+(\S*owned_blocks\S*)$',line)
         if not match:continue
         address,size=int(match[1],16),int(match[2],16)
         listing=sp.check_output(['objdump','-d','-w','-C','--start-address='+str(address),'--stop-address='+str(address+size),path],text=True)
