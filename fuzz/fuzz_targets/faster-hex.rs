@@ -52,6 +52,16 @@ fuzz_target!(|data: &[u8]| {
         );
         // Independently assemble sign-aware zero padding, including empty input.
         let width = data.first().copied().unwrap_or(0) as usize;
+        let digits = width.min(expected.len());
+        let mut prefix = vec![0xff; digits + 1];
+        assert_eq!(
+            view.leading_digits(width)
+                .encode_to(&mut prefix)
+                .unwrap()
+                .as_bytes(),
+            &expected[..digits]
+        );
+        assert_eq!(prefix[digits], 0xff);
         let zeros = width.saturating_sub(3 + expected.len());
         let mut padded = String::from("+0x");
         padded.extend(core::iter::repeat_n('0', zeros));
@@ -63,6 +73,17 @@ fuzz_target!(|data: &[u8]| {
             let mut decoded = vec![0; data.len() / 2];
             let slice = faster_hex::hex_decode(data, &mut decoded).map(|bytes| bytes.to_vec());
             assert_eq!(faster_hex::hex_decode_vec(data), slice);
+            assert_eq!(
+                faster_hex::hex_validate(data),
+                slice.as_ref().map(|_| ()).map_err(|&e| e)
+            );
+            let mut appended = vec![0xa5];
+            assert_eq!(
+                faster_hex::hex_decode_append(data, &mut appended).map(|s| s.to_vec()),
+                slice
+            );
+            assert_eq!(appended[0], 0xa5);
+            assert_eq!(&appended[1..], slice.as_deref().unwrap_or_default());
             assert_eq!(faster_hex::hex_string(data).as_bytes(), expected);
             let mut output = String::with_capacity(data.first().copied().unwrap_or(0) as usize);
             output.push_str("前缀:");
