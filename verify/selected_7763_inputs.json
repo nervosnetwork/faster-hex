@@ -1,0 +1,86 @@
+{
+  "refs": {
+    "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
+    "version": "f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93",
+    "pr": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
+    "released_decode": "6e9b7cb2985a3b43287709f35810efe3bdefbf06",
+    "combined_paths": "14fd8387bd89cf1c3f792b36c4e74ca13a3df3dc",
+    "append_grouped": "9978f4a6dda78cae37fc1f4c96f2a2088512ef20"
+  },
+  "anchors": {
+    "ubuntu-22.04-thin-runtime": {
+      "release/qualified_decode": {
+        ".text": [
+          85152,
+          291672,
+          "abaf2afd2849d10d30deedfca918cc10a1d4527f38fdf8dd68597b83cf27d023"
+        ],
+        ".rodata": [
+          21696,
+          28972,
+          "dd90191ed3ae8b8191400d564b79259a8f5c8e5504b043507ce5da565dbb2ca4"
+        ]
+      },
+      "version/qualified_decode": {
+        ".text": [
+          85152,
+          291672,
+          "30cfabb50194787f483562735dd147d45713819312c935472cc9454eca188b19"
+        ],
+        ".rodata": [
+          21696,
+          28972,
+          "ed85dcafca7d0e24b7e2f48ac3a4618b01baafb33867370b49ac0fa647505e98"
+        ]
+      },
+      "pr/qualified_decode": {
+        ".text": [
+          85216,
+          291864,
+          "7b3c7dd4958386ffb4f1756e11543ccab1feb5e9466d6ddd6ce0e97e496e6b24"
+        ],
+        ".rodata": [
+          21760,
+          28972,
+          "f28a800b31377d0166e7eeb1fa5abdc556981f1e41fe381de70fa57f30e30eb8"
+        ]
+      },
+      "released_decode/qualified_decode": {
+        ".text": [
+          85152,
+          291672,
+          "30cfabb50194787f483562735dd147d45713819312c935472cc9454eca188b19"
+        ],
+        ".rodata": [
+          21696,
+          28972,
+          "ed85dcafca7d0e24b7e2f48ac3a4618b01baafb33867370b49ac0fa647505e98"
+        ]
+      },
+      "combined_paths/qualified_decode": {
+        ".text": [
+          85152,
+          291672,
+          "30cfabb50194787f483562735dd147d45713819312c935472cc9454eca188b19"
+        ],
+        ".rodata": [
+          21696,
+          28972,
+          "ed85dcafca7d0e24b7e2f48ac3a4618b01baafb33867370b49ac0fa647505e98"
+        ]
+      },
+      "append_grouped/qualified_decode": {
+        ".text": [
+          85152,
+          291656,
+          "f0261f2854d289e84da841ac051a4baf911f7037e9fef431a2e9626705292569"
+        ],
+        ".rodata": [
+          21696,
+          28972,
+          "a15ae65824eb48b77cc7af34dd6f3f5570c0804740337b05fb9daa3799e98cbf"
+        ]
+      }
+    }
+  }
+}
