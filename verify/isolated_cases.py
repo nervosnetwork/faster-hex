@@ -150,6 +150,21 @@ elif SCOPE=='release-audit':
             for phase,kind in (('read_slice','plain'),('read_slice','escaped'),('read_reader','reader'),('write','plain'),('round_slice','plain'),('round_slice','escaped'),('round_reader','reader')):
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
+    if os.environ.get('DIAGNOSTIC_STEPS')=='1':
+        revisions.update({'plain': '10346c96e8b2ea41558211936a975de94a440163', 'first': 'a3d45d8deaff30834d8d330f3401d629f031c246', 'groups': '075ab5a3bb18542a634f2a3af5d73bd283a47c83'})
+        pairs=[('scoped','aa'),('groups','groups_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
+        pairs += [(a,b) for a in ('release','version','pr') for b in ('plain','first','groups')]
+        pairs += [('plain','first'),('plain','groups'),('plain','scoped'),('groups','scoped'),('first','scoped'),('first','groups')]
+        include={('vec_read_slice',32,'escaped'),('array_read_slice',32,'escaped'),('vec_round_slice',32,'escaped'),
+                 ('vec_read_slice',32,'plain'),('array_read_slice',32,'plain'),
+                 ('vec_round_slice',4096,'plain'),('array_round_slice',4096,'plain'),
+                 ('vec_read_slice',4096,'plain'),('vec_write',4096,'plain'),
+                 ('gix_prefix',7,'sha1-adopt'),('gix_caller',20,'parse'),('ckb_caller',32,'escaped'),('ckb_caller',4096,'plain'),
+                 ('append_call',32,'first'),('append_call',32,'rollback'),('append_call',256,'middle'),('append_call',4096,'rollback'),
+                 ('append_call',32,'valid'),('append_call',4097,'valid'),('append_call',1025,'valid')}
+        cases=[(b,n,k) for b,n,k in cases if b in ('qualified_decode','owned_blocks') or (b=='validate_call' and k in ('valid','first','last')) or (b,n,k) in include]
+        assert len(cases)==len(set(cases))==37
+
     if os.environ.get('PREFIX_ENTRY')=='1':
         revisions.update({'donor': '09a50778d4d210a27fcaba7cc993a18e918ca4f6', 'bounded': 'd1ffe8ee992bd5267eced3c3e4b7e34340beb664'})
         pairs=[('scoped','aa'),('bounded','bounded_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
