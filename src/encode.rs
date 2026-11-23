@@ -448,11 +448,19 @@ unsafe fn encode_neon_bulk(src: &[u8], dst: &mut [MaybeUninit<u8>], table: uint8
     for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<32>().0) {
         encode_neon_16(input, output, table);
     }
-    if !tail.is_empty() {
-        // Re-encode the last complete block to cover a short tail. The overlap
-        // writes the same bytes and never accesses outside either slice.
-        if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
-            encode_neon_16(input, output, table);
+    // A partial vector can overlap already encoded bytes. Use the smaller
+    // vector if it covers the entire remainder.
+    match tail.len() {
+        0 => {}
+        1..=8 => {
+            if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+                encode_neon_8(input, output, table);
+            }
+        }
+        _ => {
+            if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+                encode_neon_16(input, output, table);
+            }
         }
     }
 }
