@@ -1,0 +1,389 @@
+{
+  "whole": {
+    "release": "75b7dc7e15c059efdf7bf056a38e750836a23ec2fedc801a7d5a68a2884bb4c5",
+    "version": "c8ffc6ae2d4ead4941d927bd2257a21e77b8f29cac2cb2d3159d4aca0f9a50c6",
+    "candidate": "e7d5577958d6090f40496cd4eb89e20374feb69e4edf1692d25ec6e202bfe855"
+  },
+  "sections": {
+    "release": {
+      "native": {
+        ".text": [
+          19904,
+          280712,
+          "ef6f71d9904ebcce347c4f2485bb55d0648bf7b8e366abdc358b526ebcbda02b"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "b1e430967f7ef53f3f5c718368ec1f885a67e9ceb7b377914b5b021bca6933f6"
+        ]
+      },
+      "before-core": {
+        ".text": [
+          19904,
+          280712,
+          "ef6f71d9904ebcce347c4f2485bb55d0648bf7b8e366abdc358b526ebcbda02b"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "b1e430967f7ef53f3f5c718368ec1f885a67e9ceb7b377914b5b021bca6933f6"
+        ]
+      },
+      "after-core": {
+        ".text": [
+          19904,
+          280712,
+          "acab105aa245190899d3e2be5018779b507e06f168ab2ba117e730bc2bdfdb43"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "b1e430967f7ef53f3f5c718368ec1f885a67e9ceb7b377914b5b021bca6933f6"
+        ]
+      }
+    },
+    "version": {
+      "native": {
+        ".text": [
+          19904,
+          280712,
+          "beb314a5cb52e740fe5e231ff6e676680e305a886bee3a6f92d148a01fb05a95"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "5ee4c120da8b8e307824141b6419c7a8c63c73b52666c3999602e15ef01e18d1"
+        ]
+      },
+      "before-core": {
+        ".text": [
+          19904,
+          280712,
+          "eac8d3a7f9d0bc82aada45fe462643fd914d3ea772e59da1e53f5d13ecb3be28"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "5ee4c120da8b8e307824141b6419c7a8c63c73b52666c3999602e15ef01e18d1"
+        ]
+      },
+      "after-core": {
+        ".text": [
+          19904,
+          280712,
+          "beb314a5cb52e740fe5e231ff6e676680e305a886bee3a6f92d148a01fb05a95"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "5ee4c120da8b8e307824141b6419c7a8c63c73b52666c3999602e15ef01e18d1"
+        ]
+      }
+    },
+    "candidate": {
+      "native": {
+        ".text": [
+          19904,
+          280712,
+          "ece468f05fe27d17eabe6bbf4f139c8786da9b9c1c8f3bc9072f8c31bf51a250"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "9df86aba9c8057803c9db3663a9ab6aacf4e1ecd56a25586eaa8f354e190f41c"
+        ]
+      },
+      "before-core": {
+        ".text": [
+          19904,
+          280712,
+          "1f8be5e97e7f25f1925b03e9ca15966c3e47afbd74a56e836f3c84718f9a6248"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "9df86aba9c8057803c9db3663a9ab6aacf4e1ecd56a25586eaa8f354e190f41c"
+        ]
+      },
+      "after-core": {
+        ".text": [
+          19904,
+          280712,
+          "ece468f05fe27d17eabe6bbf4f139c8786da9b9c1c8f3bc9072f8c31bf51a250"
+        ],
+        ".rodata": [
+          300672,
+          46784,
+          "9df86aba9c8057803c9db3663a9ab6aacf4e1ecd56a25586eaa8f354e190f41c"
+        ]
+      }
+    }
+  },
+  "link_order": {
+    "release": {
+      "native": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61544,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            44632,
+            88
+          ],
+          "realloc": [
+            44720,
+            172
+          ]
+        }
+      },
+      "before-core": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61544,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            44632,
+            88
+          ],
+          "realloc": [
+            44720,
+            172
+          ]
+        },
+        "allocator_arg_before": 0,
+        "allocator_arg_after": 0,
+        "anchor_object": "vec_round_slice-b04c35313cdecd8f.addr2line-5d7f22c397c0246f.addr2line.3e0aa177fea47c76-cgu.0.rcgu.o.rcgu.o",
+        "native_order_already": true
+      },
+      "after-core": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61284,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            79856,
+            88
+          ],
+          "realloc": [
+            79944,
+            172
+          ]
+        },
+        "allocator_arg_before": 0,
+        "allocator_arg_after": 5,
+        "anchor_object": "vec_round_slice-b04c35313cdecd8f.faster_hex-fccaa0d63bf9dc14.faster_hex.209b274ffa8f219-cgu.0.rcgu.o.rcgu.o",
+        "native_order_already": false
+      }
+    },
+    "version": {
+      "native": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61284,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            79856,
+            88
+          ],
+          "realloc": [
+            79944,
+            172
+          ]
+        }
+      },
+      "before-core": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61544,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            44632,
+            88
+          ],
+          "realloc": [
+            44720,
+            172
+          ]
+        },
+        "allocator_arg_before": 5,
+        "allocator_arg_after": 0,
+        "anchor_object": "vec_round_slice-54f6fa3634bbfa87.addr2line-5d7f22c397c0246f.addr2line.3e0aa177fea47c76-cgu.0.rcgu.o.rcgu.o",
+        "native_order_already": false
+      },
+      "after-core": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61284,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            79856,
+            88
+          ],
+          "realloc": [
+            79944,
+            172
+          ]
+        },
+        "allocator_arg_before": 5,
+        "allocator_arg_after": 5,
+        "anchor_object": "vec_round_slice-54f6fa3634bbfa87.faster_hex-1a7b5d5d0b5cbfa9.faster_hex.734ad11f65ab8b3d-cgu.0.rcgu.o.rcgu.o",
+        "native_order_already": true
+      }
+    },
+    "candidate": {
+      "native": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61284,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            79856,
+            88
+          ],
+          "realloc": [
+            79944,
+            172
+          ]
+        }
+      },
+      "before-core": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61544,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            44632,
+            88
+          ],
+          "realloc": [
+            44720,
+            172
+          ]
+        },
+        "allocator_arg_before": 5,
+        "allocator_arg_after": 0,
+        "anchor_object": "vec_round_slice-54f6fa3634bbfa87.addr2line-5d7f22c397c0246f.addr2line.3e0aa177fea47c76-cgu.0.rcgu.o.rcgu.o",
+        "native_order_already": false
+      },
+      "after-core": {
+        "routines": {
+          "core::str::converts::from_utf8": [
+            61284,
+            624
+          ],
+          "vec_round_slice::measure": [
+            290444,
+            2432
+          ],
+          "serde_json::ser::format_escaped_str": [
+            296560,
+            644
+          ]
+        },
+        "allocator_entries": {
+          "alloc": [
+            79856,
+            88
+          ],
+          "realloc": [
+            79944,
+            172
+          ]
+        },
+        "allocator_arg_before": 5,
+        "allocator_arg_after": 5,
+        "anchor_object": "vec_round_slice-54f6fa3634bbfa87.faster_hex-1a7b5d5d0b5cbfa9.faster_hex.734ad11f65ab8b3d-cgu.0.rcgu.o.rcgu.o",
+        "native_order_already": true
+      }
+    }
+  }
+}
