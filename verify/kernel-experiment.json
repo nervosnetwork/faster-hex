@@ -1,35 +1,112 @@
 {
-  "proposal": "1e8b6ca027aaa260d4b3a8d806c3bf4eb65c1e7b",
+  "proposal": "e2ff1b92f5dd9ac663a005745d4727e1716ee3aa",
   "cases": {
-    "ubuntu-24.04-lto-false": [
-      "decode/faster_hex_mixed/256",
-      "decode/faster_hex_mixed/4096",
-      "encode/faster_hex/65",
-      "decode_vec/faster_hex/4096",
-      "serde_json/deserialize/32"
-    ]
+    "macos-15-intel-lto-false": [],
+    "ubuntu-24.04-arm-lto-false": [],
+    "ubuntu-24.04-lto-false": [],
+    "macos-15-intel-lto-thin": [],
+    "ubuntu-24.04-arm-lto-thin": [],
+    "ubuntu-24.04-lto-thin": []
   },
   "anchors": {
-    "ubuntu-24.04-lto-false": {
+    "macos-15-intel-lto-false": {
       "base": {
-        "file": "7791062615b468d28d7626c43798d8a2debbcdc29c9aaa433b851d4253b83895",
+        "file": "34cb75fe70ac7b227856ea3150289322906d5916dc4e244cdbcc8f44ead014ba",
         "text": [
-          1066032,
-          2149335,
-          "f06ff91c2ab1db164d7f8a8e3c770a74e6d17a17ca0b3d3330833f0f14d7e555"
+          4294969440,
+          2934128,
+          "28e5e666d20b41c495eb1d42838520b6f0ed5fe11978e10ea66d04b0d15e700f"
         ]
       },
       "head": {
-        "file": "1fbe878337098e22b70d8e17b9e5cb11ea9d399bccb06022dc3c9aa619614156",
+        "file": "8df900ed74c4c1cc7ebe38af152a1fef6736d7dc6723395caacfc7911f07bce7",
         "text": [
-          1066864,
-          2149319,
-          "d096c8de898f6fdb43967f1ca2477e36ff7b212967cc87197f45b9a5e4245faa"
+          4294969440,
+          2934192,
+          "24fcd5a5d185ad9dfb411c35c8d101ac2b214ff01e2fdf501a376c7a553d73ae"
+        ]
+      }
+    },
+    "ubuntu-24.04-arm-lto-false": {
+      "base": {
+        "file": "07b7c6d3605c1ac4a78a398a74ca83f07fa5fdb4bd1b16e6d13c98a048e8b45b",
+        "text": [
+          291776,
+          2350724,
+          "1b9ab183889026ce16e64a94de91fa8e8f6856d0a0c9fa06bf0279aeb3511aad"
+        ]
+      },
+      "head": {
+        "file": "8cc6fcf1091bcd9c89ddbdfceb22d237ce4435ebb4710a2daeb7ae9022d15dad",
+        "text": [
+          291776,
+          2338372,
+          "f502a632ae472a83f7406c9cb3685a340e22c80b43165cb20442ead103eb6f66"
+        ]
+      }
+    },
+    "ubuntu-24.04-lto-false": {},
+    "macos-15-intel-lto-thin": {
+      "base": {
+        "file": "0bb7906d9acef4022f50c15de53cc8d828244c5563455aaf37c6a962154cc33a",
+        "text": [
+          4294969440,
+          3015328,
+          "80805b804da83c94c64d8d3df98d79414f15be8c68ea683184d4a49fea468364"
+        ]
+      },
+      "head": {
+        "file": "d94810a8ac047f2310caebdaec25fd8437dbb238e1523a674c1d34148bbe6ce5",
+        "text": [
+          4294969440,
+          3015392,
+          "5af778c9cecb27289af387c875c33d46fa05c20820ce290ffbf49fe16e2990da"
+        ]
+      }
+    },
+    "ubuntu-24.04-arm-lto-thin": {
+      "base": {
+        "file": "9dceea88e372e28ba0b5c0a7a5aa4010ffb7750c395ed263ee7676dc826d4c70",
+        "text": [
+          287808,
+          2442840,
+          "27821202087111bd70ec01f48fedad94010b4f9bae1d845f3d6f2ed3322989b5"
+        ]
+      },
+      "head": {
+        "file": "24447359d45106ce59b46d48a5374bf50b612b1ed9a0cd329481f34e8a38675c",
+        "text": [
+          287808,
+          2442760,
+          "7357e3e653d95471b6b6ed82dfd718fd514566dabec5c26fc2ac96675b0538a4"
+        ]
+      }
+    },
+    "ubuntu-24.04-lto-thin": {
+      "base": {
+        "file": "eb9e00436a04e82989e1dcd32cc1325c7389cc451098682a2daa1afe8196bdce",
+        "text": [
+          1127344,
+          3078055,
+          "e95e62c31fc3af8734af75eb62b2b0222ba155e7be90d716bba761b293a5f967"
+        ]
+      },
+      "head": {
+        "file": "4588ab6300dfc81b06ab8a5a6e25d1500a8c05bfbc2494f87e235d1a89f3cc83",
+        "text": [
+          1127280,
+          3078087,
+          "78936c69fb6099701182888beff3ea888a679e09742929ef6814211328b873fe"
         ]
       }
     }
   },
   "locks": {
-    "ubuntu-24.04-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402"
+    "macos-15-intel-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "ubuntu-24.04-arm-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "ubuntu-24.04-lto-false": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "macos-15-intel-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "ubuntu-24.04-arm-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+    "ubuntu-24.04-lto-thin": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402"
   }
 }
