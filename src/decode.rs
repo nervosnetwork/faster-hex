@@ -655,12 +655,6 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
-    // Report a malformed first pair before scanning any SIMD blocks.
-    for (index, &byte) in src.iter().take(2).enumerate() {
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
-        }
-    }
     // Skip valid blocks so locating a late error retains SIMD throughput.
     let skipped = if src.len() > 64 {
         src.chunks_exact(64)
