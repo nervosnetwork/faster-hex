@@ -300,7 +300,7 @@ pub fn hex_decode_with_case<'a>(
         .ok_or(Error::OutputTooSmall { required: len })?;
     // SAFETY: The input is even and dst is the exact output prefix checked above.
     if unsafe { decode_checked(src, dst, check_case) }.is_err() {
-        decode_diagnosed::<false>(src, dst, check_case)?;
+        decode_diagnosed(src, dst, check_case)?;
     }
     Ok(dst)
 }
@@ -544,7 +544,11 @@ unsafe fn decode_owned<const GROUP_DIGITS: bool>(
         decoded
     };
     if decoded.is_err() {
-        decode_diagnosed::<GROUP_DIGITS>(src, dst, case)?;
+        if GROUP_DIGITS {
+            decode_appended_error(src, dst, case)?;
+        } else {
+            decode_diagnosed(src, dst, case)?;
+        }
     }
     Ok(())
 }
@@ -650,13 +654,15 @@ pub(crate) fn hex_decode_short_scalar(
 // Backends report validity; diagnostics belong to the public boundary. The
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
-fn decode_diagnosed<const GROUP_DIGITS: bool>(
-    src: &[u8],
-    dst: &mut [u8],
-    case: CheckCase,
-) -> Result<(), Error> {
-    diagnose_invalid::<GROUP_DIGITS>(src, case)?;
-    // Recover if a backend rejected valid input; the caller needs initialized bytes.
+fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    diagnose_invalid::<false>(src, case)?;
+    hex_decode_fallback(src, dst);
+    Ok(())
+}
+
+#[cold]
+fn decode_appended_error(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    diagnose_invalid::<true>(src, case)?;
     hex_decode_fallback(src, dst);
     Ok(())
 }
