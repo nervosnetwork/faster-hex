@@ -503,17 +503,143 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
     vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
 }
 
-// An odd digit count always selects at least the high nibble of the last byte.
+// Selected-prefix encoding keeps short hash prefixes (<= 32 bytes) on direct
+// NEON / pair-table paths without touching 2.0's complete-slice encoders or
+// exporting 2.0's internal static tables from the rlib.
+const PREFIX_PAIRS_LOWER: [[u8; 2]; 256] = encode_pairs(TABLE_LOWER);
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+const PREFIX_PAIRS_UPPER: [[u8; 2]; 256] = encode_pairs(TABLE_UPPER);
+
 #[inline]
-pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
-    let (&last, pairs) = src.split_last().expect("an odd prefix selects a byte");
-    let required = pairs.len() * 2 + 1;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+fn encode_prefix_pairs<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+    let table = if UPPER {
+        &PREFIX_PAIRS_UPPER
+    } else {
+        &PREFIX_PAIRS_LOWER
+    };
+    for (&byte, pair) in src.iter().zip(dst.as_chunks_mut::<2>().0) {
+        *pair = table[byte as usize].map(MaybeUninit::new);
+    }
+}
+
+#[inline(never)]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+fn encode_prefix_x86_simd<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+    match crate::vectorization_support() {
+        crate::Vectorization::AVX2 | crate::Vectorization::AVX512 if src.len() >= 32 => {
+            // SAFETY: Dispatch checked AVX2 and the OS register state.
+            unsafe { hex_encode_avx2(src, dst, UPPER) }
+        }
+        crate::Vectorization::AVX2 | crate::Vectorization::AVX512 | crate::Vectorization::SSE41 => {
+            // SAFETY: Dispatch checks SSE4.1; dst has twice src.len() bytes.
+            unsafe { hex_encode_sse41(src, dst, UPPER) }
+        }
+        crate::Vectorization::None => hex_encode_custom_case_fallback(src, dst, UPPER),
+    }
+}
+
+#[inline]
+pub(crate) fn encode_prefix_uninit<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+    debug_assert_eq!(src.len().checked_mul(2), Some(dst.len()));
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if src.len() < 16 {
+            encode_prefix_pairs::<UPPER>(src, dst);
+        } else {
+            encode_prefix_x86_simd::<UPPER>(src, dst);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if src.len() < 8 {
+            encode_prefix_pairs::<UPPER>(src, dst);
+        } else if crate::vectorization_support() == crate::Vectorization::Neon {
+            // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes and src.len() >= 8.
+            unsafe { encode_prefix_neon::<UPPER>(src, dst) }
+        } else {
+            hex_encode_custom_case_fallback(src, dst, UPPER);
+        }
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        hex_encode_custom_case_fallback(src, dst, UPPER);
+    }
+}
+
+#[inline]
+#[target_feature(enable = "neon")]
+#[cfg(target_arch = "aarch64")]
+unsafe fn encode_prefix_neon<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+    debug_assert!(src.len() >= 8 && dst.len() == src.len() * 2);
+    let table = if UPPER { TABLE_UPPER } else { TABLE_LOWER };
+    let table = vld1q_u8(table.as_ptr());
+    if src.len() < 16 {
+        if let (Some(input), Some(output)) = (src.first_chunk::<8>(), dst.first_chunk_mut::<16>()) {
+            encode_neon_8(input, output, table);
+        }
+        if src.len() > 8 {
+            if let (Some(input), Some(output)) = (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
+            {
+                encode_neon_8(input, output, table);
+            }
+        }
+        return;
+    }
+    if src.len() <= 32 {
+        // First and last vectors cover a 16..=32 byte prefix without a loop.
+        if let (Some(input), Some(output)) = (src.first_chunk::<16>(), dst.first_chunk_mut::<32>())
+        {
+            encode_neon_16(input, output, table);
+        }
+        if src.len() > 16 {
+            if let (Some(input), Some(output)) =
+                (src.last_chunk::<16>(), dst.last_chunk_mut::<32>())
+            {
+                encode_neon_16(input, output, table);
+            }
+        }
+        return;
+    }
+    let (blocks, tail) = src.as_chunks::<16>();
+    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
+        encode_neon_16(input, output, table);
+    }
+    if !tail.is_empty() {
+        if let (Some(input), Some(output)) = (src.last_chunk::<16>(), dst.last_chunk_mut::<32>()) {
+            encode_neon_16(input, output, table);
+        }
+    }
+}
+
+#[inline]
+pub(crate) fn encode_prefix<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+    let required = src.len().checked_mul(2).ok_or(Error::Overflow)?;
     let output = dst
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
-    let written = hex_encode(pairs, output)?.len();
-    output[written] = TABLE_LOWER[usize::from(last >> 4)];
-    // SAFETY: hex_encode wrote the complete pairs as ASCII. The only
-    // remaining byte was filled from the ASCII digit table.
+    // SAFETY: MaybeUninit<u8> has u8's layout and encode_prefix_uninit only writes ASCII.
+    let uninit = unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), required) };
+    encode_prefix_uninit::<false>(src, uninit);
+    // SAFETY: Every byte in `output` was initialized with ASCII hex digits.
+    Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
+}
+
+// An odd digit count always selects at least the high nibble of the last byte.
+#[inline]
+pub(crate) fn encode_prefix_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+    let (&last, pairs) = src.split_last().expect("an odd prefix selects a byte");
+    let pair_digits = pairs.len() * 2;
+    let required = pair_digits + 1;
+    let output = dst
+        .get_mut(..required)
+        .ok_or(Error::OutputTooSmall { required })?;
+    // SAFETY: MaybeUninit<u8> has u8's layout and encode_prefix_uninit only writes ASCII.
+    let uninit =
+        unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), pair_digits) };
+    encode_prefix_uninit::<false>(pairs, uninit);
+    output[pair_digits] = PREFIX_PAIRS_LOWER[usize::from(last)][0];
+    // SAFETY: encode_prefix_uninit wrote the complete pairs as ASCII, and the final
+    // byte came from the ASCII pair table's high-nibble slot.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
 }
