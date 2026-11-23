@@ -34,7 +34,7 @@ jobs:
             (cd "$RUNNER_TEMP/controls/source/$role" && cargo --locked bench-dev --list) > "$RUNNER_TEMP/$role.list"
             awk '/: benchmark$/ { print }' "$RUNNER_TEMP/$role.list" | LC_ALL=C sort > "$RUNNER_TEMP/$role.cases"
           done
-          rg -Fx 'encode/faster_hex/32: benchmark' "$RUNNER_TEMP/baseline.cases"
+          grep -Fx 'encode/faster_hex/32: benchmark' "$RUNNER_TEMP/baseline.cases"
           diff -u "$RUNNER_TEMP/baseline.cases" "$RUNNER_TEMP/head.cases"
           wc -l "$RUNNER_TEMP/baseline.cases"
       - name: Exercise the whole input validation contract on the candidate

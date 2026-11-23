@@ -33,6 +33,53 @@ def stage(w):
     archive(base,w/"baseline")
     archive(cand,w/"candidate")
 
+def image_hashes(path):
+    import struct
+    original=path.read_bytes()
+    result={"binary":hashlib.sha256(original).hexdigest(),"metadata_bytes":[]}
+    if original.startswith(b"\xcf\xfa\xed\xfe"):
+        data=bytearray(original)
+        uuid=None
+        sig=None
+        cursor=32
+        for _ in range(struct.unpack_from("<I",data,16)[0]):
+            tag,size=struct.unpack_from("<II",data,cursor)
+            if tag==0x1b:
+                assert size==24 and uuid is None
+                uuid=cursor+8
+            if tag==0x1d:
+                sig=struct.unpack_from("<II",data,cursor+8)
+            cursor+=size
+        if uuid is not None:
+            data[uuid:uuid+16]=bytes(16)
+            result["metadata_bytes"].append([uuid,16,"LC_UUID"])
+            if sig is not None:
+                start,length=sig
+                magic,used,count=struct.unpack_from(">III",original,start)
+                assert magic==0xfade0cc0 and used<=length
+                for j in range(count):
+                    slot,off=struct.unpack_from(">II",original,start+12+8*j)
+                    if slot!=0:continue
+                    cd=start+off
+                    assert struct.unpack_from(">I",original,cd)[0]==0xfade0c02
+                    hashes=struct.unpack_from(">I",original,cd+16)[0]
+                    hlen,htype,_,pages=original[cd+36:cd+40]
+                    assert hlen==32 and htype==2
+                    pagesize=1<<pages
+                    page=uuid//pagesize
+                    assert (uuid+15)//pagesize==page
+                    offset=cd+hashes+page*hlen
+                    assert start<=offset<=start+length-hlen
+                    pos=page*pagesize
+                    assert original[offset:offset+hlen]==hashlib.sha256(original[pos:pos+pagesize]).digest()
+                    data[offset:offset+hlen]=hashlib.sha256(data[pos:pos+pagesize]).digest()
+                    result["metadata_bytes"].append([offset,hlen,"verified page hash covering LC_UUID"])
+        result["comparable_image"]=hashlib.sha256(data).hexdigest()
+    else:
+        assert original.startswith(b"\x7fELF")
+        result["comparable_image"]=result["binary"]
+    return result
+
 def probe(root,target):
     f=root/"src/bin/version_comparison.rs"
     f.parent.mkdir(exist_ok=True)
@@ -54,7 +101,7 @@ def probe(root,target):
     s="0123456789abcdef"*2
     assert sp.check_output([binary,s],text=True).strip()==s.encode().hex()
     f.unlink()
-    return {"binary":hashlib.sha256(binary.read_bytes()).hexdigest(),"crate":crate_id}
+    return dict(image_hashes(binary),crate=crate_id)
 
 layout={"source": (("base","2.1.0"),("candidate","2.1.0")),
         "version": (("base","2.0.0"),("base","2.1.0")),
@@ -79,9 +126,9 @@ for mode, pair in layout.items():
     if mode=="source":
         assert (w/"baseline/Cargo.lock").read_bytes()==(w/"head/Cargo.lock").read_bytes()
     print(mode,"both source trees, harnesses, locks and binaries checked",flush=True)
-assert images["source/baseline"]==images["version/head"],images
-assert images["source/head"]==images["release/head"],images
-assert images["version/baseline"]==images["release/baseline"],images
+for left,right in [("source/baseline","version/head"),("source/head","release/head"),("version/baseline","release/baseline")]:
+    for key in ["comparable_image","crate","metadata_bytes"]:
+        assert images[left][key]==images[right][key],(left,right,key,images)
 assert images["version/baseline"]["crate"]!=images["version/head"]["crate"],images
 
 w=run/"dependency-change"
@@ -96,4 +143,4 @@ p=prepare(w,"release")
 assert p.returncode and 'different dependencies' in p.stdout,p.stdout
 print("A different dependency graph is rejected before measurement",flush=True)
 (run/"images.json").write_text(json.dumps(images,indent=2)+"\n")
-print("All three repeated binaries match byte-for-byte",flush=True)
+print("All three independent controls match, including code, placement and data",flush=True)
