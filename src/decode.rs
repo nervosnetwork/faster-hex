@@ -387,7 +387,7 @@ pub fn hex_decode_array_with_case<const N: usize>(
     }
     if N > OWNED_DECODE_THRESHOLD {
         // SAFETY: The length check above matched the number of input pairs to N.
-        unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
@@ -458,7 +458,7 @@ pub fn hex_decode_vec_with_case(
     let mut bytes = alloc::vec![0; src.len() / 2];
     if bytes.len() > OWNED_DECODE_THRESHOLD {
         // SAFETY: The vector has one byte for each pair of the even input.
-        unsafe { decode_owned::<false>(src, &mut bytes, check_case) }?;
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
@@ -499,8 +499,16 @@ pub fn hex_decode_append<'a>(
     }
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
-    // SAFETY: resize added one byte for each pair of the even input.
-    if let Err(error) = unsafe { decode_owned::<true>(src, &mut dst[start..], CheckCase::None) } {
+    let suffix = &mut dst[start..];
+    // SAFETY: resize added exactly one byte per input pair. On error, the suffix is discarded.
+    let decoded = unsafe {
+        if suffix.len() > OWNED_DECODE_THRESHOLD {
+            decode_owned_blocks(src, suffix, CheckCase::None)
+        } else {
+            decode_checked(src, suffix, CheckCase::None)
+        }
+    };
+    if let Err(error) = decoded.or_else(|()| decode_appended_error(src, suffix, CheckCase::None)) {
         dst.truncate(start);
         return Err(error);
     }
@@ -516,51 +524,44 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
 /// `src.len()` must be twice `dst.len()`, as for [`decode_checked`].
 // Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
-unsafe fn decode_owned<const GROUP_DIGITS: bool>(
-    src: &[u8],
-    dst: &mut [u8],
-    case: CheckCase,
-) -> Result<(), Error> {
-    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    if !GROUP_DIGITS && dst.len() <= OWNED_DECODE_THRESHOLD {
-        return hex_decode_with_case(src, dst, case).map(|_| ());
-    }
-    let decoded = if dst.len() <= OWNED_DECODE_THRESHOLD {
-        // The caller established the exact lengths used by the bounded kernels.
-        decode_checked(src, dst, case)
-    } else {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        let decoded = match crate::vectorization_support() {
-            crate::Vectorization::AVX512 => {
-                // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
-                // have the exact 2:1 ratio, and output is private until success.
-                unsafe { x86::hex_decode_avx512_owned(src, dst, case) }
-            }
-            crate::Vectorization::AVX2 => {
-                // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
-                unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
-            }
-            _ => decode_checked(src, dst, case),
-        };
-        #[cfg(target_arch = "aarch64")]
-        let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
-            // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
-            unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
-        } else {
-            decode_checked(src, dst, case)
-        };
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        let decoded = decode_checked(src, dst, case);
-        decoded
-    };
-    if decoded.is_err() {
-        if GROUP_DIGITS {
-            decode_appended_error(src, dst, case)?;
-        } else {
-            decode_diagnosed(src, dst, case)?;
-        }
+unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    // SAFETY: the caller established the exact input and private output lengths.
+    if unsafe { decode_owned_blocks(src, dst, case) }.is_err() {
+        return decode_diagnosed(src, dst, case);
     }
     Ok(())
+}
+
+/// Decodes into private output, which may be partially written on rejection.
+///
+/// # Safety
+/// `src.len()` must be twice `dst.len()`.
+#[inline(always)]
+unsafe fn decode_owned_blocks(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
+    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let decoded = match crate::vectorization_support() {
+        crate::Vectorization::AVX512 => {
+            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
+            // have the exact 2:1 ratio, and output is private until success.
+            unsafe { x86::hex_decode_avx512_owned(src, dst, case) }
+        }
+        crate::Vectorization::AVX2 => {
+            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
+            unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
+        }
+        _ => decode_checked(src, dst, case),
+    };
+    #[cfg(target_arch = "aarch64")]
+    let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
+        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
+        unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
+    } else {
+        decode_checked(src, dst, case)
+    };
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    let decoded = decode_checked(src, dst, case);
+    decoded
 }
 
 /// Checks every digit before writing anything.
