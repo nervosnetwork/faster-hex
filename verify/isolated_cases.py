@@ -151,10 +151,10 @@ elif SCOPE=='release-audit':
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
     if os.environ.get('DIAGNOSTIC_ROUTE')=='1':
-        revisions.update({'split': 'a0b6d03c6a695968ed8de260cdb1085c3d02b0f6', 'plain': '10346c96e8b2ea41558211936a975de94a440163', 'routed': 'f1539dc5ade198a71e9af5c1d37ea7fca744e17c', 'entry': 'a4772296baedee4916e38cfc765935ee2458cbd0'})
-        pairs=[('scoped','aa'),('entry','entry_control'),('release','version'),('release','pr')]
-        pairs += [(base,right) for base in ('release','pr','version','scoped') for right in ('split','plain','routed','entry')]
-        pairs += [('split','routed'),('plain','routed'),('plain','entry'),('routed','entry'),('scoped','pr'),('release','scoped'),('pr','scoped')]
+        revisions.update({'plain': '10346c96e8b2ea41558211936a975de94a440163', 'entry': 'a4772296baedee4916e38cfc765935ee2458cbd0', 'concrete': '192b03101f199c32599cfd8be40fd52dacf73a69'})
+        pairs=[('scoped','aa'),('concrete','concrete_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]
+        pairs += [(l,h) for l in ('pr','release','version','scoped') for h in ('plain','entry','concrete')]
+        pairs += [('plain','entry'),('plain','concrete'),('entry','concrete')]
         include={('vec_round_slice',32,'escaped'),('vec_round_slice',4096,'plain'),('array_round_slice',4096,'plain'),
                  ('vec_write',4096,'plain'),('ckb_caller',32,'plain'),('gix_caller',20,'parse'),('full_buffer',65,'buffer'),
                  ('gix_prefix',7,'sha1-adopt'),('append_call',32,'valid'),('append_call',1025,'valid'),('append_call',4097,'valid')}

@@ -1,4 +1,4 @@
-name: Test whether legacy and appended decode callers can retain their own error path
+name: Check concrete recovery functions in released package consumers
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,8 +18,7 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      ROUTED_SHA: f1539dc5ade198a71e9af5c1d37ea7fca744e17c
-      ENTRY_SHA: a4772296baedee4916e38cfc765935ee2458cbd0
+      CONCRETE_SHA: 192b03101f199c32599cfd8be40fd52dacf73a69
       AUDIT_SHA: 88eccb90f29402f8e2a0b00d1d5d0a72b05f91bd
       DIAGNOSTIC_ROUTE: "1"
       EPHEMERAL_BUILD: "1"
@@ -46,7 +45,7 @@ jobs:
       - name: Check exact error positions, output and rollback
         shell: bash
         run: |
-          for revision in "$ROUTED_SHA" "$ENTRY_SHA"; do
+          for revision in "$CONCRETE_SHA"; do
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
             (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/diag-tests" cargo test --release --all-features)
             rustc --edition 2018 --crate-name faster_hex --crate-type rlib -O --cfg 'feature="alloc"' --cfg 'feature="std"' "$RUNNER_TEMP/$revision/src/lib.rs" -o "$RUNNER_TEMP/libfaster_hex.rlib"
@@ -63,7 +62,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: diagnostic-route-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: concrete-cold-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
