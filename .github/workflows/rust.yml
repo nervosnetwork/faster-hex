@@ -1,4 +1,4 @@
-name: Verify the append entry point and the original AVX2 link order
+name: Verify the introduced API workloads against their reviewed implementation
 on: workflow_dispatch
 permissions:
   contents: read

@@ -2,46 +2,52 @@
   "proposal": "1e8b6ca027aaa260d4b3a8d806c3bf4eb65c1e7b",
   "cases": {
     "macos-15-intel-lto-false": [
-      "decode/faster_hex_mixed/256",
-      "decode/faster_hex_mixed/4096",
-      "encode/faster_hex/32",
-      "decode/faster_hex_mixed/32",
-      "serde_json/deserialize/32"
+      "decode_append/32",
+      "decode_append/4096",
+      "prefix/buffer/7",
+      "prefix/buffer/12",
+      "prefix/display/7",
+      "check_valid/byte_pairs/32"
     ],
     "ubuntu-24.04-arm-lto-false": [
-      "decode_vec/faster_hex/4096",
-      "encode/faster_hex/8",
-      "decode/faster_hex_mixed/32",
-      "decode_array/faster_hex/32",
-      "serde_json/deserialize/32"
+      "decode_append/32",
+      "decode_append/4096",
+      "prefix/buffer/7",
+      "prefix/buffer/12",
+      "prefix/display/7",
+      "check_valid/byte_pairs/32"
     ],
     "ubuntu-24.04-lto-false": [
-      "decode/faster_hex_mixed/256",
-      "decode/faster_hex_mixed/4096",
-      "encode/faster_hex/65",
-      "decode_vec/faster_hex/4096",
-      "serde_json/deserialize/32"
+      "decode_append/32",
+      "decode_append/4096",
+      "prefix/buffer/7",
+      "prefix/buffer/12",
+      "prefix/display/7",
+      "check_valid/byte_pairs/32"
     ],
     "macos-15-intel-lto-thin": [
-      "decode/faster_hex_mixed/256",
-      "decode/faster_hex_mixed/4096",
-      "encode/faster_hex/32",
-      "decode/faster_hex_mixed/32",
-      "serde_json/deserialize/32"
+      "decode_append/32",
+      "decode_append/4096",
+      "prefix/buffer/7",
+      "prefix/buffer/12",
+      "prefix/display/7",
+      "check_valid/byte_pairs/32"
     ],
     "ubuntu-24.04-arm-lto-thin": [
-      "decode_vec/faster_hex/4096",
-      "encode/faster_hex/8",
-      "decode/faster_hex_mixed/32",
-      "decode_array/faster_hex/32",
-      "serde_json/deserialize/32"
+      "decode_append/32",
+      "decode_append/4096",
+      "prefix/buffer/7",
+      "prefix/buffer/12",
+      "prefix/display/7",
+      "check_valid/byte_pairs/32"
     ],
     "ubuntu-24.04-lto-thin": [
-      "decode/faster_hex_mixed/256",
-      "decode/faster_hex_mixed/4096",
-      "encode/faster_hex/65",
-      "decode_vec/faster_hex/4096",
-      "serde_json/deserialize/32"
+      "decode_append/32",
+      "decode_append/4096",
+      "prefix/buffer/7",
+      "prefix/buffer/12",
+      "prefix/display/7",
+      "check_valid/byte_pairs/32"
     ]
   },
   "anchors": {
