@@ -1,4 +1,4 @@
-name: Measure the actual eight-byte encoder at both original code locations
+name: Check early and late errors with private NEON output scheduling
 on: workflow_dispatch
 permissions:
   contents: read
@@ -6,14 +6,15 @@ env:
   RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
   compare:
-    name: ${{ matrix.os }} / LTO ${{ matrix.lto }}
+    name: ${{ matrix.change }} / ${{ matrix.os }} / LTO ${{ matrix.lto }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 48
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04-arm, lto: "thin" }
+          - { os: ubuntu-24.04-arm, lto: "false", change: owned }
+          - { os: ubuntu-24.04-arm, lto: "thin", change: owned }
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
@@ -27,13 +28,14 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.11"
-      - name: Identify the sampled lowercase encoding loop and vary its address
+      - name: Compare the original API, current candidate and one isolated source edit
         env:
+          CHANGE: ${{ matrix.change }}
           CELL: ${{ matrix.os }}-lto-${{ matrix.lto }}
-        run: python verify/probe_actual_encoded_caller.py "$CELL"
+        run: python verify/private-scheduling.py "$CELL"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: caller-sites-${{ matrix.os }}-lto-${{ matrix.lto }}
+          name: private-store-${{ matrix.change }}-${{ matrix.os }}-lto-${{ matrix.lto }}
           path: out
           if-no-files-found: error
