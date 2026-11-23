@@ -357,11 +357,7 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    if N > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
-    } else {
-        hex_decode_with_case(src, &mut bytes, check_case)?;
-    }
+    decode_owned(src, &mut bytes, check_case)?;
     Ok(bytes)
 }
 
@@ -427,23 +423,61 @@ pub fn hex_decode_vec_with_case(
         return Err(Error::OddLength);
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
-    if bytes.len() > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
-    } else {
-        hex_decode_with_case(src, &mut bytes, check_case)?;
-    }
+    decode_owned(src, &mut bytes, check_case)?;
     Ok(bytes)
 }
 
-// Small outputs are sensitive to streaming setup and call-site inlining.
-const OWNED_DECODE_THRESHOLD: usize = 1024;
+/// Appends decoded bytes to `dst` and returns just the new suffix.
+///
+/// Accepts the same mixed-case hex as [`hex_decode`]. Reuses the vector's
+/// allocation when capacity permits. Empty input returns an empty suffix.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] before growing the vector. Otherwise
+/// [`Error::InvalidChar`] identifies the first invalid byte. On error, the
+/// vector retains its original length and contents. Its capacity may grow.
+///
+/// # Panics
+///
+/// Panics if the resulting vector would exceed its maximum capacity.
+/// Allocation failure follows the allocator's normal handling.
+///
+/// ```
+/// use faster_hex::hex_decode_append;
+/// let mut bytes = vec![0xff];
+/// assert_eq!(hex_decode_append(b"aB01", &mut bytes)?, [0xab, 1]);
+/// assert_eq!(bytes, [0xff, 0xab, 1]);
+/// # Ok::<(), faster_hex::Error>(())
+/// ```
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub fn hex_decode_append<'a>(
+    src: &[u8],
+    dst: &'a mut alloc::vec::Vec<u8>,
+) -> Result<&'a mut [u8], Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let start = dst.len();
+    dst.resize(start + src.len() / 2, 0);
+    if let Err(error) = decode_owned(src, &mut dst[start..], CheckCase::None) {
+        dst.truncate(start);
+        return Err(error);
+    }
+    Ok(&mut dst[start..])
+}
 
 // Owned callers discard this initialized, exact-size buffer on error. Large
 // inputs can commit one checked block at a time without re-reading valid input.
 // Inline dispatch to preserve array return/copy code generation. The SIMD block
 // loops remain in their target-feature functions.
 #[inline(always)]
-fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    // Short outputs share the slice decoder's bounded kernels.
+    if dst.len() <= 1024 {
+        return hex_decode_with_case(src, dst, case).map(|_| ());
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {

@@ -29,7 +29,8 @@
 //! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
 //!
 //! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
-//! `hex_append` and `hex_append_upper` reuse a string's capacity;
+//! `hex_append` and `hex_append_upper` reuse a string's capacity, and
+//! `hex_decode_append` appends to an existing byte vector;
 //! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors.
 //! The `heapless-09` feature provides fixed-capacity strings in `heapless_09`.
 //!
@@ -191,7 +192,7 @@ pub use crate::encode::{hex_encode, hex_encode_upper};
 pub use crate::encode::{hex_append, hex_append_upper, hex_string, hex_string_upper};
 
 #[cfg(feature = "alloc")]
-pub use crate::decode::{hex_decode_vec, hex_decode_vec_with_case};
+pub use crate::decode::{hex_decode_append, hex_decode_vec, hex_decode_vec_with_case};
 
 pub use crate::error::Error;
 pub use crate::format::Hex;
