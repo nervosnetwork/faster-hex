@@ -27,3 +27,14 @@ pairs=[("scoped","aa"),*((k,k+"_control") for k in controls),
        ("release","version"),("release","pr"),("release","narrow"),("release","scoped"),("pr","scoped"),
        *((a,b) for a in ("release","version","pr","narrow","scoped") for b in ("scalar","vector")),
        ("scalar","vector")]
+
+import os
+if os.environ.get("PR_BULK_REVERSAL") == "1":
+    revisions = {k:revisions[k] for k in ("release","version","narrow","pr")}
+    revisions["donor"] = "2680b238f7c5c211aed329a70c8a30c669570ec9"
+    revisions["scoped"] = "f70fa87c6e66b2698ed6d2cae8a4ea5b45ab5a69"
+    controls = ("release","pr","scoped")
+    pairs = [("scoped","aa"),*((k,k+"_control") for k in controls),
+             ("release","version"),("release","pr"),("version","pr"),("release","narrow"),
+             ("release","donor"),("pr","donor"),
+             *((k,"scoped") for k in ("release","version","pr","donor","narrow"))]
