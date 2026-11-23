@@ -126,6 +126,12 @@ elif SCOPE=='release-audit':
         pairs += [('release','pr'),('release','narrow'),('narrow','scoped'),('view','view_control'),('combined','combined_control')]
         pairs += [(base,candidate) for base in ('release','version','pr','narrow','scoped') for candidate in ('diagnosis','owned','formatter','combined','view')]
         pairs += [('diagnosis','owned'),('owned','combined'),('formatter','combined'),('combined','view'),('diagnosis','combined')]
+    if os.environ.get('INTEGRATED_CONFIRM')=='1':
+        revisions['narrow']=SCOPE_BASE
+        revisions.update({'owned': '88eccb90f29402f8e2a0b00d1d5d0a72b05f91bd', 'combined': '518128a32856beed0436b53e450ad7a34652eb4b', 'selected': 'f644d94914f90127dfe2f3eb697fd5575eea8e85', 'pairs': 'ceed2f88ba940dfea800cd9dfccea1174cdbdc6b', 'windows': '1009af415033f1348184846c5dd2defe73d3b794'})
+        pairs=[('combined','aa'),('windows','windows_control'),('release','version'),('release','narrow'),('release','pr')]
+        pairs += [(a,b) for a in ('release','version','pr','narrow','scoped') for b in ('owned','combined','selected','pairs','windows')]
+        pairs += [('owned','combined'),('combined','selected'),('combined','pairs'),('pairs','windows'),('combined','windows')]
     cases=[('full_buffer',n,'buffer') for n in (8,16,32,65,4096)]
     cases += [('qualified_decode',n,'valid') for n in (16,32,4096)]
     cases += [('legacy_check',n,'valid') for n in (32,4096)]

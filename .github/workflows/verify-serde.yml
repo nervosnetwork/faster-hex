@@ -1,4 +1,4 @@
-name: Qualify the integrated 2.1 release against the published crate
+name: Confirm the integrated release and selected prefix writes
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -19,9 +19,10 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
       COMBINED_SHA: 518128a32856beed0436b53e450ad7a34652eb4b
-      VIEW_SHA: 52211f708ad51eb3ee48292ca863ea7c0d00deb1
+      WINDOWS_SHA: 1009af415033f1348184846c5dd2defe73d3b794
+      SELECTED_SHA: f644d94914f90127dfe2f3eb697fd5575eea8e85
       AUDIT_SHA: fc834c71026b6d7f81738b53bd73237f408474ff
-      INTEGRATED_RELEASE: "1"
+      INTEGRATED_CONFIRM: "1"
       EPHEMERAL_BUILD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -53,16 +54,17 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: integrated-release-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: integrated-confirm-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Check both integrated crate revisions
+      - name: Check selected prefix output at guard pages
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          for revision in "$COMBINED_SHA" "$VIEW_SHA"; do
+          for revision in "$COMBINED_SHA" "$SELECTED_SHA" "$WINDOWS_SHA"; do
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
+            cat verify/guarded_prefix_addition.rs >> "$RUNNER_TEMP/$revision/src/tests/guarded.rs"
             (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/fmt-tests" cargo test --release --all-features)
           done

@@ -182,16 +182,28 @@ for role,(version,files,checksum) in packages.items():
         sections[role+"/"+b]=section(img)
     if transient is not None: transient.cleanup()
 save(out/"sections.json",sections)
+if env.get('INTEGRATED_CONFIRM')=='1':
+    fingerprints={}
+    for key,text_section in sections.items():
+        role,binary=key.split('/')
+        img=out/(role+'-'+binary)
+        fingerprints[key]={'whole_file':digest(img.read_bytes()),'text':text_section}
+        if sys.platform.startswith('linux'):
+            fingerprints[key]['rodata']=section(img,'.rodata')
+    save(out/'program-fingerprints.json',fingerprints)
+
 if SCOPE=='recovery' and sys.platform.startswith('linux'):
     from isolated_elf import record
     save(out/'elf.json',{role:record(out/(role+'-vec_round_slice')) for role in revisions})
-pin();rng=random.Random(602105)
+pin();rng=random.Random(1837209 if env.get('INTEGRATED_CONFIRM')=='1' else 602105)
 rng.shuffle(cases)
 summary={};samples={}
 for b,n,k in cases:
     same_binary = SCOPE=='prefix-length' and b=='gix_prefix' and k.endswith('-adopt')
     def sample(role,repeat):
         how=k
+        if env.get('INTEGRATED_CONFIRM')=='1':
+            role={'aa':'combined','windows_control':'windows'}.get(role,role)
         if env.get('INTEGRATED_RELEASE')=='1' and role in ('view_control','combined_control'):
             role=role.removesuffix('_control')
         if same_binary and role.endswith('-legacy'):
@@ -203,6 +215,25 @@ for b,n,k in cases:
     rows=[]
     for _ in range(24):
         order=[r for r in revisions if (out/(r+"-"+b)).is_file()]+["aa"]
+        if env.get('INTEGRATED_CONFIRM')=='1':
+            # The public references for the existing and proposed operations have
+            # already been qualified across all 101 cases. Repeat each actual
+            # baseline for every relevant comparison, keeping provenance controls
+            # for previously identified slow callers and common hash lengths.
+            is_new=b in {'gix_prefix','prefix_buffer','prefix_format','append_call','validate_call'}
+            baseline='pr' if is_new else 'release'
+            order=[baseline,'owned','combined','selected','pairs','windows','aa','windows_control']
+            key=(b,n,k)
+            controls={
+                ('full_buffer',65,'buffer'),('full_format',32,'display'),('full_format',32,'alternate'),
+                ('owned_blocks',32,'array-late'),('owned_blocks',32,'vec-late'),('owned_blocks',4096,'vec-late'),
+                ('ckb_caller',4096,'plain'),('gix_caller',20,'parse'),
+                ('array_write',32,'plain'),('vec_write',4096,'plain'),
+                ('vec_round_slice',4096,'plain'),('vec_round_slice',4096,'escaped'),
+                ('gix_prefix',7,'sha1-adopt'),('prefix_buffer',64,'buffer'),('append_call',256,'valid')}
+            if key in controls:
+                for c in ('release','version','narrow','pr','scoped'):
+                    if c not in order and (out/(c+'-'+b)).is_file(): order.append(c)
         if env.get('INTEGRATED_RELEASE')=='1': order += ['view_control','combined_control']
         if same_binary: order += ['pr-legacy','scoped-legacy','candidate-legacy']
         rng.shuffle(order);groups={r:[] for r in order}
