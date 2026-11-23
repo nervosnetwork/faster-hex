@@ -194,7 +194,7 @@ pub use crate::encode::{hex_append, hex_append_upper, hex_string, hex_string_upp
 pub use crate::decode::{hex_decode_vec, hex_decode_vec_with_case};
 
 pub use crate::error::Error;
-pub use crate::format::Hex;
+pub use crate::format::{Hex, LeadingDigits};
 
 #[cfg(feature = "serde")]
 pub use crate::serde::withpfx_ignorecase::array;
