@@ -125,6 +125,11 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
 /// ```
 #[inline]
 pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
+    check_digits(src, check_case)
+}
+
+#[inline(always)]
+fn check_digits(src: &[u8], check_case: CheckCase) -> bool {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         match crate::vectorization_support() {
@@ -695,7 +700,7 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Re
     // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
         src.chunks_exact(64)
-            .take_while(|chunk| hex_check_with_case(chunk, case))
+            .take_while(|chunk| check_digits(chunk, case))
             .count()
             * 64
     } else {
