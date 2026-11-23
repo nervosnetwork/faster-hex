@@ -46,7 +46,18 @@ for role,sha in refs.items():
         shutil.rmtree(src/'benches');shutil.copytree(w/'driver',src/'benches')
         (src/'Cargo.lock').write_bytes(lock)
     compile_cmd=['cargo','bench','--locked','--no-run','--bench','hex','--bench','serde','--message-format=json']
-    built=run(compile_cmd,src,opts)
+    try:
+        built=run(compile_cmd,src,opts)
+    except sp.CalledProcessError as err:
+        for line in err.output.splitlines():
+            value=json.loads(line)
+            if value.get('reason')=='compiler-message' and value['message'].get('level')=='error':
+                msg=value['message']
+                notes=[c.get('message','') for c in msg.get('children',[])]
+                diag='\n'.join([msg['message'],*notes])
+                (out/(role+'-link-error.txt')).write_text(diag[-16000:])
+                print(diag[-2600:],flush=True)
+        raise
     hits=[x for x in map(json.loads,built.splitlines()) if x.get('reason')=='compiler-artifact' and x.get('executable') and x['target']['name']=='hex' and x['target']['kind']==['bench']]
     assert len(hits)==1 and machine(Path(hits[0]['executable']))['text']==machine(dest/'native')['text']
     assert (src/'Cargo.lock').read_bytes()==lock

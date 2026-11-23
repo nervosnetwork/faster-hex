@@ -30,7 +30,7 @@ def image(args, cc, output, map_path, extra=()):
     if proc.returncode:
         sys.stderr.write(proc.stdout)
         proc.check_returncode()
-    return symbols(map_path.read_text()), proc.stdout
+    return symbols(map_path.read_text(errors='replace')), proc.stdout
 
 def main():
     cc = os.environ['HEX_REAL_CC']
