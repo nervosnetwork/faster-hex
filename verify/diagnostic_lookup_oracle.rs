@@ -1,4 +1,4 @@
-use faster_hex::{hex_decode_append, hex_decode_array_with_case, hex_decode_vec_with_case, hex_decode_with_case, CheckCase, Error};
+use faster_hex::{hex_validate, hex_decode_append, hex_decode_array_with_case, hex_decode_vec_with_case, hex_decode_with_case, CheckCase, Error};
 
 fn nibble(b: u8, case: CheckCase) -> Option<u8> {
     match b {
@@ -11,6 +11,18 @@ fn nibble(b: u8, case: CheckCase) -> Option<u8> {
 
 fn check<const N: usize>(text: &[u8], case: CheckCase) {
     let invalid = text.iter().copied().enumerate().find(|&(_, b)| nibble(b, case).is_none());
+    if case == CheckCase::None {
+        match (invalid, hex_validate(text)) {
+            (Some((at, bad)), Err(Error::InvalidChar { index, byte, .. })) => {
+                assert_eq!((index, byte), (at, bad));
+            }
+            (None, Ok(())) => {}
+            mismatch => panic!("standalone validation disagrees with the scalar result: {mismatch:?}"),
+        }
+        if let Some((_, odd)) = text.split_last() {
+            assert_eq!(hex_validate(odd), Err(Error::OddLength));
+        }
+    }
     let mut dst = [0xa5; N];
     let slice = hex_decode_with_case(text, &mut dst, case);
     let owned = hex_decode_vec_with_case(text, case);

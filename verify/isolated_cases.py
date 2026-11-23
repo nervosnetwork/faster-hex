@@ -150,6 +150,19 @@ elif SCOPE=='release-audit':
             for phase,kind in (('read_slice','plain'),('read_slice','escaped'),('read_reader','reader'),('write','plain'),('round_slice','plain'),('round_slice','escaped'),('round_reader','reader')):
                 cases.append((target+'_'+phase,n,kind))
     assert len(cases)==len(set(cases))==101
+    if os.environ.get('DIAGNOSTIC_ROUTE')=='1':
+        revisions.update({'split': 'a0b6d03c6a695968ed8de260cdb1085c3d02b0f6', 'plain': '10346c96e8b2ea41558211936a975de94a440163', 'routed': 'f1539dc5ade198a71e9af5c1d37ea7fca744e17c', 'entry': 'a4772296baedee4916e38cfc765935ee2458cbd0'})
+        pairs=[('scoped','aa'),('entry','entry_control'),('release','version'),('release','pr')]
+        pairs += [(base,right) for base in ('release','pr','version','scoped') for right in ('split','plain','routed','entry')]
+        pairs += [('split','routed'),('plain','routed'),('plain','entry'),('routed','entry'),('scoped','pr'),('release','scoped'),('pr','scoped')]
+        include={('vec_round_slice',32,'escaped'),('vec_round_slice',4096,'plain'),('array_round_slice',4096,'plain'),
+                 ('vec_write',4096,'plain'),('ckb_caller',32,'plain'),('gix_caller',20,'parse'),('full_buffer',65,'buffer'),
+                 ('gix_prefix',7,'sha1-adopt'),('append_call',32,'valid'),('append_call',1025,'valid'),('append_call',4097,'valid')}
+        cases=[(b,n,k) for b,n,k in cases if b in ('qualified_decode','owned_blocks','validate_call')
+               or (b in ('array_read_slice','vec_read_slice') and n==32)
+               or (b=='append_call' and k!='valid') or (b,n,k) in include]
+        assert len(cases)==len(set(cases))==45
+
     if os.environ.get('DIAGNOSTIC_STEPS')=='1':
         revisions.update({'plain': '10346c96e8b2ea41558211936a975de94a440163', 'first': 'a3d45d8deaff30834d8d330f3401d629f031c246', 'groups': '075ab5a3bb18542a634f2a3af5d73bd283a47c83'})
         pairs=[('scoped','aa'),('groups','groups_control'),('release','version'),('release','pr'),('release','scoped'),('pr','scoped')]

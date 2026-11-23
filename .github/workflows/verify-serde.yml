@@ -1,4 +1,4 @@
-name: Isolate first-pair and four-digit error scans on fixed callers
+name: Test whether legacy and appended decode callers can retain their own error path
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -18,11 +18,10 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      PLAIN_SHA: 10346c96e8b2ea41558211936a975de94a440163
-      FIRST_SHA: a3d45d8deaff30834d8d330f3401d629f031c246
-      GROUPS_SHA: 075ab5a3bb18542a634f2a3af5d73bd283a47c83
+      ROUTED_SHA: f1539dc5ade198a71e9af5c1d37ea7fca744e17c
+      ENTRY_SHA: a4772296baedee4916e38cfc765935ee2458cbd0
       AUDIT_SHA: 88eccb90f29402f8e2a0b00d1d5d0a72b05f91bd
-      DIAGNOSTIC_STEPS: "1"
+      DIAGNOSTIC_ROUTE: "1"
       EPHEMERAL_BUILD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -47,7 +46,7 @@ jobs:
       - name: Check exact error positions, output and rollback
         shell: bash
         run: |
-          for revision in "$PLAIN_SHA" "$FIRST_SHA" "$GROUPS_SHA"; do
+          for revision in "$ROUTED_SHA" "$ENTRY_SHA"; do
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
             (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/diag-tests" cargo test --release --all-features)
             rustc --edition 2018 --crate-name faster_hex --crate-type rlib -O --cfg 'feature="alloc"' --cfg 'feature="std"' "$RUNNER_TEMP/$revision/src/lib.rs" -o "$RUNNER_TEMP/libfaster_hex.rlib"
@@ -64,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: diagnostic-step-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: diagnostic-route-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
