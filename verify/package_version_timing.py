@@ -20,19 +20,13 @@ scope.revisions=refs
 scope.cases=[("vec_round_slice",4096,"plain")]
 scope.pairs=[]
 versions={k:tomllib.loads(sp.check_output(["git","show",ref+":Cargo.toml"],cwd=root,text=True))["package"]["version"] for k,ref in refs.items()}
-assert {name for name,ver in versions.items() if ver=="3.0.0"}=={"old_3","pr_3","candidate_3"}
-for a,b in [("release","old_3"),("pr","pr_3"),("combined_paths","candidate_3")]:
-    assert sp.check_output(["git","diff","--numstat",refs[a],refs[b]],cwd=root,text=True).strip()=="1\t1\tCargo.toml"
-
-# These two unmodified Rust checkouts use ^2 in their manifests. The benchmark
-# admits either major in those manifests in EVERY build, including both anchors.
-for package,rel,old in [("ckb","Cargo.toml","2.0"),("gitoxide","gix-hash/Cargo.toml","2.0.0")]:
-    path=root/"real"/package/rel
-    original=path.read_text()
-    dep='faster-hex = { version = "'+old+'"'
-    assert original.count(dep)==1
-    path.write_text(original.replace(dep,'faster-hex = { version = ">=2.0, <4"'))
-    assert sp.check_output(["git","diff","--name-only"],cwd=root/"real"/package,text=True).splitlines()==[rel]
+for variant,(base,version) in spec["variants"].items():
+    assert versions[variant]==version
+    assert sp.check_output(["git","diff","--numstat",refs[base],refs[variant]],cwd=root,text=True).strip()=="1\t1\tCargo.toml"
+# The original caller manifests accept each tested 2.x version. Keep the
+# actual CKB and gix checkouts unchanged for every build.
+for project in ("ckb","gitoxide"):
+    assert not sp.check_output(["git","status","--porcelain"],cwd=root/"real"/project)
 
 driver=v/"isolate_callers.py"
 code,separator,_=driver.read_text().partition("\npin();rng=")
@@ -76,8 +70,7 @@ save(out/"addresses.json",layout);save(out/"fingerprints.json",sig)
 assert all(sig[k]==s for k,s in spec["anchors"].items())
 print("Verified unchanged 2.x caller binaries. UTF-8 entry addresses",[(r,v["core::str::converts::from_utf8"]["address"]) for r,v in layout.items()],flush=True)
 pin()
-pairs=[("release","version"),("release","old_3"),("version","old_3"),("pr","pr_3"),("release","pr_3"),
-       ("combined_paths","candidate_3"),("release","candidate_3")]
+pairs=[("release","version")]+[("release",variant) for variant in spec["variants"]]
 for a,b in pairs:
     pair=out/(a+"-vs-"+b)
     x,y=[out/(k+"-vec_round_slice") for k in (a,b)]

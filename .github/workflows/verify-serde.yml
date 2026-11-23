@@ -1,4 +1,4 @@
-name: Compare 2.0, 2.1 and 3.0 crate versions on native N2
+name: Compare minor crate versions on native N2
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: package-version-n2-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: minor-package-versions-n2-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
