@@ -1,4 +1,4 @@
-name: Recheck the two outstanding existing entry points on the original CPU models
+name: Measure the adopted gix-hash buffer entry and the actual Git notes path writer
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -6,57 +6,39 @@ permissions:
   contents: read
 jobs:
   checks:
-    name: ${{ matrix.os }} / ${{ matrix.profile }} / CPU probe ${{ matrix.probe }}
+    name: ${{ matrix.os }} / ${{ matrix.profile }} / ${{ matrix.isa }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04-arm, profile: default, isa: runtime, probe: 0 }
-          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 1 }
-          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 2 }
-          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 3 }
-          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 4 }
+          - { os: ubuntu-22.04, profile: thin, isa: runtime }
+          - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
       EPHEMERAL_BUILD: "1"
       AUDIT_SHA: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
-      - name: Check CPU model
-        id: cpu
-        shell: bash
-        run: |
-          model=$(LC_ALL=C lscpu | awk -F: '/^Model name:/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}')
-          echo "Physical CPU is $model"
-          case "$model" in
-            "AMD EPYC 7763 64-Core Processor" | "Neoverse-N2") echo "match=true" >> "$GITHUB_OUTPUT" ;;
-            *) echo "match=false" >> "$GITHUB_OUTPUT" ;;
-          esac
-      - if: steps.cpu.outputs.match == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - if: steps.cpu.outputs.match == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: nervosnetwork/ckb
           ref: 2061bc092a5dd447a741fad03b02628203b35e96
           path: real/ckb
           persist-credentials: false
-      - if: steps.cpu.outputs.match == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: GitoxideLabs/gitoxide
           ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
           path: real/gitoxide
           persist-credentials: false
-      - if: steps.cpu.outputs.match == 'true'
-        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Measure the existing workload against the released and version-matched baseline
-        if: steps.cpu.outputs.match == 'true'
+      - name: Compare public Prefix and oid writers with matched package identities
         shell: bash
         env:
           ISOLATE: release-audit
@@ -64,11 +46,11 @@ jobs:
           HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/remaining_existing.py
+          python3 verify/gix_public_usage.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always() && steps.cpu.outputs.match == 'true'
+        if: always()
         with:
-          name: existing-calls-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.probe }}
+          name: gix-public-calls-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.log

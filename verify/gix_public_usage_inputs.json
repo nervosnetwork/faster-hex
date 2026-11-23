@@ -1,0 +1,51 @@
+{
+  "refs": {
+    "pr": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
+    "candidate": "24d12bbc21c48a8e582d0ce3997e1477ff3a49d3"
+  },
+  "gix": "a7e739482cd6fe357ca8ebdbf82da5f1945e3e38",
+  "note_path_sha256": "be9f0f20eda29cb3d64128c87d92364e08a8cb7038b66d0f2d496508333166e0",
+  "bstr_hash": "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f",
+  "anchors": {
+    "ubuntu-22.04-thin-runtime": {
+      "pr": {
+        ".text": [
+          92688,
+          313784,
+          "75f216cc2df762024a28a674d5be859beae0964fd673e22fb04e07d2cd19204f"
+        ],
+        ".rodata": [
+          23136,
+          30380,
+          "66b232df7aa2036f9ab8cd8a1d8152083698227c8de6b9375b0b1890179e2f28"
+        ]
+      },
+      "candidate": {
+        ".text": [
+          92688,
+          313784,
+          "75f216cc2df762024a28a674d5be859beae0964fd673e22fb04e07d2cd19204f"
+        ],
+        ".rodata": [
+          23136,
+          30380,
+          "66b232df7aa2036f9ab8cd8a1d8152083698227c8de6b9375b0b1890179e2f28"
+        ]
+      }
+    },
+    "ubuntu-24.04-arm-thin-runtime": {
+      "pr": {
+        ".text": [
+          19584,
+          276312,
+          "972a5af04db1c51eb87fa59255733e8b4d648b11168ae0f477c23135cb4d6397"
+        ],
+        ".rodata": [
+          295920,
+          24844,
+          "0483845ca7912de69fe0319f2905697cb33f66dcc154dd0009fa6611d0f73f0c"
+        ]
+      }
+    }
+  }
+}
