@@ -46,12 +46,39 @@ pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase)
     if src.len() < 64 {
         return hex_check_neon_short(src, check_case);
     }
+    // In an ASCII hex digit, the high and low nibbles agree on at least
+    // one class: a decimal digit (bit 0) or an allowed letter (bit 1).
+    const DIGIT: u8 = 1;
+    const LETTER: u8 = 2;
+    const BOTH: u8 = DIGIT | LETTER;
+    const LOW: [u8; 16] = [
+        DIGIT, BOTH, BOTH, BOTH, BOTH, BOTH, BOTH, DIGIT, DIGIT, DIGIT, 0, 0, 0, 0, 0, 0,
+    ];
+    const fn high(upper: u8, lower: u8) -> [u8; 16] {
+        let mut masks = [0; 16];
+        masks[3] = DIGIT;
+        masks[4] = upper;
+        masks[6] = lower;
+        masks
+    }
+    let high_classes = match check_case {
+        CheckCase::None => &high(LETTER, LETTER),
+        CheckCase::Lower => &high(0, LETTER),
+        CheckCase::Upper => &high(LETTER, 0),
+    };
+    let high_classes = vld1q_u8(high_classes.as_ptr());
+    let low_classes = vld1q_u8(LOW.as_ptr());
+    let valid = |bytes| {
+        let high = vqtbl1q_u8(high_classes, vshrq_n_u8::<4>(bytes));
+        let low = vqtbl1q_u8(low_classes, vandq_u8(bytes, vdupq_n_u8(15)));
+        vtstq_u8(high, low)
+    };
     let (batches, rest) = src.as_chunks::<64>();
     for batch in batches {
-        let a = valid_neon(vld1q_u8(batch.as_ptr()), check_case);
-        let b = valid_neon(vld1q_u8(batch.as_ptr().add(16)), check_case);
-        let c = valid_neon(vld1q_u8(batch.as_ptr().add(32)), check_case);
-        let d = valid_neon(vld1q_u8(batch.as_ptr().add(48)), check_case);
+        let a = valid(vld1q_u8(batch.as_ptr()));
+        let b = valid(vld1q_u8(batch.as_ptr().add(16)));
+        let c = valid(vld1q_u8(batch.as_ptr().add(32)));
+        let d = valid(vld1q_u8(batch.as_ptr().add(48)));
         if vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d))) == 0 {
             return false;
         }
