@@ -1,0 +1,40 @@
+{
+  "base": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
+  "head": "f7f69ec6b888f6b8b367d91a26bc4a4faea56627",
+  "version": "2.1.0",
+  "matrix": {
+    "macos-15-intel-lto-false": [
+      "encode/faster_hex/32"
+    ],
+    "macos-15-intel-lto-thin": [
+      "decode/faster_hex_mixed/256",
+      "decode/faster_hex_mixed/32",
+      "decode/faster_hex_mixed/4096",
+      "decode_vec/faster_hex/4096",
+      "encode/faster_hex/4",
+      "serde_json/serialize_reuse/32"
+    ],
+    "ubuntu-24.04-arm-lto-false": [
+      "decode/faster_hex_mixed/256",
+      "encode/faster_hex/4",
+      "encode/faster_hex/8",
+      "serde_json/deserialize_escaped/32"
+    ],
+    "ubuntu-24.04-arm-lto-thin": [
+      "decode/faster_hex_mixed/8",
+      "decode_vec/faster_hex/4096",
+      "encode/faster_hex/4",
+      "encode/faster_hex/8",
+      "serde_json/serialize_reuse/32"
+    ],
+    "ubuntu-24.04-lto-false": [
+      "serde_json/serialize_reuse/32"
+    ],
+    "ubuntu-24.04-lto-thin": [
+      "decode/faster_hex_mixed/32",
+      "decode/faster_hex_mixed/8",
+      "decode_array/faster_hex/32",
+      "encode/faster_hex/65"
+    ]
+  }
+}
