@@ -106,9 +106,10 @@ impl<'a> Hex<'a> {
     /// assert_eq!(id.leading_digits(20).to_string(), "deadbeef1234");
     /// ```
     pub const fn leading_digits(self, count: usize) -> LeadingDigits<'a> {
-        let available = self.bytes.len().saturating_mul(2);
-        let digits = if count < available { count } else { available };
-        let (bytes, _) = self.bytes.split_at(digits.div_ceil(2));
+        let (bytes, digits) = match self.bytes.split_at_checked(count.div_ceil(2)) {
+            Some((bytes, _)) => (bytes, count),
+            None => (self.bytes, self.bytes.len() * 2),
+        };
         LeadingDigits { bytes, digits }
     }
 }
