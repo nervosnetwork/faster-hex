@@ -52,7 +52,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Match the package version for source comparisons
+      - name: Match the package version and dependencies for source comparisons
         if: ${{ !inputs.benchmark_as_released }}
         shell: bash
         run: |
@@ -73,6 +73,9 @@ jobs:
             mv baseline/Cargo.toml.bench baseline/Cargo.toml
             [[ "$(package_version baseline)" == "$version" ]]
           fi
+          cargo fetch --manifest-path baseline/Cargo.toml
+          cp baseline/Cargo.lock candidate/Cargo.lock
+          cargo fetch --locked --manifest-path candidate/Cargo.toml
       - name: Compare the same benchmarks in both run orders
         shell: bash
         run: |
