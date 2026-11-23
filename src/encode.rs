@@ -400,7 +400,7 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
     let table = vld1q_u8(table.as_ptr());
     if src.len() > 32 {
-        return encode_neon_bulk(src, dst, table);
+        return encode_neon_bulk(src, dst, table, upper_case);
     }
     if src.len() < 8 {
         return hex_encode_custom_case_fallback(src, dst, upper_case);
@@ -431,7 +431,12 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
 #[inline]
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
-unsafe fn encode_neon_bulk(src: &[u8], dst: &mut [MaybeUninit<u8>], table: uint8x16_t) {
+unsafe fn encode_neon_bulk(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+    table: uint8x16_t,
+    upper_case: bool,
+) {
     let (batches, rest) = src.as_chunks::<64>();
     let (outputs, remaining) = dst.as_chunks_mut::<128>();
     for (input, output) in batches.iter().zip(outputs) {
@@ -445,16 +450,11 @@ unsafe fn encode_neon_bulk(src: &[u8], dst: &mut [MaybeUninit<u8>], table: uint8
         }
     }
     let (blocks, tail) = rest.as_chunks::<16>();
-    for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<32>().0) {
+    let (outputs, suffix) = remaining.as_chunks_mut::<32>();
+    for (input, output) in blocks.iter().zip(outputs) {
         encode_neon_16(input, output, table);
     }
-    if !tail.is_empty() {
-        // Re-encode the last complete block to cover a short tail. The overlap
-        // writes the same bytes and never accesses outside either slice.
-        if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
-            encode_neon_16(input, output, table);
-        }
-    }
+    hex_encode_pairs(tail, suffix, upper_case);
 }
 
 #[inline]
