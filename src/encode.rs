@@ -503,10 +503,13 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
     vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
 }
 
-// An odd digit count always selects at least the high nibble of the last byte.
+// Encode the complete pairs followed by the high nibble of the final byte.
 #[inline]
-pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
-    let (&last, pairs) = src.split_last().expect("an odd prefix selects a byte");
+pub(crate) fn encode_odd<'a>(
+    pairs: &[u8],
+    last: u8,
+    dst: &'a mut [u8],
+) -> Result<&'a mut str, Error> {
     let required = pairs.len() * 2 + 1;
     let output = dst
         .get_mut(..required)

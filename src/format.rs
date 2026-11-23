@@ -67,8 +67,8 @@ pub struct Hex<'a> {
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 pub struct LeadingDigits<'a> {
-    hex: Hex<'a>,
-    omit_low_nibble: bool,
+    bytes: &'a [u8],
+    digits: usize,
 }
 
 impl<'a> Hex<'a> {
@@ -106,13 +106,10 @@ impl<'a> Hex<'a> {
     /// assert_eq!(id.leading_digits(20).to_string(), "deadbeef1234");
     /// ```
     pub const fn leading_digits(self, count: usize) -> LeadingDigits<'a> {
-        let (bytes, omit_low_nibble) = match self.bytes.split_at_checked(count.div_ceil(2)) {
-            Some((prefix, _)) => (prefix, !count.is_multiple_of(2)),
-            None => (self.bytes, false),
-        };
+        let available = self.bytes.len().saturating_mul(2);
         LeadingDigits {
-            hex: Self::new(bytes),
-            omit_low_nibble,
+            bytes: self.bytes,
+            digits: if count < available { count } else { available },
         }
     }
 }
@@ -274,18 +271,19 @@ impl LeadingDigits<'_> {
     /// ```
     #[inline]
     pub fn encode_to(self, dst: &mut [u8]) -> Result<&mut str, crate::Error> {
-        if self.omit_low_nibble {
-            crate::encode::encode_odd(self.hex.bytes, dst)
-        } else {
-            crate::hex_encode(self.hex.bytes, dst)
+        let (pairs, tail) = self.bytes.split_at(self.digits / 2);
+        match (self.digits % 2, tail) {
+            (1, [last, ..]) => crate::encode::encode_odd(pairs, *last, dst),
+            _ => crate::hex_encode(pairs, dst),
         }
     }
 
     fn format(&self, f: &mut fmt::Formatter<'_>, upper: bool) -> fmt::Result {
-        if self.omit_low_nibble {
-            self.hex.format::<true>(f, upper)
+        let hex = Hex::new(&self.bytes[..self.digits.div_ceil(2)]);
+        if self.digits.is_multiple_of(2) {
+            hex.format::<false>(f, upper)
         } else {
-            self.hex.format::<false>(f, upper)
+            hex.format::<true>(f, upper)
         }
     }
 }
