@@ -19,7 +19,7 @@ use crate::error::Error;
 use super::{aarch64, CheckCase};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::{x86, CheckCase};
-use super::{NIL, UNHEX, UNHEX4};
+use super::{NIL, UNHEX};
 
 // Decodes `src` into `dst` (where `src.len() == dst.len() * 2`).
 // Returns `Ok(())` only after initializing every element of `dst`.
@@ -88,10 +88,12 @@ fn decode_scalar_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), u
     Ok(())
 }
 
+// Shifts `UNHEX` instead of referencing `UNHEX4` so 2.0's internal `UNHEX4`
+// table stays a local symbol in the rlib and does not shift AArch64 `.text`.
 #[inline]
 fn decode_fallback_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
-    for (slot, pair) in dst.iter_mut().zip(src.chunks_exact(2)) {
-        slot.write(UNHEX4[usize::from(pair[0])] | UNHEX[usize::from(pair[1])]);
+    for (slot, pair) in dst.iter_mut().zip(src.as_chunks::<2>().0) {
+        slot.write((UNHEX[usize::from(pair[0])] << 4) | UNHEX[usize::from(pair[1])]);
     }
 }
 
