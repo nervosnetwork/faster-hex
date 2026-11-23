@@ -1,4 +1,4 @@
-name: Validate independent append and owned-output changes
+name: Compare 2.0, 2.1 and 3.0 crate versions on native N2
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -13,8 +13,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-22.04, profile: thin, isa: runtime }
-          - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
       EPHEMERAL_BUILD: "1"
@@ -39,7 +37,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Check append rollback and JSON fields independently
+      - name: Compare package versions with the same downstream JSON caller
         shell: bash
         env:
           ISOLATE: release-audit
@@ -47,11 +45,11 @@ jobs:
           HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/independent_output_changes.py
+          python3 verify/package_version_timing.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: independent-outputs-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: package-version-n2-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
