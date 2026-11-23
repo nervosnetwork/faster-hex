@@ -1,33 +1,55 @@
 {
   "parent": "d63e0a69bd3fab4d1b3261782f99f10701e1e400",
   "edits": {
-    "neon": "9a48fe40d108fe6cd9bc83ff3ff4af42239f5c6c"
+    "diagnose": "b92c05f65c0c1d64de4e5709b9d822890f1dc06a"
   },
   "frozen": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
   "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
   "matrix": {
-    "neon": {
-      "ubuntu-24.04-arm-lto-false": [
-        "encode/faster_hex/4",
-        "encode/faster_hex/8",
-        "encode/faster_hex/32",
-        "encode/faster_hex/65",
-        "prefix/buffer/7",
-        "prefix_width/buffer/16",
-        "prefix_width/buffer/17",
-        "prefix_width/buffer/30",
-        "prefix_width/buffer/64"
+    "diagnose": {
+      "ubuntu-24.04-lto-false": [
+        "check_valid/byte_pairs/8",
+        "check_valid/byte_pairs/32",
+        "check_valid/byte_pairs/4096",
+        "validate_error/first/4096",
+        "validate_error/last/4096",
+        "validate_error/last/65",
+        "decode_append/32",
+        "append_error/last/4096",
+        "decode_vec/faster_hex/4096"
       ],
-      "ubuntu-24.04-arm-lto-thin": [
-        "encode/faster_hex/4",
-        "encode/faster_hex/8",
-        "encode/faster_hex/32",
-        "encode/faster_hex/65",
-        "prefix/buffer/7",
-        "prefix_width/buffer/16",
-        "prefix_width/buffer/17",
-        "prefix_width/buffer/30",
-        "prefix_width/buffer/64"
+      "ubuntu-24.04-lto-thin": [
+        "check_valid/byte_pairs/8",
+        "check_valid/byte_pairs/32",
+        "check_valid/byte_pairs/4096",
+        "validate_error/first/4096",
+        "validate_error/last/4096",
+        "validate_error/last/65",
+        "decode_append/32",
+        "append_error/last/4096",
+        "decode_vec/faster_hex/4096"
+      ],
+      "macos-15-intel-lto-false": [
+        "check_valid/byte_pairs/8",
+        "check_valid/byte_pairs/32",
+        "check_valid/byte_pairs/4096",
+        "validate_error/first/4096",
+        "validate_error/last/4096",
+        "validate_error/last/65",
+        "decode_append/32",
+        "append_error/last/4096",
+        "decode_vec/faster_hex/4096"
+      ],
+      "macos-15-intel-lto-thin": [
+        "check_valid/byte_pairs/8",
+        "check_valid/byte_pairs/32",
+        "check_valid/byte_pairs/4096",
+        "validate_error/first/4096",
+        "validate_error/last/4096",
+        "validate_error/last/65",
+        "decode_append/32",
+        "append_error/last/4096",
+        "decode_vec/faster_hex/4096"
       ]
     }
   },

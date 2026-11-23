@@ -17,15 +17,13 @@ release = spec['release']
 anchors = spec['anchors'][key]
 
 def suite(case):
-    if case.startswith('prefix_width/'):
-        return 'extra_prefix', 'verify_prefix'
     if case.startswith('prefix/'):
         return 'new', 'format'
     if case.startswith('check_valid/'):
         return 'new', 'check'
     if case.startswith('decode_append/'):
         return 'new', 'hex'
-    if case.startswith('validate_error/'):
+    if case.startswith(('validate_error/', 'append_error/')):
         return 'diagnostics', 'verify_error'
     return 'released', ('serde' if case.startswith('serde_json/') else 'hex')
 
@@ -51,15 +49,6 @@ for family in sorted({suite(c)[0] for c in cases}):
             shutil.copy2(repo/'verify/verify_error.rs', src/'benches/verify_error.rs')
             with manifest.open('a') as file:
                 file.write('\n[[bench]]\nname = "verify_error"\nharness = false\n')
-        if family == 'extra_prefix':
-            content = (src/'benches/format.rs').read_text()
-            widths = "for digits in [7, 8, 12]"
-            assert content.count(widths) == 1
-            content = content.replace(widths, "for digits in [7, 15, 16, 17, 20, 30, 31, 32, 63, 64]")
-            content = content.replace('benchmark_group("prefix")','benchmark_group("prefix_width")')
-            (src/'benches/verify_prefix.rs').write_text(content)
-            with manifest.open('a') as file:
-                file.write('\n[[bench]]\nname = "verify_prefix"\nharness = false\n')
         options = {'CARGO_TARGET_DIR':str(w/'target')}
         if lock is None:
             run(['cargo','generate-lockfile'], src, options)
@@ -86,7 +75,7 @@ for family in sorted({suite(c)[0] for c in cases}):
             img = machine(exe)
             images[name] = img
             programs[family,b,label] = exe
-            if family in ('new','released') and label != 'edit':
+            if family != 'diagnostics' and label != 'edit':
                 assert img['text'] == anchors[family][label][b], (name,img,anchors[family][label][b])
             ids = {line.split(':',1)[0] for line in run([str(exe),'--bench','--list'],src).splitlines()}
             assert all(c in ids for c in cases if suite(c)==(family,b)), (name,cases)

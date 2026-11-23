@@ -1,4 +1,4 @@
-name: Compare one NEON table lookup for eight input bytes
+name: Measure AVX-512 diagnostics only after an input has failed
 on: workflow_dispatch
 permissions:
   contents: read
@@ -13,8 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04-arm, lto: "false", change: neon }
-          - { os: ubuntu-24.04-arm, lto: "thin", change: neon }
+          - { os: ubuntu-24.04, lto: "false", change: diagnose }
+          - { os: ubuntu-24.04, lto: "thin", change: diagnose }
+          - { os: macos-15-intel, lto: "false", change: diagnose }
+          - { os: macos-15-intel, lto: "thin", change: diagnose }
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
