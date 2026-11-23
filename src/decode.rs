@@ -701,6 +701,19 @@ fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Re
     } else {
         0
     };
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let skipped = {
+        let blocks = src[skipped..].as_chunks::<16>().0;
+        if !GROUP_DIGITS
+            && !blocks.is_empty()
+            && crate::vectorization_support() != crate::Vectorization::None
+        {
+            // SAFETY: every accelerated x86 backend supports SSE4.1.
+            skipped + unsafe { x86::checked_digit_prefix(blocks, case) }
+        } else {
+            skipped
+        }
+    };
     let start = if GROUP_DIGITS {
         // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
         let groups = src[skipped..].as_chunks::<4>().0;

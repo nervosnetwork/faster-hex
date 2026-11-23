@@ -70,6 +70,20 @@ unsafe fn valid_sse(bytes: __m128i, case: CheckCase) -> __m128i {
     _mm_or_si128(digit, letter)
 }
 
+// The first set bit identifies the invalid digit. All preceding lanes are valid.
+#[target_feature(enable = "sse4.1")]
+pub(super) unsafe fn checked_digit_prefix(blocks: &[[u8; 16]], case: CheckCase) -> usize {
+    for (i, block) in blocks.iter().enumerate() {
+        // SAFETY: the array holds a full register and this function requires SSE4.1.
+        let valid = unsafe { valid_sse(_mm_loadu_si128(block.as_ptr().cast()), case) };
+        let invalid = !(_mm_movemask_epi8(valid) as u16);
+        if invalid != 0 {
+            return i * 16 + invalid.trailing_zeros() as usize;
+        }
+    }
+    blocks.len() * 16
+}
+
 #[target_feature(enable = "sse4.1")]
 pub(crate) unsafe fn hex_check_sse_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 16 {
