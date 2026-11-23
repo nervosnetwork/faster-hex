@@ -165,6 +165,26 @@ unsafe fn valid_avx512(bytes: __m512i, case: CheckCase) -> u64 {
     digit | letter
 }
 
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+pub(super) unsafe fn valid_prefix_len_avx512(src: &[u8]) -> usize {
+    let (blocks, tail) = src.as_chunks::<64>();
+    for (index, block) in blocks.iter().enumerate() {
+        // SAFETY: The unaligned load reads exactly the 64 bytes in this block.
+        let valid =
+            unsafe { valid_avx512(_mm512_loadu_si512(block.as_ptr().cast()), CheckCase::None) };
+        if valid != u64::MAX {
+            // Bit i describes byte i. A rejected block has at most 63 leading valid bytes.
+            return index * 64 + valid.trailing_ones() as usize;
+        }
+    }
+    src.len() - tail.len()
+        + tail
+            .iter()
+            .take_while(|byte| byte.is_ascii_hexdigit())
+            .count()
+}
+
 #[target_feature(enable = "avx512f,avx512bw")]
 #[inline]
 pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> bool {

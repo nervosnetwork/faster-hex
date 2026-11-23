@@ -700,6 +700,15 @@ fn diagnose_invalid(src: &[u8]) -> Result<(), Error> {
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
     let skipped = if src.len() > 64 {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if crate::vectorization_support() == crate::Vectorization::AVX512 {
+            // SAFETY: Dispatch checked AVX-512F, AVX-512BW and the OS register state.
+            let index = unsafe { x86::valid_prefix_len_avx512(src) };
+            return match src.get(index) {
+                Some(&byte) => Err(Error::InvalidChar { index, byte }),
+                None => Ok(()),
+            };
+        }
         src.chunks_exact(64)
             .take_while(|chunk| hex_check(chunk))
             .count()
