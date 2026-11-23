@@ -61,8 +61,8 @@ static UNHEX4: [u8; 256] = init_unhex4_array(CheckCase::None);
 /// character-only check: empty and odd-length inputs can pass. It does not
 /// allocate or modify the input.
 ///
-/// Use [`hex_decode`] to also require complete byte pairs. There is no need to
-/// call this function before a checked decoder: decoding already validates input.
+/// Use [`hex_validate`] to check complete byte pairs without an output buffer.
+/// [`hex_decode`] validates the input as part of decoding.
 ///
 /// # Examples
 ///
@@ -358,8 +358,12 @@ pub fn hex_decode_array_with_case<const N: usize>(
         bytes.copy_from_slice(&output[..N]);
         return Ok(bytes);
     }
-    // SAFETY: The length check above matched the number of input pairs to N.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    if N > OWNED_DECODE_THRESHOLD {
+        // SAFETY: The length check above matched the number of input pairs to N.
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
 }
 
@@ -367,8 +371,8 @@ pub fn hex_decode_array_with_case<const N: usize>(
 ///
 /// Available with `alloc`. The result owns exactly `src.len() / 2` decoded bytes,
 /// independently of the input. Empty input produces an empty vector. The same
-/// strict ASCII grammar as [`hex_decode`] applies: no prefixes, whitespace or
-/// separators. Use [`hex_decode_vec_with_case`] to restrict letter case.
+/// ASCII grammar as [`hex_decode`] applies. Use [`hex_decode_vec_with_case`] to
+/// restrict letter case or [`hex_decode_append`] to extend an existing vector.
 ///
 /// # Errors
 ///
@@ -425,52 +429,16 @@ pub fn hex_decode_vec_with_case(
         return Err(Error::OddLength);
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
-    // SAFETY: The vector has one byte for each pair of the even input.
-    unsafe { decode_owned(src, &mut bytes, check_case) }?;
+    if bytes.len() > OWNED_DECODE_THRESHOLD {
+        // SAFETY: The vector has one byte for each pair of the even input.
+        unsafe { decode_owned_large(src, &mut bytes, check_case) }?;
+    } else {
+        hex_decode_with_case(src, &mut bytes, check_case)?;
+    }
     Ok(bytes)
 }
 
-/// Appends decoded bytes to `dst` and returns just the new suffix.
-///
-/// Accepts the same mixed-case hex as [`hex_decode`]. Reuses the vector's
-/// allocation when capacity permits. Empty input returns an empty suffix.
-///
-/// # Errors
-///
-/// Odd input returns [`Error::OddLength`] before growing the vector. Otherwise
-/// [`Error::InvalidChar`] identifies the first invalid byte. On error, the
-/// vector retains its original length and contents. Its capacity may grow.
-///
-/// # Panics
-///
-/// Panics if the resulting vector would exceed its maximum capacity.
-/// Allocation failure follows the allocator's normal handling.
-///
-/// ```
-/// use faster_hex::hex_decode_append;
-/// let mut bytes = vec![0xff];
-/// assert_eq!(hex_decode_append(b"aB01", &mut bytes)?, [0xab, 1]);
-/// assert_eq!(bytes, [0xff, 0xab, 1]);
-/// # Ok::<(), faster_hex::Error>(())
-/// ```
-#[cfg(feature = "alloc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-pub fn hex_decode_append<'a>(
-    src: &[u8],
-    dst: &'a mut alloc::vec::Vec<u8>,
-) -> Result<&'a mut [u8], Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
-    }
-    let start = dst.len();
-    dst.resize(start + src.len() / 2, 0);
-    // SAFETY: resize added one byte for each pair of the even input.
-    if let Err(error) = unsafe { decode_owned(src, &mut dst[start..], CheckCase::None) } {
-        dst.truncate(start);
-        return Err(error);
-    }
-    Ok(&mut dst[start..])
-}
+const OWNED_DECODE_THRESHOLD: usize = 1024;
 
 /// Decodes into private output that the caller discards on error. Large inputs
 /// can commit a checked block at a time without re-reading valid input.
@@ -479,12 +447,8 @@ pub fn hex_decode_append<'a>(
 /// `src.len()` must be twice `dst.len()`, as for [`decode_checked`].
 // Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
-unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
-    // Short outputs share the slice decoder's bounded kernels.
-    if dst.len() <= 1024 {
-        return hex_decode_with_case(src, dst, case).map(|_| ());
-    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
@@ -753,4 +717,52 @@ fn diagnose_invalid(src: &[u8]) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+/// Appends decoded bytes to `dst` and returns just the new suffix.
+///
+/// Accepts the same mixed-case hex as [`hex_decode`]. Reuses the vector's
+/// allocation when capacity permits. Empty input returns an empty suffix.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] before growing the vector. Otherwise
+/// [`Error::InvalidChar`] identifies the first invalid byte. On error, the
+/// vector retains its original length and contents. Its capacity may grow.
+///
+/// # Panics
+///
+/// Panics if the resulting vector would exceed its maximum capacity.
+/// Allocation failure follows the allocator's normal handling.
+///
+/// ```
+/// use faster_hex::hex_decode_append;
+/// let mut bytes = vec![0xff];
+/// assert_eq!(hex_decode_append(b"aB01", &mut bytes)?, [0xab, 1]);
+/// assert_eq!(bytes, [0xff, 0xab, 1]);
+/// # Ok::<(), faster_hex::Error>(())
+/// ```
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub fn hex_decode_append<'a>(
+    src: &[u8],
+    dst: &'a mut alloc::vec::Vec<u8>,
+) -> Result<&'a mut [u8], Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let start = dst.len();
+    dst.resize(start + src.len() / 2, 0);
+    let suffix = &mut dst[start..];
+    let result = if suffix.len() > OWNED_DECODE_THRESHOLD {
+        // SAFETY: resize added one byte for each pair of the even input.
+        unsafe { decode_owned_large(src, suffix, CheckCase::None) }
+    } else {
+        hex_decode(src, suffix).map(|_| ())
+    };
+    if let Err(error) = result {
+        dst.truncate(start);
+        return Err(error);
+    }
+    Ok(&mut dst[start..])
 }
