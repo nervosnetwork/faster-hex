@@ -134,11 +134,8 @@ pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
 
 /// Check if the input is valid hex bytes slice with case check
 pub(crate) fn hex_check_fallback_with_case(src: &[u8], check_case: CheckCase) -> bool {
-    match check_case {
-        CheckCase::None => src.iter().all(|&x| UNHEX[x as usize] != NIL),
-        CheckCase::Lower => src.iter().all(|&x| UNHEX_LOWER[x as usize] != NIL),
-        CheckCase::Upper => src.iter().all(|&x| UNHEX_UPPER[x as usize] != NIL),
-    }
+    let table = check_case.decode_table();
+    src.iter().all(|&byte| table[usize::from(byte)] != NIL)
 }
 
 /// Which ASCII letter cases are accepted when checking or decoding hex.
@@ -172,6 +169,16 @@ pub enum CheckCase {
     Lower,
     /// Accept digits and uppercase `A` through `F` only.
     Upper,
+}
+
+impl CheckCase {
+    fn decode_table(self) -> &'static [u8; 256] {
+        match self {
+            Self::None => &UNHEX,
+            Self::Lower => &UNHEX_LOWER,
+            Self::Upper => &UNHEX_UPPER,
+        }
+    }
 }
 
 /// Decodes all of `src` into `dst` without allocation, accepting either letter case.
@@ -540,11 +547,7 @@ pub(crate) fn hex_decode_short_scalar(
     dst: &mut [u8],
     case: CheckCase,
 ) -> Result<(), ()> {
-    let table = match case {
-        CheckCase::None => &UNHEX,
-        CheckCase::Lower => &UNHEX_LOWER,
-        CheckCase::Upper => &UNHEX_UPPER,
-    };
+    let table = case.decode_table();
     let mut decoded = 0u64;
     for pair in src.as_chunks::<2>().0 {
         let high = table[usize::from(pair[0])];
@@ -566,11 +569,7 @@ pub(crate) fn hex_decode_short_scalar(
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    let table = match case {
-        CheckCase::None => &UNHEX,
-        CheckCase::Lower => &UNHEX_LOWER,
-        CheckCase::Upper => &UNHEX_UPPER,
-    };
+    let table = case.decode_table();
     // Skip valid blocks so locating a late error retains SIMD throughput.
     // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
