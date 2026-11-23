@@ -192,6 +192,8 @@ for b,n,k in cases:
     same_binary = SCOPE=='prefix-length' and b=='gix_prefix' and k.endswith('-adopt')
     def sample(role,repeat):
         how=k
+        if env.get('INTEGRATED_RELEASE')=='1' and role in ('view_control','combined_control'):
+            role=role.removesuffix('_control')
         if same_binary and role.endswith('-legacy'):
             role=role.removesuffix('-legacy')
             how=k.removesuffix('-adopt')+'-legacy'
@@ -201,6 +203,7 @@ for b,n,k in cases:
     rows=[]
     for _ in range(24):
         order=[r for r in revisions if (out/(r+"-"+b)).is_file()]+["aa"]
+        if env.get('INTEGRATED_RELEASE')=='1': order += ['view_control','combined_control']
         if same_binary: order += ['pr-legacy','scoped-legacy','candidate-legacy']
         rng.shuffle(order);groups={r:[] for r in order}
         for role in order+order[::-1]:groups[role].append(sample(role,count))

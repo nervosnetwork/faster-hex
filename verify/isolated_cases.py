@@ -120,6 +120,12 @@ elif SCOPE=='validation':
 elif SCOPE=='release-audit':
     revisions={'release':RELEASE, 'version':SAME_VERSION, 'pr':'25cfd8eb6a4cd8257a96fabaf73771cabcced4b4', 'scoped':os.environ['AUDIT_SHA']}
     pairs=[('scoped','aa'),('release','version'),('version','scoped'),('release','scoped'),('pr','scoped')]
+    if os.environ.get('INTEGRATED_RELEASE') == '1':
+        revisions['narrow']=SCOPE_BASE
+        revisions.update({'diagnosis': '629412c03a45984dba610b62535e89658b793145', 'owned': '88eccb90f29402f8e2a0b00d1d5d0a72b05f91bd', 'formatter': '30a07ceb94ae075b2fef34cbb53aa2c9dcc99d56', 'combined': '518128a32856beed0436b53e450ad7a34652eb4b', 'view': '52211f708ad51eb3ee48292ca863ea7c0d00deb1'})
+        pairs += [('release','pr'),('release','narrow'),('narrow','scoped'),('view','view_control'),('combined','combined_control')]
+        pairs += [(base,candidate) for base in ('release','version','pr','narrow','scoped') for candidate in ('diagnosis','owned','formatter','combined','view')]
+        pairs += [('diagnosis','owned'),('owned','combined'),('formatter','combined'),('combined','view'),('diagnosis','combined')]
     cases=[('full_buffer',n,'buffer') for n in (8,16,32,65,4096)]
     cases += [('qualified_decode',n,'valid') for n in (16,32,4096)]
     cases += [('legacy_check',n,'valid') for n in (32,4096)]

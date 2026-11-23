@@ -1,4 +1,4 @@
-name: Check tagged formatting, serialization and buffer initialization
+name: Qualify the integrated 2.1 release against the published crate
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -8,7 +8,7 @@ jobs:
   checks:
     name: ${{ matrix.os }} / ${{ matrix.profile }} / ${{ matrix.isa }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
@@ -18,8 +18,11 @@ jobs:
           - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
           - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      JOINED_SHA: f3fb72cb2e941f4f821eec6dd21ab49d62aefc28
-      SAFE_SHA: c2b79d9b53fb41d981db5359b30884eff34b2e0e
+      COMBINED_SHA: 518128a32856beed0436b53e450ad7a34652eb4b
+      VIEW_SHA: 52211f708ad51eb3ee48292ca863ea7c0d00deb1
+      AUDIT_SHA: fc834c71026b6d7f81738b53bd73237f408474ff
+      INTEGRATED_RELEASE: "1"
+      EPHEMERAL_BUILD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -43,24 +46,23 @@ jobs:
       - run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
           python3 verify/isolate_callers.py
-          python3 verify/fmt_symbols.py
         shell: bash
         env:
-          ISOLATE: fmt-join
+          ISOLATE: release-audit
           PROFILE: ${{ matrix.profile }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: fmt-join-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: integrated-release-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
             real/qualification/*/*.txt
-      - name: Test tagged output, serialization and writer failures
+      - name: Check both integrated crate revisions
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          for revision in "$JOINED_SHA" "$SAFE_SHA"; do
+          for revision in "$COMBINED_SHA" "$VIEW_SHA"; do
             git worktree add --detach "$RUNNER_TEMP/$revision" "$revision"
             (cd "$RUNNER_TEMP/$revision" && CARGO_TARGET_DIR="$RUNNER_TEMP/fmt-tests" cargo test --release --all-features)
           done
