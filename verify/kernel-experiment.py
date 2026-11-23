@@ -1,6 +1,11 @@
 from pathlib import Path
 import json,time
-sibling=Path(__file__).parent/'official-paired.py';spec=json.loads((sibling.parent/'kernel-experiment.json').read_text());code=sibling.read_text().split('orders=[[',1)[0];code=code.replace("cases=case_spec['matrix'][key]","cases=spec['cases'][key]").replace("benches=sorted({'serde' if c.startswith('serde_') else 'hex' for c in cases})","benches=['hex','serde']").replace("[('base',baseref),('head',head)]","[('base',baseref),('head',head),('proposal',spec['proposal'])]");exec(compile(code,str(sibling),'exec'))
+sibling=Path(__file__).parent/'official-paired.py';spec=json.loads((sibling.parent/'kernel-experiment.json').read_text());code=sibling.read_text().split('orders=[[',1)[0];code=code.replace("cases=case_spec['matrix'][key]","cases=spec['cases'][key]").replace("benches=sorted({'serde' if c.startswith('serde_') else 'hex' for c in cases})","benches=['hex','serde'] + (['check'] if any(c.startswith('invalid/') for c in cases) else [])").replace("[('base',baseref),('head',head)]","[('base',baseref),('head',head),('proposal',spec['proposal'])]");exec(compile(code,str(sibling),'exec'))
+def bench_for(case):
+ return 'check' if case.startswith('invalid/') else 'serde' if case.startswith('serde_') else 'hex'
+for b in {bench_for(c) for c in cases}:
+ known={s.split(':',1)[0] for s in run([str(programs['head',b]),'--bench','--list'],src).splitlines()}
+ assert all(c in known for c in cases if bench_for(c)==b),(b,cases,known)
 assert digest(lock)==spec['locks'][key];anchors={role:metadata[role+'/hex']['text']==spec['anchors'][key][role]['text'] for role in ('base','head')};save('anchors.json',anchors);print('original-binary anchors',anchors,flush=True)
 roles=['base','head','proposal']*2;seq=[0,1,5,2,4,3];rng=random.Random(745073);records={c:[] for c in cases};site=w/'bench'
 for block in range(2):
@@ -11,7 +16,7 @@ for block in range(2):
  for shift in rows:
   order=[labels[(s+shift)%6] for s in seq];shuffled=list(cases);rng.shuffle(shuffled)
   for case in shuffled:
-   b='serde' if case.startswith('serde_') else 'hex';row={}
+   b=bench_for(case);row={}
    for i in order:
     site.unlink(missing_ok=True);os.link(copies[b,i],site)
     with tempfile.TemporaryDirectory(dir=w) as tmp:
