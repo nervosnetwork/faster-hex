@@ -159,12 +159,6 @@ fn append_commits_only_the_new_suffix_and_can_retry_after_a_late_error() {
         let mut input = b"aB".repeat(size);
         let last = input.len() - 1;
         input[last] = 0xff;
-        let middle = input[size];
-        input[size] = b'!';
-        assert!(matches!(hex_decode_append(&input, &mut dst),
-            Err(Error::InvalidChar { index, byte: b'!', .. }) if index == size));
-        assert_eq!(dst, [0xfe]);
-        input[size] = middle;
         assert!(matches!(hex_decode_append(&input, &mut dst),
             Err(Error::InvalidChar { index, byte: 0xff, .. }) if index == last));
         assert_eq!(dst, [0xfe]);

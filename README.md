@@ -34,24 +34,17 @@ byte offset. Use `hex_validate` to check hex pairs without an output buffer, or
 
 ## Hash prefixes
 
-Use `let view = Hex::new(bytes).leading_digits(n)` for a Git object ID abbreviation
-or a short ID in a log. Five digits of `deadbeef1234` give `deadb`, ten give
-`deadbeef12`, and larger counts stop at the end of the input. Only the bytes
-needed for the prefix are encoded. For a unique Git abbreviation, the repository
-determines the length to pass.
+`let view = Hex::new(bytes).leading_digits(n)` selects up to `n` hex digits.
+Use the repository's abbreviation length for a Git object ID, or choose a width
+for a log. Zero selects an empty prefix. A count beyond the end selects the
+whole input.
 
-Use `view.encode_to(dst)` for a lowercase prefix in a caller-provided buffer,
-or `write!(out, "{view:#X}")` for formatted output. Use `hex_encode` when
-writing the complete value into a byte buffer.
+`view.encode_to(dst)` writes one lowercase ASCII byte per selected digit. For
+`deadbeef1234`, seven digits use four input bytes and write `deadbee`. All
+twelve digits use six input bytes. Use `write!(out, "{view:#X}")`
+for formatted output or `hex_encode` for a complete value in a byte buffer.
 
-Time per SHA-1 prefix written into a reusable buffer by `gix_hash::Prefix::hex_to_buf`
-on an Apple M5 Pro, in nanoseconds. Each range spans the medians of default release
-and ThinLTO builds with Rust 1.95.0.
-
-| Implementation | 4 digits | 7 digits | 8 digits | 12 digits | 40 digits (full) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| gix-hash with faster-hex 2.0 | 3.86–3.90 | 4.91–4.98 | 4.44–4.51 | 6.19–6.24 | 5.05–5.80 |
-| `leading_digits(n).encode_to(dst)` | 1.15–1.16 | 1.36–1.37 | 1.40–1.42 | 1.58–1.60 | 1.56–1.58 |
+Timings across prefix lengths are in the [2.1 benchmarks for SHA-1 and SHA-256](https://github.com/nervosnetwork/faster-hex/pull/77).
 
 ## Features
 

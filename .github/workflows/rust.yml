@@ -9,6 +9,10 @@ on:
         description: Git ref to compare with the candidate on native x86 and ARM
         required: false
         type: string
+      benchmark_as_released:
+        description: Keep each ref's declared package version when benchmarking
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,7 +42,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           path: candidate
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,6 +52,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
+      - name: Match the package version for source comparisons
+        if: ${{ !inputs.benchmark_as_released }}
+        shell: bash
+        run: |
+          package_version() {
+            cargo metadata --manifest-path "$1/Cargo.toml" --no-deps --format-version 1 |
+              jq -er '.packages[] | select(.name == "faster-hex").version'
+          }
+          before=$(package_version baseline)
+          version=$(package_version candidate)
+          echo "Source comparison uses faster-hex $version for both builds (baseline ref declares $before)"
+          if [[ "$before" != "$version" ]]; then
+            # Cargo includes the package version in the crate identity used for code generation.
+            awk -v version="$version" '
+              /^[[:space:]]*\[/ { package = $0 ~ /^[[:space:]]*\[package\][[:space:]]*(#.*)?$/ }
+              package && /^[[:space:]]*version[[:space:]]*=/ { $0 = "version = \"" version "\"" }
+              { print }
+            ' baseline/Cargo.toml > baseline/Cargo.toml.bench
+            mv baseline/Cargo.toml.bench baseline/Cargo.toml
+            [[ "$(package_version baseline)" == "$version" ]]
+          fi
       - name: Compare the same benchmarks in both run orders
         shell: bash
         run: |
@@ -77,7 +101,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
       - name: Lint workflows and embedded scripts
         uses: docker://rhysd/actionlint:1.7.12
@@ -142,7 +165,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
@@ -182,7 +204,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
@@ -219,7 +240,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
           # The API baseline is an immutable commit.
           fetch-depth: 0
@@ -251,7 +271,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
@@ -288,7 +307,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
@@ -305,7 +323,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
@@ -330,7 +347,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 42c484112239d78a943735d97125e356f123224a
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
