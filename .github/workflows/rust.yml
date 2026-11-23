@@ -1,45 +1,59 @@
-name: Qualify only the three additive APIs on the 2.0 implementation
+name: Check the additive APIs in the pinned CKB and gix callers
 on: workflow_dispatch
 permissions:
   contents: read
-env:
-  RUSTUP_TOOLCHAIN: 1.95.0
 jobs:
-  compare:
-    name: ${{ matrix.change }} / ${{ matrix.os }} / LTO ${{ matrix.lto }}
+  checks:
+    name: ${{ matrix.os }} / ${{ matrix.profile }} / ${{ matrix.isa }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 48
+    timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04, lto: "false", change: owned }
-          - { os: ubuntu-24.04, lto: "thin", change: owned }
-          - { os: macos-15-intel, lto: "false", change: owned }
-          - { os: macos-15-intel, lto: "thin", change: owned }
-          - { os: ubuntu-24.04-arm, lto: "false", change: owned }
-          - { os: ubuntu-24.04-arm, lto: "thin", change: owned }
+          - { os: ubuntu-24.04, profile: default, isa: runtime }
+          - { os: ubuntu-24.04, profile: thin, isa: runtime }
+          - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
+          - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
-      CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
+      EPHEMERAL_BUILD: "1"
+      AUDIT_SHA: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nervosnetwork/ckb
+          ref: 2061bc092a5dd447a741fad03b02628203b35e96
+          path: real/ckb
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: GitoxideLabs/gitoxide
+          ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
+          path: real/gitoxide
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
-        with:
-          python-version: "3.11"
-      - name: Compare existing calls with 2.0 and new calls with PR 77 at the same version
+      - name: Check the pinned CKB, gix and Serde consumers with each reference
         env:
-          CHANGE: ${{ matrix.change }}
-          CELL: ${{ matrix.os }}-lto-${{ matrix.lto }}
-        run: python verify/check-additive.py "$CELL"
+          ISOLATE: release-audit
+          PROFILE: ${{ matrix.profile }}
+          HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+        shell: bash
+        run: |
+          git archive de46dc1b04130b289ee18f0ede65c3654e00ad16 verify | tar -x
+          if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
+          python3 verify/additive-callers.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: additive-${{ matrix.change }}-${{ matrix.os }}-lto-${{ matrix.lto }}
-          path: out
-          if-no-files-found: error
+          name: additive-consumers-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          path: |
+            real/qualification/archives.json
+            real/qualification/*/*.log
+            real/qualification/*/*.json
+            real/qualification/*/*-vs-*/*.json
