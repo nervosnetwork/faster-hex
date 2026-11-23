@@ -123,7 +123,7 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
 /// assert!(!hex_check_with_case(b"AB01", CheckCase::Lower));
 /// assert!(hex_check_with_case(b"aB01", CheckCase::None));
 /// ```
-#[inline]
+#[inline(always)]
 pub fn hex_check_with_case(src: &[u8], check_case: CheckCase) -> bool {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
