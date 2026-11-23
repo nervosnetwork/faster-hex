@@ -642,8 +642,29 @@ pub(crate) fn hex_decode_short_scalar(
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
 fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid(src, case)?;
-    // Recover if a backend rejected valid input; the caller needs initialized bytes.
+    let table = match case {
+        CheckCase::None => &UNHEX,
+        CheckCase::Lower => &UNHEX_LOWER,
+        CheckCase::Upper => &UNHEX_UPPER,
+    };
+    // Skip valid blocks so locating a late error retains SIMD throughput.
+    // Short inputs go directly to the byte scan.
+    let skipped = if src.len() > 64 {
+        src.chunks_exact(64)
+            .take_while(|chunk| hex_check_with_case(chunk, case))
+            .count()
+            * 64
+    } else {
+        0
+    };
+    for (offset, &byte) in src[skipped..].iter().enumerate() {
+        let index = skipped + offset;
+        if table[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar { index, byte });
+        }
+    }
+    // Every byte was validated. A scalar conversion also handles a backend
+    // rejecting valid input; never return an unwritten output prefix.
     hex_decode_fallback(src, dst);
     Ok(())
 }
