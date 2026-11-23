@@ -743,7 +743,7 @@ pub fn hex_decode_append<'a>(
     dst.resize(start + src.len() / 2, 0);
     let suffix = &mut dst[start..];
     let result = if suffix.len() > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, suffix, CheckCase::None)
+        decode_appended_blocks(src, suffix)
     } else {
         hex_decode(src, suffix).map(|_| ())
     };
@@ -752,4 +752,23 @@ pub fn hex_decode_append<'a>(
         return Err(error);
     }
     Ok(&mut dst[start..])
+}
+
+#[cfg(feature = "alloc")]
+#[inline]
+fn decode_appended_blocks(src: &[u8], dst: &mut [u8]) -> Result<(), Error> {
+    // Once a block is decoded, an error in a later block need not scan it again.
+    const DIGITS: usize = 2 * OWNED_DECODE_THRESHOLD;
+    let blocks = src
+        .chunks(DIGITS)
+        .zip(dst.chunks_mut(OWNED_DECODE_THRESHOLD));
+    for (block, (digits, bytes)) in blocks.enumerate() {
+        if let Err(mut error) = decode_owned_large(digits, bytes, CheckCase::None) {
+            if let Error::InvalidChar { index, .. } = &mut error {
+                *index += block * DIGITS;
+            }
+            return Err(error);
+        }
+    }
+    Ok(())
 }
