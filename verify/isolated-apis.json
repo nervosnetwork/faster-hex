@@ -1,112 +1,33 @@
 {
   "parent": "d63e0a69bd3fab4d1b3261782f99f10701e1e400",
   "edits": {
-    "prefix": "324ed440a052944e2516bf79afdda262133e01a7",
-    "validate": "a6dcb294e5aa5c93bc762f5bef3c2c29bd4762e8"
+    "neon": "9a48fe40d108fe6cd9bc83ff3ff4af42239f5c6c"
   },
   "frozen": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
   "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
   "matrix": {
-    "prefix": {
-      "ubuntu-24.04-lto-false": [
-        "prefix/buffer/7",
-        "prefix/buffer/12",
-        "encode/faster_hex/32",
-        "prefix/buffer/8",
-        "prefix/display/7",
-        "encode/faster_hex/8"
-      ],
-      "ubuntu-24.04-lto-thin": [
-        "prefix/buffer/7",
-        "prefix/buffer/12",
-        "encode/faster_hex/32",
-        "prefix/buffer/8",
-        "prefix/display/7",
-        "encode/faster_hex/8"
-      ],
-      "macos-15-intel-lto-false": [
-        "prefix/buffer/7",
-        "prefix/buffer/12",
-        "encode/faster_hex/32",
-        "prefix/buffer/8",
-        "prefix/display/7"
-      ],
-      "macos-15-intel-lto-thin": [
-        "prefix/buffer/7",
-        "prefix/buffer/12",
-        "encode/faster_hex/32",
-        "prefix/buffer/8",
-        "prefix/display/7",
-        "decode/faster_hex_mixed/256",
-        "decode/faster_hex_mixed/4096"
-      ],
+    "neon": {
       "ubuntu-24.04-arm-lto-false": [
-        "prefix/buffer/7",
-        "prefix/buffer/12",
+        "encode/faster_hex/4",
+        "encode/faster_hex/8",
         "encode/faster_hex/32",
-        "encode/faster_hex/8"
+        "encode/faster_hex/65",
+        "prefix/buffer/7",
+        "prefix_width/buffer/16",
+        "prefix_width/buffer/17",
+        "prefix_width/buffer/30",
+        "prefix_width/buffer/64"
       ],
       "ubuntu-24.04-arm-lto-thin": [
-        "prefix/buffer/7",
-        "prefix/buffer/12",
+        "encode/faster_hex/4",
+        "encode/faster_hex/8",
         "encode/faster_hex/32",
-        "encode/faster_hex/8"
-      ]
-    },
-    "validate": {
-      "ubuntu-24.04-lto-false": [
-        "check_valid/byte_pairs/32",
-        "check_valid/byte_pairs/4096",
-        "decode_vec/faster_hex/4096",
-        "check_valid/byte_pairs/8",
-        "check_valid/either/32",
-        "validate_error/first/4096",
-        "validate_error/last/4096",
-        "validate_error/last/65",
-        "validate_error/middle/32"
-      ],
-      "ubuntu-24.04-lto-thin": [
-        "check_valid/byte_pairs/32",
-        "check_valid/byte_pairs/4096",
-        "decode_vec/faster_hex/4096",
-        "check_valid/byte_pairs/8",
-        "check_valid/either/32",
-        "validate_error/first/4096",
-        "validate_error/last/4096",
-        "validate_error/last/65",
-        "validate_error/middle/32"
-      ],
-      "macos-15-intel-lto-false": [
-        "check_valid/byte_pairs/32",
-        "check_valid/byte_pairs/4096",
-        "decode_vec/faster_hex/4096",
-        "check_valid/byte_pairs/8",
-        "check_valid/either/32",
-        "validate_error/first/4096",
-        "validate_error/last/4096",
-        "validate_error/last/65"
-      ],
-      "macos-15-intel-lto-thin": [
-        "check_valid/byte_pairs/32",
-        "check_valid/byte_pairs/4096",
-        "decode_vec/faster_hex/4096",
-        "check_valid/byte_pairs/8",
-        "check_valid/either/32",
-        "validate_error/first/4096",
-        "validate_error/last/4096",
-        "validate_error/last/65"
-      ],
-      "ubuntu-24.04-arm-lto-false": [
-        "check_valid/byte_pairs/32",
-        "check_valid/byte_pairs/4096",
-        "decode_vec/faster_hex/4096",
-        "decode_append/32"
-      ],
-      "ubuntu-24.04-arm-lto-thin": [
-        "check_valid/byte_pairs/32",
-        "check_valid/byte_pairs/4096",
-        "decode_vec/faster_hex/4096",
-        "decode_append/32"
+        "encode/faster_hex/65",
+        "prefix/buffer/7",
+        "prefix_width/buffer/16",
+        "prefix_width/buffer/17",
+        "prefix_width/buffer/30",
+        "prefix_width/buffer/64"
       ]
     }
   },

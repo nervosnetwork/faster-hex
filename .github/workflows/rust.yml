@@ -1,4 +1,4 @@
-name: Compare isolated short-prefix and validation paths
+name: Compare one NEON table lookup for eight input bytes
 on: workflow_dispatch
 permissions:
   contents: read
@@ -13,18 +13,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04, lto: "false", change: prefix }
-          - { os: ubuntu-24.04, lto: "false", change: validate }
-          - { os: ubuntu-24.04, lto: "thin", change: prefix }
-          - { os: ubuntu-24.04, lto: "thin", change: validate }
-          - { os: macos-15-intel, lto: "false", change: prefix }
-          - { os: macos-15-intel, lto: "false", change: validate }
-          - { os: macos-15-intel, lto: "thin", change: prefix }
-          - { os: macos-15-intel, lto: "thin", change: validate }
-          - { os: ubuntu-24.04-arm, lto: "false", change: prefix }
-          - { os: ubuntu-24.04-arm, lto: "false", change: validate }
-          - { os: ubuntu-24.04-arm, lto: "thin", change: prefix }
-          - { os: ubuntu-24.04-arm, lto: "thin", change: validate }
+          - { os: ubuntu-24.04-arm, lto: "false", change: neon }
+          - { os: ubuntu-24.04-arm, lto: "thin", change: neon }
     env:
       CARGO_PROFILE_BENCH_LTO: ${{ matrix.lto }}
     steps:
