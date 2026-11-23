@@ -1,5 +1,5 @@
 {
-  "proposal": "4320de9c59adde4a5ef22013cf73532e124ac9ba",
+  "proposal": "575f544500025187320dd7deab53ebc26a9e3afe",
   "cases": {
     "ubuntu-24.04-arm-lto-false": [
       "decode_vec/faster_hex/4096",

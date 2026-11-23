@@ -1,4 +1,4 @@
-name: Verify paired high and low NEON loads on checked decode calls
+name: Verify fixed input and output block extents on AArch64
 on: workflow_dispatch
 permissions:
   contents: read
