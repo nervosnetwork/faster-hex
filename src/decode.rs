@@ -448,9 +448,22 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
 // Inline dispatch to preserve array return/copy code generation.
 #[inline(always)]
 unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+    // SAFETY: the caller provides exact lengths and private output.
+    if unsafe { decode_owned_blocks(src, dst, case) }.is_err() {
+        return decode_diagnosed(src, dst, case);
+    }
+    Ok(())
+}
+
+/// Decodes complete pairs into private output, which may be partial on error.
+///
+/// # Safety
+/// The input must contain exactly two digits per output byte.
+#[inline(always)]
+unsafe fn decode_owned_blocks(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let decoded = match crate::vectorization_support() {
+    let result = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
             // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
             // have the exact 2:1 ratio, and output is private until success.
@@ -463,18 +476,15 @@ unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Res
         _ => decode_checked(src, dst, case),
     };
     #[cfg(target_arch = "aarch64")]
-    let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
+    let result = if crate::vectorization_support() == crate::Vectorization::Neon {
         // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
         unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
     } else {
         decode_checked(src, dst, case)
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    let decoded = decode_checked(src, dst, case);
-    if decoded.is_err() {
-        decode_diagnosed(src, dst, case)?;
-    }
-    Ok(())
+    let result = decode_checked(src, dst, case);
+    result
 }
 
 /// Checks every digit before writing anything.
@@ -754,15 +764,15 @@ pub fn hex_decode_append<'a>(
     let start = dst.len();
     dst.resize(start + src.len() / 2, 0);
     let suffix = &mut dst[start..];
-    let result = if suffix.len() > OWNED_DECODE_THRESHOLD {
-        // SAFETY: resize added one byte for each pair of the even input.
-        unsafe { decode_owned_large(src, suffix, CheckCase::None) }
-    } else {
-        // SAFETY: the suffix has exactly one byte for each input pair.
-        unsafe { decode_checked(src, suffix, CheckCase::None) }
-            .or_else(|()| recover_appended(src, suffix))
+    // SAFETY: resize added exactly one byte per input pair. An error discards the suffix.
+    let decoded = unsafe {
+        if suffix.len() > OWNED_DECODE_THRESHOLD {
+            decode_owned_blocks(src, suffix, CheckCase::None)
+        } else {
+            decode_checked(src, suffix, CheckCase::None)
+        }
     };
-    if let Err(error) = result {
+    if let Err(error) = decoded.or_else(|()| recover_appended(src, suffix)) {
         dst.truncate(start);
         return Err(error);
     }
