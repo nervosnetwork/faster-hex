@@ -103,7 +103,7 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
     if hex_check(src) {
         Ok(())
     } else {
-        diagnose_invalid(src, CheckCase::None)
+        diagnose_invalid::<true>(src, CheckCase::None)
     }
 }
 
@@ -300,7 +300,7 @@ pub fn hex_decode_with_case<'a>(
         .ok_or(Error::OutputTooSmall { required: len })?;
     // SAFETY: The input is even and dst is the exact output prefix checked above.
     if unsafe { decode_checked(src, dst, check_case) }.is_err() {
-        decode_diagnosed(src, dst, check_case)?;
+        decode_diagnosed::<false>(src, dst, check_case)?;
     }
     Ok(dst)
 }
@@ -537,7 +537,7 @@ unsafe fn decode_owned(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<()
         decoded
     };
     if decoded.is_err() {
-        decode_diagnosed(src, dst, case)?;
+        decode_diagnosed::<true>(src, dst, case)?;
     }
     Ok(())
 }
@@ -643,27 +643,33 @@ pub(crate) fn hex_decode_short_scalar(
 // Backends report validity; diagnostics belong to the public boundary. The
 // successful SIMD path does not track byte positions or construct an error.
 #[cold]
-fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
-    diagnose_invalid(src, case)?;
+fn decode_diagnosed<const GROUP_DIGITS: bool>(
+    src: &[u8],
+    dst: &mut [u8],
+    case: CheckCase,
+) -> Result<(), Error> {
+    diagnose_invalid::<GROUP_DIGITS>(src, case)?;
     // Recover if a backend rejected valid input; the caller needs initialized bytes.
     hex_decode_fallback(src, dst);
     Ok(())
 }
 
 #[inline(always)]
-fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
+fn diagnose_invalid<const GROUP_DIGITS: bool>(src: &[u8], case: CheckCase) -> Result<(), Error> {
     let table = match case {
         CheckCase::None => &UNHEX,
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
-    // Report a malformed first pair before scanning any SIMD blocks.
-    for (index, &byte) in src.iter().take(2).enumerate() {
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
+    if GROUP_DIGITS {
+        for (index, &byte) in src.iter().take(2).enumerate() {
+            if table[usize::from(byte)] == NIL {
+                return Err(Error::InvalidChar { index, byte });
+            }
         }
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
+    // Short inputs go directly to the byte scan.
     let skipped = if src.len() > 64 {
         src.chunks_exact(64)
             .take_while(|chunk| hex_check_with_case(chunk, case))
@@ -672,19 +678,22 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
     } else {
         0
     };
-    // Four independent lookups skip valid digits before the exact byte scan.
-    // A rejected digit sets all bits. Valid entries use only the low nibble.
-    let groups = src[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
+    let start = if GROUP_DIGITS {
+        // Valid nibbles occupy four bits. Only an invalid digit sets all eight.
+        let groups = src[skipped..].as_chunks::<4>().0;
+        let valid = groups
+            .iter()
+            .take_while(|group| {
+                group
+                    .iter()
+                    .fold(0, |bits, &byte| bits | table[usize::from(byte)])
+                    != NIL
+            })
+            .count();
+        skipped + 4 * valid
+    } else {
+        skipped
+    };
     for (offset, &byte) in src[start..].iter().enumerate() {
         let index = start + offset;
         if table[usize::from(byte)] == NIL {
