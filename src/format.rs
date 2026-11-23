@@ -266,7 +266,7 @@ impl LeadingDigits<'_> {
         if self.omit_low_nibble {
             crate::encode::encode_odd(self.hex.bytes, dst)
         } else {
-            crate::hex_encode(self.hex.bytes, dst)
+            crate::encode::encode_prefix_pairs(self.hex.bytes, dst)
         }
     }
 

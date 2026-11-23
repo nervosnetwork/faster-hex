@@ -511,9 +511,41 @@ pub(crate) fn encode_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut st
     let output = dst
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
-    let written = hex_encode(pairs, output)?.len();
+    let written = encode_prefix_pairs(pairs, output)?.len();
     output[written] = TABLE_LOWER[usize::from(last >> 4)];
     // SAFETY: hex_encode wrote the complete pairs as ASCII. The only
     // remaining byte was filled from the ASCII digit table.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+pub(crate) use self::hex_encode as encode_prefix_pairs;
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+pub(crate) fn encode_prefix_pairs<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut str, Error> {
+    if !(16..=32).contains(&src.len())
+        || crate::vectorization_support() != crate::Vectorization::Neon
+    {
+        return hex_encode(src, dst);
+    }
+    let required = src.len() * 2;
+    let out = dst
+        .get_mut(..required)
+        .ok_or(Error::OutputTooSmall { required })?;
+    // SAFETY: NEON is available. The first and last 16-byte blocks cover the
+    // entire input, and both stores write the same ASCII digits where they overlap.
+    unsafe {
+        let table = vld1q_u8(TABLE_LOWER.as_ptr());
+        let output = core::slice::from_raw_parts_mut(out.as_mut_ptr().cast(), out.len());
+        if let (Some(input), Some(first)) = (src.first_chunk(), output.first_chunk_mut()) {
+            encode_neon_16(input, first, table);
+        }
+        if src.len() > 16 {
+            if let (Some(input), Some(last)) = (src.last_chunk(), output.last_chunk_mut()) {
+                encode_neon_16(input, last, table);
+            }
+        }
+        Ok(core::str::from_utf8_unchecked_mut(out))
+    }
 }
