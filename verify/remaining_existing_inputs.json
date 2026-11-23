@@ -1,0 +1,86 @@
+{
+  "refs": {
+    "release": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
+    "version": "f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93",
+    "pr": "25cfd8eb6a4cd8257a96fabaf73771cabcced4b4",
+    "candidate": "24d12bbc21c48a8e582d0ce3997e1477ff3a49d3"
+  },
+  "anchors": {
+    "vec_round_slice": {
+      "release": {
+        ".text": [
+          20096,
+          281124,
+          "b7698ba46845b64d2b39e1c98d8806c3487ce9d380e6bcd24c24ae0099dafaf3"
+        ],
+        ".rodata": [
+          301248,
+          53712,
+          "86c092d30cc59f829aec7817125b2160f27510ddfaca184fe264e1f3bc3a679c"
+        ]
+      },
+      "version": {
+        ".text": [
+          20096,
+          281124,
+          "e64df37a57db8fc976e5cc77afb97cc9fe7a3d9c017cb5cca87d8ea31e029212"
+        ],
+        ".rodata": [
+          301248,
+          53712,
+          "e476dbaae6aa1e1fba69482c818eafa9086c8db0d7bb63f2c8a9994ea78db57b"
+        ]
+      },
+      "pr": {
+        ".text": [
+          20160,
+          280868,
+          "ca503f4410c531e088383c713020a0fd1ae2d2aceefc3beec1839f20aa926ab2"
+        ],
+        ".rodata": [
+          301056,
+          53648,
+          "ee1b78999bf9a4fdeb22a18cfa0e21a9841aeef574e5e49ee16272bc29f47c50"
+        ]
+      }
+    },
+    "qualified_decode": {
+      "release": {
+        ".text": [
+          85152,
+          291672,
+          "abaf2afd2849d10d30deedfca918cc10a1d4527f38fdf8dd68597b83cf27d023"
+        ],
+        ".rodata": [
+          21696,
+          28972,
+          "dd90191ed3ae8b8191400d564b79259a8f5c8e5504b043507ce5da565dbb2ca4"
+        ]
+      },
+      "version": {
+        ".text": [
+          85152,
+          291672,
+          "30cfabb50194787f483562735dd147d45713819312c935472cc9454eca188b19"
+        ],
+        ".rodata": [
+          21696,
+          28972,
+          "ed85dcafca7d0e24b7e2f48ac3a4618b01baafb33867370b49ac0fa647505e98"
+        ]
+      },
+      "pr": {
+        ".text": [
+          85216,
+          291864,
+          "7b3c7dd4958386ffb4f1756e11543ccab1feb5e9466d6ddd6ce0e97e496e6b24"
+        ],
+        ".rodata": [
+          21760,
+          28972,
+          "f28a800b31377d0166e7eeb1fa5abdc556981f1e41fe381de70fa57f30e30eb8"
+        ]
+      }
+    }
+  }
+}

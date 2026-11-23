@@ -1,4 +1,4 @@
-name: Compare the current source with a version-matched 2.0.0 baseline on N2
+name: Recheck the two outstanding existing entry points on the original CPU models
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -6,66 +6,57 @@ permissions:
   contents: read
 jobs:
   checks:
-    name: ${{ matrix.os }} / ${{ matrix.profile }} / ${{ matrix.isa }}
+    name: ${{ matrix.os }} / ${{ matrix.profile }} / CPU probe ${{ matrix.probe }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
+          - { os: ubuntu-24.04-arm, profile: default, isa: runtime, probe: 0 }
+          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 1 }
+          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 2 }
+          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 3 }
+          - { os: ubuntu-22.04, profile: thin, isa: runtime, probe: 4 }
     env:
       EPHEMERAL_BUILD: "1"
       AUDIT_SHA: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check CPU model
+        id: cpu
+        shell: bash
+        run: |
+          model=$(LC_ALL=C lscpu | awk -F: '/^Model name:/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}')
+          echo "Physical CPU is $model"
+          case "$model" in
+            "AMD EPYC 7763 64-Core Processor" | "Neoverse-N2") echo "match=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "match=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - if: steps.cpu.outputs.match == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - if: steps.cpu.outputs.match == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: nervosnetwork/ckb
           ref: 2061bc092a5dd447a741fad03b02628203b35e96
           path: real/ckb
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - if: steps.cpu.outputs.match == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: GitoxideLabs/gitoxide
           ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
           path: real/gitoxide
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+      - if: steps.cpu.outputs.match == 'true'
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Prepare the original and candidate manifests
-        run: |
-          mkdir baseline candidate
-          git archive 6d84260fe321669e7f93ecfb8aecb4db0f582f14 | tar -x -C baseline
-          git archive 24d12bbc21c48a8e582d0ce3997e1477ff3a49d3 | tar -x -C candidate
-      - name: Match the package version for source comparisons
-        shell: bash
-        run: |
-          package_version() {
-            cargo metadata --manifest-path "$1/Cargo.toml" --no-deps --format-version 1 |
-              jq -er '.packages[] | select(.name == "faster-hex").version'
-          }
-          before=$(package_version baseline)
-          version=$(package_version candidate)
-          echo "Source comparison uses faster-hex $version for both builds (baseline ref declares $before)"
-          if [[ "$before" != "$version" ]]; then
-            # Cargo includes the package version in the crate identity used for code generation.
-            awk -v version="$version" '
-              /^[[:space:]]*\[/ { package = $0 ~ /^[[:space:]]*\[package\][[:space:]]*(#.*)?$/ }
-              package && /^[[:space:]]*version[[:space:]]*=/ { $0 = "version = \"" version "\"" }
-              { print }
-            ' baseline/Cargo.toml > baseline/Cargo.toml.bench
-            mv baseline/Cargo.toml.bench baseline/Cargo.toml
-            [[ "$(package_version baseline)" == "$version" ]]
-          fi
-      - name: Verify the matched manifest against the measured package
-        run: |
-          git show f83d1075a7945c2dfe56ee7b94d9b6b1783cdf93:Cargo.toml | cmp - baseline/Cargo.toml
-      - name: Measure matched source, the published crate and controlled link order
+      - name: Measure the existing workload against the released and version-matched baseline
+        if: steps.cpu.outputs.match == 'true'
         shell: bash
         env:
           ISOLATE: release-audit
@@ -73,11 +64,11 @@ jobs:
           HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/measure_source_version.py
+          python3 verify/remaining_existing.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
+        if: always() && steps.cpu.outputs.match == 'true'
         with:
-          name: matched-source-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: existing-calls-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.probe }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.log
