@@ -1,4 +1,4 @@
-name: Qualify owned Serde reads and separate table, error and output changes
+name: Verify error recovery in existing downstream calls
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -47,11 +47,12 @@ jobs:
           HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/early_decode_parts.py
+          python3 verify/recovery_paths.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: early-decode-parts-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
+          name: recovery-paths-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
+            real/qualification/*/release-pr-*/*.json
