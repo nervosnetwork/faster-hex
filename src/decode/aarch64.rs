@@ -105,16 +105,20 @@ pub(super) unsafe fn hex_decode_bounded_neon(
     dst: &mut [u8],
     case: CheckCase,
 ) -> Result<(), ()> {
-    let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
-    let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), case);
-    let c = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 32)), case);
-    let d = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
-    if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
+    // Deinterleaving puts the two digits of each output byte in matching lanes.
+    let decode = |digits| {
+        let uint8x16x2_t(high, low) = vld2q_u8(digits);
+        let high = decode_neon_nibbles(high, case);
+        let low = decode_neon_nibbles(low, case);
+        (vsliq_n_u8::<4>(low, high), vorrq_u8(high, low))
+    };
+    let (first, first_check) = decode(src.as_ptr());
+    let (last, last_check) = decode(src.as_ptr().add(src.len() - 32));
+    if vmaxvq_u8(vorrq_u8(first_check, last_check)) > 15 {
         return Err(());
     }
-    let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
-    vst1q_u8(dst.as_mut_ptr(), pack(a, b));
-    vst1q_u8(dst.as_mut_ptr().add(dst.len() - 16), pack(c, d));
+    vst1q_u8(dst.as_mut_ptr(), first);
+    vst1q_u8(dst.as_mut_ptr().add(dst.len() - 16), last);
     Ok(())
 }
 
