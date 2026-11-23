@@ -1,0 +1,17 @@
+{
+  "base": "6d84260fe321669e7f93ecfb8aecb4db0f582f14",
+  "head": "b7bac93ce485dcd1fcdddcdb390f0b4aaf01e019",
+  "lock": "e1bcde776f0f4996b1d7b7e52097f6d8def33acab95b44d57f889fca9003b402",
+  "anchors": {
+    "base": [
+      287808,
+      2442840,
+      "27821202087111bd70ec01f48fedad94010b4f9bae1d845f3d6f2ed3322989b5"
+    ],
+    "head": [
+      287808,
+      2442760,
+      "7357e3e653d95471b6b6ed82dfd718fd514566dabec5c26fc2ac96675b0538a4"
+    ]
+  }
+}
