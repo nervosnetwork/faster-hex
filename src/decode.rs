@@ -80,33 +80,6 @@ pub fn hex_check(src: &[u8]) -> bool {
     hex_check_with_case(src, CheckCase::None)
 }
 
-/// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
-///
-/// Accepts mixed case and empty input without allocating. Use [`hex_check`]
-/// to check individual digits, or [`hex_decode`] when the bytes are needed.
-///
-/// # Errors
-///
-/// Odd input returns [`Error::OddLength`] first. Otherwise, the first invalid
-/// byte is reported as [`Error::InvalidChar`], with its byte index in `src`.
-///
-/// ```
-/// use faster_hex::{hex_validate, Error};
-/// assert_eq!(hex_validate(b"0aBF"), Ok(()));
-/// assert_eq!(hex_validate(b"abc"), Err(Error::OddLength));
-/// ```
-#[inline]
-pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
-    if !src.len().is_multiple_of(2) {
-        return Err(Error::OddLength);
-    }
-    if hex_check(src) {
-        Ok(())
-    } else {
-        diagnose_invalid(src, CheckCase::None)
-    }
-}
-
 /// Checks ASCII hex digits against an explicit letter-case policy.
 ///
 /// Digits are accepted under every [`CheckCase`] policy. Empty input succeeds;
@@ -669,50 +642,6 @@ fn decode_diagnosed(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), E
     Ok(())
 }
 
-#[inline(always)]
-fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
-    let table = match case {
-        CheckCase::None => &UNHEX,
-        CheckCase::Lower => &UNHEX_LOWER,
-        CheckCase::Upper => &UNHEX_UPPER,
-    };
-    // Report a malformed first pair before scanning any SIMD blocks.
-    for (index, &byte) in src.iter().take(2).enumerate() {
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
-        }
-    }
-    // Skip valid blocks so locating a late error retains SIMD throughput.
-    let skipped = if src.len() > 64 {
-        src.chunks_exact(64)
-            .take_while(|chunk| hex_check_with_case(chunk, case))
-            .count()
-            * 64
-    } else {
-        0
-    };
-    // Four independent lookups skip valid digits before the exact byte scan.
-    // A rejected digit sets all bits. Valid entries use only the low nibble.
-    let groups = src[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
-    for (offset, &byte) in src[start..].iter().enumerate() {
-        let index = start + offset;
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
-        }
-    }
-    Ok(())
-}
-
 // Internal conversion only. Even if miscalled with short input, never pass an
 // undersized source to a SIMD kernel. Public callers must use checked decode.
 #[cfg(any(test, not(any(target_arch = "x86", target_arch = "x86_64"))))]
@@ -757,4 +686,71 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
         let b = UNHEX[bytes[1] as usize];
         *slot = a | b;
     }
+}
+
+/// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
+///
+/// Accepts mixed case and empty input without allocating. Use [`hex_check`]
+/// to check individual digits, or [`hex_decode`] when the bytes are needed.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] first. Otherwise, the first invalid
+/// byte is reported as [`Error::InvalidChar`], with its byte index in `src`.
+///
+/// ```
+/// use faster_hex::{hex_validate, Error};
+/// assert_eq!(hex_validate(b"0aBF"), Ok(()));
+/// assert_eq!(hex_validate(b"abc"), Err(Error::OddLength));
+/// ```
+#[inline]
+pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    if hex_check(src) {
+        Ok(())
+    } else {
+        diagnose_invalid(src)
+    }
+}
+
+#[inline(always)]
+fn diagnose_invalid(src: &[u8]) -> Result<(), Error> {
+    let table = &UNHEX;
+    // Report a malformed first pair before scanning any SIMD blocks.
+    for (index, &byte) in src.iter().take(2).enumerate() {
+        if table[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar { index, byte });
+        }
+    }
+    // Skip valid blocks so locating a late error retains SIMD throughput.
+    let skipped = if src.len() > 64 {
+        src.chunks_exact(64)
+            .take_while(|chunk| hex_check(chunk))
+            .count()
+            * 64
+    } else {
+        0
+    };
+    // Four independent lookups skip valid digits before the exact byte scan.
+    // A rejected digit sets all bits. Valid entries use only the low nibble.
+    let groups = src[skipped..].as_chunks::<4>().0;
+    let valid_groups = groups
+        .iter()
+        .take_while(|group| {
+            group
+                .iter()
+                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
+                != NIL
+        })
+        .count();
+    let start = skipped + 4 * valid_groups;
+    for (offset, &byte) in src[start..].iter().enumerate() {
+        let index = start + offset;
+        if table[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar { index, byte });
+        }
+    }
+    Ok(())
 }
