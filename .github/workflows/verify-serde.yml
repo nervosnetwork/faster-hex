@@ -1,4 +1,4 @@
-name: Verify isolated decoder fixes against the published 4 KiB path on EPYC 7763
+name: Recheck all previously reproduced N2 cases against the published crate
 on:
   push:
     branches: [zhangsoledad/verify-2.1-serde]
@@ -6,66 +6,52 @@ permissions:
   contents: read
 jobs:
   checks:
-    name: Check CPU and run EPYC 7763 comparison (${{ matrix.probe }})
-    runs-on: ubuntu-22.04
+    name: ${{ matrix.os }} / ${{ matrix.profile }} / ${{ matrix.isa }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
-        probe: [1, 2, 3, 4]
+        include:
+          - { os: ubuntu-24.04-arm, profile: default, isa: runtime }
+          - { os: ubuntu-24.04-arm, profile: thin, isa: runtime }
     env:
       EPHEMERAL_BUILD: "1"
       AUDIT_SHA: 25cfd8eb6a4cd8257a96fabaf73771cabcced4b4
     steps:
-      - name: Record physical CPU
-        id: cpu
-        shell: bash
-        run: |
-          model=$(LC_ALL=C lscpu | sed -n 's/^Model name:[[:space:]]*//p')
-          echo "CPU: $model"
-          if [[ "$model" == "AMD EPYC 7763 64-Core Processor" ]]; then
-            echo "match=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "match=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.cpu.outputs.match == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - if: steps.cpu.outputs.match == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: nervosnetwork/ckb
           ref: 2061bc092a5dd447a741fad03b02628203b35e96
           path: real/ckb
           persist-credentials: false
-      - if: steps.cpu.outputs.match == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: GitoxideLabs/gitoxide
           ref: a7e739482cd6fe357ca8ebdbf82da5f1945e3e38
           path: real/gitoxide
           persist-credentials: false
-      - if: steps.cpu.outputs.match == 'true'
-        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
         with:
           toolchain: 1.95.0
-      - name: Cross release and PR programs over the same executable files
-        if: steps.cpu.outputs.match == 'true'
+      - name: Measure original slice, reader, write and round-trip callers
         shell: bash
         env:
           ISOLATE: release-audit
-          PROFILE: thin
-          HOST_KEY: ubuntu-22.04-thin-runtime
+          PROFILE: ${{ matrix.profile }}
+          HOST_KEY: ${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
         run: |
           if [[ "$PROFILE" == thin ]]; then export CARGO_PROFILE_RELEASE_LTO=thin; fi
-          python3 verify/selected_7763.py
+          python3 verify/registered_n2.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always() && steps.cpu.outputs.match == 'true'
+        if: always()
         with:
-          name: selected-7763-${{ matrix.probe }}
+          name: registered-n2-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.isa }}
           path: |
             real/qualification/archives.json
             real/qualification/*/*.json
-            real/qualification/*/*/*.json
+            real/qualification/*/*-vs-*/*.json
