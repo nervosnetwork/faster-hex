@@ -754,6 +754,7 @@ fn diagnose_invalid(src: &[u8]) -> Result<(), Error> {
 /// ```
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[cfg_attr(all(target_arch = "x86_64", target_os = "macos"), inline)]
 pub fn hex_decode_append<'a>(
     src: &[u8],
     dst: &'a mut alloc::vec::Vec<u8>,
