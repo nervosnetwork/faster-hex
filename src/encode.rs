@@ -315,7 +315,11 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
     let table = _mm256_broadcastsi128_si256(_mm_loadu_si128(table.as_ptr().cast()));
     let (blocks, tail) = src.as_chunks::<32>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
+    let outputs = dst.as_chunks_mut::<64>().0;
+    if let ([input], [], [output]) = (blocks, tail, &mut *outputs) {
+        return encode_avx2_32(input, output, table);
+    }
+    for (input, output) in blocks.iter().zip(outputs) {
         encode_avx2_32(input, output, table);
     }
     if !tail.is_empty() {
@@ -329,19 +333,18 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn encode_avx2_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], table: __m256i) {
-    let bytes = _mm256_loadu_si256(src.as_ptr().cast());
+    // Arrange the 64-bit quarters as 0, 2, 1, 3. The lane-local unpacks
+    // then produce two consecutive output blocks with one cross-lane shuffle.
+    let bytes = _mm256_permute4x64_epi64::<0xd8>(_mm256_loadu_si256(src.as_ptr().cast()));
     let mask = _mm256_set1_epi8(15);
     let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), mask);
     let low = _mm256_and_si256(bytes, mask);
     let a = _mm256_unpacklo_epi8(high, low);
     let b = _mm256_unpackhi_epi8(high, low);
-    _mm256_storeu_si256(
-        dst.as_mut_ptr().cast(),
-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x20>(a, b)),
-    );
+    _mm256_storeu_si256(dst.as_mut_ptr().cast(), _mm256_shuffle_epi8(table, a));
     _mm256_storeu_si256(
         dst.as_mut_ptr().add(32).cast(),
-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x31>(a, b)),
+        _mm256_shuffle_epi8(table, b),
     );
 }
 
@@ -396,6 +399,18 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
             if let (Some(input), Some(output)) = (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
             {
                 encode_neon_8(input, output, table);
+            }
+        }
+        return;
+    }
+    if src.len() <= 32 {
+        // One or two vector loads cover everything through a 256-bit hash.
+        if let (Some(input), Some(output)) = (src.first_chunk(), dst.first_chunk_mut()) {
+            encode_neon_16(input, output, table);
+        }
+        if src.len() > 16 {
+            if let (Some(input), Some(output)) = (src.last_chunk(), dst.last_chunk_mut()) {
+                encode_neon_16(input, output, table);
             }
         }
         return;
