@@ -655,38 +655,15 @@ fn diagnose_invalid(src: &[u8], case: CheckCase) -> Result<(), Error> {
         CheckCase::Lower => &UNHEX_LOWER,
         CheckCase::Upper => &UNHEX_UPPER,
     };
-    // Report a malformed first pair before scanning any SIMD blocks.
-    for (index, &byte) in src.iter().take(2).enumerate() {
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
+    for (block, digits) in src.chunks(64).enumerate() {
+        if digits.len() == 64 && hex_check_with_case(digits, case) {
+            continue;
         }
-    }
-    // Skip valid blocks so locating a late error retains SIMD throughput.
-    let skipped = if src.len() > 64 {
-        src.chunks_exact(64)
-            .take_while(|chunk| hex_check_with_case(chunk, case))
-            .count()
-            * 64
-    } else {
-        0
-    };
-    // Four independent lookups skip valid digits before the exact byte scan.
-    // A rejected digit sets all bits. Valid entries use only the low nibble.
-    let groups = src[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
-    for (offset, &byte) in src[start..].iter().enumerate() {
-        let index = start + offset;
-        if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
+        if let Some(offset) = digits.iter().position(|&byte| table[usize::from(byte)] == NIL) {
+            return Err(Error::InvalidChar {
+                index: block * 64 + offset,
+                byte: digits[offset],
+            });
         }
     }
     Ok(())
