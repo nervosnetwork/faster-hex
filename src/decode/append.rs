@@ -13,6 +13,7 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+#[cfg(feature = "alloc")]
 use crate::error::Error;
 
 #[cfg(target_arch = "aarch64")]
@@ -21,12 +22,14 @@ use super::{aarch64, CheckCase};
 use super::{x86, CheckCase};
 use super::{NIL, UNHEX};
 
-// Decodes `src` into `dst` (where `src.len() == dst.len() * 2`).
-// Returns `Ok(())` only after initializing every element of `dst`.
-// On `Err(from)`, `from` is even, `from <= src.len()`, `src[..from]` is valid,
-// and `dst[..from / 2]` is already initialized.
+// Decodes `src` into `dst`. Returns `Ok(())` only after initializing every element
+// of `dst`. On `Err(from)`, `from` is even, `from <= src.len()`, `src[..from]` is
+// valid, and `dst[..from / 2]` is already initialized.
+//
+// SAFETY: Callers must ensure `src.len() == dst.len() * 2`.
+#[cfg(feature = "alloc")]
 #[inline]
-pub(super) fn decode_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+pub(super) unsafe fn decode_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
     debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
     if dst.len() < 8 {
         return decode_scalar_uninit(src, dst);
@@ -90,6 +93,7 @@ fn decode_scalar_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), u
 
 // Shifts `UNHEX` instead of referencing `UNHEX4` so 2.0's internal `UNHEX4`
 // table stays a local symbol in the rlib and does not shift AArch64 `.text`.
+#[cfg(feature = "alloc")]
 #[inline]
 fn decode_fallback_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
     for (slot, pair) in dst.iter_mut().zip(src.as_chunks::<2>().0) {
@@ -128,6 +132,7 @@ macro_rules! decode_blocks_uninit {
 // already been validated and `dst[..from / 2]` has already been initialized.
 // Generic on chunk width so 2.0-only callers never pull this into rlib CGUs,
 // while `#[inline(never)]` keeps error diagnostics out of caller hot loops.
+#[cfg(feature = "alloc")]
 #[cold]
 #[inline(never)]
 pub(super) fn diagnose_append_error<const CHUNK: usize>(
@@ -136,9 +141,10 @@ pub(super) fn diagnose_append_error<const CHUNK: usize>(
     from: usize,
 ) -> Result<(), Error> {
     let rest = &src[from..];
+    let table = &UNHEX;
     // Report a malformed first pair of the failing region before wider scans.
     for (offset, &byte) in rest.iter().take(2).enumerate() {
-        if UNHEX[usize::from(byte)] == NIL {
+        if table[usize::from(byte)] == NIL {
             return Err(Error::InvalidChar {
                 index: from + offset,
                 byte,
@@ -146,29 +152,31 @@ pub(super) fn diagnose_append_error<const CHUNK: usize>(
         }
     }
     // Skip valid chunks when a wider block (e.g. 128-byte AVX-512) failed.
-    let skipped = if rest.len() > CHUNK {
-        rest.chunks_exact(CHUNK)
-            .take_while(|chunk| crate::hex_check(chunk))
-            .count()
-            * CHUNK
-    } else {
-        0
-    };
+    let mut skipped = 0;
+    if rest.len() > CHUNK {
+        for chunk in rest.chunks_exact(CHUNK) {
+            if !crate::hex_check(chunk) {
+                break;
+            }
+            skipped += CHUNK;
+        }
+    }
     // Four independent lookups skip valid digits before the exact byte scan.
     // A rejected digit sets all bits (0xff); valid entries use only the low nibble.
-    let groups = rest[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | UNHEX[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
+    let mut start = skipped;
+    for group in rest[skipped..].as_chunks::<4>().0 {
+        if (table[usize::from(group[0])]
+            | table[usize::from(group[1])]
+            | table[usize::from(group[2])]
+            | table[usize::from(group[3])])
+            == NIL
+        {
+            break;
+        }
+        start += 4;
+    }
     for (offset, &byte) in rest[start..].iter().enumerate() {
-        if UNHEX[usize::from(byte)] == NIL {
+        if table[usize::from(byte)] == NIL {
             return Err(Error::InvalidChar {
                 index: from + start + offset,
                 byte,

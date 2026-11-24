@@ -505,12 +505,14 @@ unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: u
 
 // `[[u8; 2]; 256]` has natural alignment 1; aligning the promoted constant keeps
 // every 16-bit pair load naturally aligned without adding an rlib static symbol.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
 #[repr(align(64))]
 struct PrefixPairs([[u8; 2]; 256]);
 
 // Selected-prefix encoding keeps short hash prefixes (<= 32 bytes) on direct
 // NEON / pair-table paths without touching 2.0's complete-slice encoders or
 // exporting 2.0's internal static tables from the rlib.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
 const PREFIX_PAIRS_LOWER: &PrefixPairs = &PrefixPairs(encode_pairs(TABLE_LOWER));
 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
 const PREFIX_PAIRS_UPPER: &PrefixPairs = &PrefixPairs(encode_pairs(TABLE_UPPER));
@@ -544,8 +546,12 @@ fn encode_prefix_x86_simd<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<
     }
 }
 
+// SAFETY: Callers must ensure `dst.len() == src.len() * 2`.
 #[inline]
-pub(crate) fn encode_prefix_uninit<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+pub(crate) unsafe fn encode_prefix_uninit<const UPPER: bool>(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) {
     debug_assert_eq!(src.len().checked_mul(2), Some(dst.len()));
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -560,7 +566,8 @@ pub(crate) fn encode_prefix_uninit<const UPPER: bool>(src: &[u8], dst: &mut [May
         if src.len() < 8 {
             encode_prefix_pairs::<UPPER>(src, dst);
         } else if crate::vectorization_support() == crate::Vectorization::Neon {
-            // SAFETY: Dispatch checks NEON; dst has twice src.len() bytes and src.len() >= 8.
+            // SAFETY: Dispatch checks NEON; caller guarantees `dst.len() == src.len() * 2`,
+            // and this branch ensures `src.len() >= 8`.
             unsafe { encode_prefix_neon::<UPPER>(src, dst) }
         } else {
             hex_encode_custom_case_fallback(src, dst, UPPER);
@@ -630,11 +637,13 @@ pub(crate) fn encode_prefix<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a mut
     let output = dst
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
-    // SAFETY: MaybeUninit<u8> has u8's layout and encode_prefix_uninit only writes ASCII.
-    let uninit = unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), required) };
-    encode_prefix_uninit::<false>(src, uninit);
-    // SAFETY: Every byte in `output` was initialized with ASCII hex digits.
-    Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
+    // SAFETY: MaybeUninit<u8> has u8's layout, `uninit.len() == required == src.len() * 2`,
+    // and `encode_prefix_uninit` initializes every byte with ASCII hex digits.
+    unsafe {
+        let uninit = core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), required);
+        encode_prefix_uninit::<false>(src, uninit);
+        Ok(core::str::from_utf8_unchecked_mut(output))
+    }
 }
 
 // An odd digit count always selects at least the high nibble of the last byte.
@@ -646,12 +655,21 @@ pub(crate) fn encode_prefix_odd<'a>(src: &[u8], dst: &'a mut [u8]) -> Result<&'a
     let output = dst
         .get_mut(..required)
         .ok_or(Error::OutputTooSmall { required })?;
-    // SAFETY: MaybeUninit<u8> has u8's layout and encode_prefix_uninit only writes ASCII.
-    let uninit =
-        unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), pair_digits) };
-    encode_prefix_uninit::<false>(pairs, uninit);
-    output[pair_digits] = PREFIX_PAIRS_LOWER.0[usize::from(last)][0];
-    // SAFETY: encode_prefix_uninit wrote the complete pairs as ASCII, and the final
-    // byte came from the ASCII pair table's high-nibble slot.
+    // SAFETY: MaybeUninit<u8> has u8's layout, `uninit.len() == pair_digits == pairs.len() * 2`,
+    // and `encode_prefix_uninit` initializes every byte with ASCII hex digits.
+    unsafe {
+        let uninit = core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), pair_digits);
+        encode_prefix_uninit::<false>(pairs, uninit);
+    }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        output[pair_digits] = PREFIX_PAIRS_LOWER.0[usize::from(last)][0];
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        output[pair_digits] = TABLE_LOWER[usize::from(last >> 4)];
+    }
+    // SAFETY: `encode_prefix_uninit` wrote the complete pairs as ASCII, and the final
+    // byte came from an ASCII lowercase hex table.
     Ok(unsafe { core::str::from_utf8_unchecked_mut(output) })
 }

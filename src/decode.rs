@@ -639,7 +639,7 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(any(feature = "alloc", test, fuzzing))]
 pub(crate) mod append;
 pub(crate) mod validate;
 
@@ -710,7 +710,9 @@ pub fn hex_decode_append<'a>(
     // Only spare capacity beyond `start` is written, so `dst[..start]` and
     // `dst.len()` remain unchanged if decoding fails.
     let spare = unsafe { dst.spare_capacity_mut().get_unchecked_mut(..decoded) };
-    if let Err(from) = append::decode_uninit(src, spare) {
+    // SAFETY: `src.len()` is even and `spare.len() == decoded == src.len() / 2`,
+    // so `src.len() == spare.len() * 2`.
+    if let Err(from) = unsafe { append::decode_uninit(src, spare) } {
         append::diagnose_append_error::<64>(src, spare, from)?;
     }
     // SAFETY: `decode_uninit` (or the defensive fallback in `diagnose_append_error`)

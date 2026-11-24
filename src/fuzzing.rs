@@ -169,7 +169,6 @@ impl Backend {
         }
     }
 
-    #[cfg(feature = "alloc")]
     pub fn decode_append(
         self,
         src: &[u8],
