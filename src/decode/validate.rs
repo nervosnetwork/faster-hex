@@ -51,7 +51,7 @@ pub(super) fn check_mixed(src: &[u8]) -> bool {
 }
 
 // Generic so 2.0-only callers never emit it, and `#[cold] #[inline(never)]` so
-// ThinLTO does not pull `UNHEX` into SIMD caller loops.
+// valid SIMD loops never hoist `UNHEX` GOT loads onto hot branches.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
 #[cold]
 #[inline(never)]
@@ -59,9 +59,9 @@ fn check_mixed_fallback<const _WIDTH: usize>(src: &[u8]) -> bool {
     hex_check_fallback_with_case(src, CheckCase::None)
 }
 
-// Inline into `hex_validate` as a cold branch so valid hot loops keep `UNHEX`
-// out of the loop without forming a cross-call result dependency or `sret`
-// frame, and first-pair failures avoid a cold call.
+// Inline into `hex_validate` as a cold branch with plain loops so valid caller
+// loops keep `UNHEX` out of hot branches without emitting `TakeWhile::fold`
+// call frames or register spills, while late-error diagnosis stays inlined.
 #[cold]
 #[inline(always)]
 pub(super) fn diagnose_invalid(src: &[u8]) -> Result<(), Error> {
@@ -74,31 +74,35 @@ pub(super) fn diagnose_invalid(src: &[u8]) -> Result<(), Error> {
         }
     }
     // Skip valid blocks so locating a late error retains SIMD throughput.
-    let skipped = if src.len() > CHUNK {
-        src.chunks_exact(CHUNK)
-            .take_while(|chunk| check_mixed(chunk))
-            .count()
-            * CHUNK
-    } else {
-        0
-    };
+    let mut skipped = 0;
+    if src.len() > CHUNK {
+        for chunk in src.chunks_exact(CHUNK) {
+            if !check_mixed(chunk) {
+                break;
+            }
+            skipped += CHUNK;
+        }
+    }
     // Four independent lookups skip valid digits before the exact byte scan.
     // A rejected digit sets all bits. Valid entries use only the low nibble.
-    let groups = src[skipped..].as_chunks::<4>().0;
-    let valid_groups = groups
-        .iter()
-        .take_while(|group| {
-            group
-                .iter()
-                .fold(0, |bits, &byte| bits | table[usize::from(byte)])
-                != NIL
-        })
-        .count();
-    let start = skipped + 4 * valid_groups;
+    let mut start = skipped;
+    for group in src[skipped..].as_chunks::<4>().0 {
+        if (table[usize::from(group[0])]
+            | table[usize::from(group[1])]
+            | table[usize::from(group[2])]
+            | table[usize::from(group[3])])
+            == NIL
+        {
+            break;
+        }
+        start += 4;
+    }
     for (offset, &byte) in src[start..].iter().enumerate() {
-        let index = start + offset;
         if table[usize::from(byte)] == NIL {
-            return Err(Error::InvalidChar { index, byte });
+            return Err(Error::InvalidChar {
+                index: start + offset,
+                byte,
+            });
         }
     }
     Ok(())
@@ -246,9 +250,11 @@ unsafe fn check_mixed_avx512<const _WIDTH: usize>(src: &[u8]) -> bool {
     tail.is_empty() || valid_avx512_mixed(_mm512_loadu_si512(src.as_ptr().add(len - 64).cast()))
 }
 
+// Force inlining when NEON is baseline so `#[cold] diagnose_invalid` still
+// inlines chunk-skipping instead of emitting per-64B calls.
 #[cfg(target_arch = "aarch64")]
-#[inline]
-#[target_feature(enable = "neon")]
+#[cfg_attr(target_feature = "neon", inline(always))]
+#[cfg_attr(not(target_feature = "neon"), inline, target_feature(enable = "neon"))]
 unsafe fn valid_neon_mixed(bytes: uint8x16_t) -> uint8x16_t {
     let digit = vcleq_u8(vsubq_u8(bytes, vdupq_n_u8(b'0')), vdupq_n_u8(9));
     let letters = vorrq_u8(bytes, vdupq_n_u8(0x20));
@@ -257,8 +263,8 @@ unsafe fn valid_neon_mixed(bytes: uint8x16_t) -> uint8x16_t {
 }
 
 #[cfg(target_arch = "aarch64")]
-#[inline]
-#[target_feature(enable = "neon")]
+#[cfg_attr(target_feature = "neon", inline(always))]
+#[cfg_attr(not(target_feature = "neon"), inline, target_feature(enable = "neon"))]
 unsafe fn check_mixed_neon(src: &[u8]) -> bool {
     if src.len() < 64 {
         return check_mixed_neon_short(src);
@@ -277,8 +283,8 @@ unsafe fn check_mixed_neon(src: &[u8]) -> bool {
 }
 
 #[cfg(target_arch = "aarch64")]
-#[inline]
-#[target_feature(enable = "neon")]
+#[cfg_attr(target_feature = "neon", inline(always))]
+#[cfg_attr(not(target_feature = "neon"), inline, target_feature(enable = "neon"))]
 unsafe fn check_mixed_neon_short(src: &[u8]) -> bool {
     debug_assert!(src.len() < 64);
     let len = src.len();
@@ -306,3 +312,4 @@ unsafe fn check_mixed_neon_short(src: &[u8]) -> bool {
     };
     vminvq_u8(valid) != 0
 }
+
