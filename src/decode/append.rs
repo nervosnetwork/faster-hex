@@ -475,3 +475,61 @@ unsafe fn decode_avx512_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Resul
     );
     Ok(())
 }
+
+#[cfg(any(test, fuzzing))]
+pub(crate) fn fuzz_decode_scalar_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    decode_scalar_uninit(src, dst)
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_decode_sse41_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    decode_sse41_uninit::<64>(src, dst)
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_decode_avx2_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    decode_avx2_uninit(src, dst)
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_decode_avx512_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    decode_avx512_uninit(src, dst)
+}
+
+#[cfg(all(any(test, fuzzing), target_arch = "aarch64"))]
+pub(crate) unsafe fn fuzz_decode_neon_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    if dst.len() <= 16 {
+        decode_short_neon_uninit(src, dst)
+    } else if dst.len() <= 32 {
+        decode_bounded_neon_uninit(src, dst)
+    } else {
+        decode_large_neon_uninit(src, dst)
+    }
+}

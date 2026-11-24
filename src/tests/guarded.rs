@@ -1,6 +1,6 @@
 use crate::{
     decode::hex_decode_unchecked, hex_check_with_case, hex_decode_with_case, hex_encode,
-    hex_encode_upper, CheckCase, Error,
+    hex_encode_upper, hex_validate, CheckCase, Error,
 };
 
 /// One writable page between inaccessible pages. Both ends are exercised so a
@@ -225,6 +225,23 @@ fn conversions_and_checks_stop_at_guard_pages() {
                     for size in [len * 2, (len * 2).saturating_sub(1)] {
                         encoded.slice_mut(size, end).fill(b'0');
                         assert!(check(encoded.slice(size, end), case), "{}", name);
+                        match backend {
+                            Some(backend) => {
+                                assert!(backend.check_mixed(encoded.slice(size, end)), "{}", name);
+                            }
+                            None => {
+                                let expected_validate = if size.is_multiple_of(2) {
+                                    Ok(())
+                                } else {
+                                    Err(Error::OddLength)
+                                };
+                                assert_eq!(
+                                    hex_validate(encoded.slice(size, end)),
+                                    expected_validate,
+                                    "{name}"
+                                );
+                            }
+                        }
                     }
                     encoded
                         .slice_mut(len * 2, end)
@@ -243,6 +260,21 @@ fn conversions_and_checks_stop_at_guard_pages() {
                             case,
                         ));
                         assert_eq!(decoded.slice(len, end), &data, "{name}");
+                        #[cfg(feature = "alloc")]
+                        {
+                            let dst = decoded.slice_mut(len, end);
+                            dst.fill(0xa5);
+                            // SAFETY: MaybeUninit<u8> has u8's layout; decode_append only writes initialized bytes.
+                            let uninit = unsafe {
+                                core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), len)
+                            };
+                            assert_eq!(
+                                backend.decode_append(encoded.slice(len * 2, end), uninit),
+                                Ok(()),
+                                "{name}"
+                            );
+                            assert_eq!(decoded.slice(len, end), &data, "{name}");
+                        }
                     }
                     if len != 0 {
                         encoded.slice_mut(len * 2, end)[len * 2 - 1] = b'!';
@@ -258,12 +290,47 @@ fn conversions_and_checks_stop_at_guard_pages() {
                             "{}",
                             name
                         );
-                        if let Some(backend) = backend {
-                            assert!(!backend.decode_owned(
-                                encoded.slice(len * 2, end),
-                                decoded.slice_mut(len, end),
-                                case,
-                            ));
+                        match backend {
+                            Some(backend) => {
+                                assert!(
+                                    !backend.check_mixed(encoded.slice(len * 2, end)),
+                                    "{}",
+                                    name
+                                );
+                                assert!(!backend.decode_owned(
+                                    encoded.slice(len * 2, end),
+                                    decoded.slice_mut(len, end),
+                                    case,
+                                ));
+                                #[cfg(feature = "alloc")]
+                                {
+                                    let dst = decoded.slice_mut(len, end);
+                                    // SAFETY: MaybeUninit<u8> has u8's layout; decode_append only writes initialized bytes.
+                                    let uninit = unsafe {
+                                        core::slice::from_raw_parts_mut(
+                                            dst.as_mut_ptr().cast(),
+                                            len,
+                                        )
+                                    };
+                                    assert!(
+                                        backend
+                                            .decode_append(encoded.slice(len * 2, end), uninit)
+                                            .is_err(),
+                                        "{}",
+                                        name
+                                    );
+                                }
+                            }
+                            None => {
+                                assert_eq!(
+                                    hex_validate(encoded.slice(len * 2, end)),
+                                    Err(Error::InvalidChar {
+                                        index: len * 2 - 1,
+                                        byte: b'!',
+                                    }),
+                                    "{name}"
+                                );
+                            }
                         }
                     }
                 }

@@ -281,6 +281,7 @@ fn decode_append(c: &mut Criterion) {
             assert_eq!(&output[1..], bytes);
         });
     }
+    group.finish();
 }
 
 fn rotating_case(

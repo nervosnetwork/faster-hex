@@ -90,6 +90,7 @@ fn leading_digits(c: &mut Criterion) {
             assert_eq!(text, full[..digits]);
         });
     }
+    group.finish();
 }
 
 criterion_group!(benches, formatting, leading_digits);

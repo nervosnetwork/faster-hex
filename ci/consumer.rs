@@ -51,6 +51,8 @@ pub fn owned_output() {
     let mut string: alloc::string::String = faster_hex::hex_string(&[0]);
     faster_hex::hex_append_upper(&[255], &mut string);
     let _: alloc::vec::Vec<u8> = faster_hex::hex_decode_vec(b"ff").unwrap();
+    let _: for<'a> fn(&[u8], &'a mut alloc::vec::Vec<u8>) -> Result<&'a mut [u8], Error> =
+        faster_hex::hex_decode_append;
     let _: &mut [u8] = faster_hex::hex_decode_append(b"ff", &mut alloc::vec::Vec::new()).unwrap();
     let _: alloc::vec::Vec<u8> =
         faster_hex::hex_decode_vec_with_case(b"FF", CheckCase::Upper).unwrap();

@@ -313,3 +313,22 @@ unsafe fn check_mixed_neon_short(src: &[u8]) -> bool {
     vminvq_u8(valid) != 0
 }
 
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_check_mixed_sse(src: &[u8]) -> bool {
+    check_mixed_sse::<16>(src)
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_check_mixed_avx2(src: &[u8]) -> bool {
+    check_mixed_avx2::<32>(src)
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_check_mixed_avx512(src: &[u8]) -> bool {
+    check_mixed_avx512::<64>(src)
+}
+
+#[cfg(all(any(test, fuzzing), target_arch = "aarch64"))]
+pub(crate) unsafe fn fuzz_check_mixed_neon(src: &[u8]) -> bool {
+    check_mixed_neon(src)
+}

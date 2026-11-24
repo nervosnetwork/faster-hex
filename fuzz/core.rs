@@ -77,6 +77,9 @@ pub fn exercise(data: &[u8]) {
                     intact(&output, target_offset, len * 2);
                 }
                 assert!(backend.check(text, case));
+                if case == CheckCase::None {
+                    assert!(backend.check_mixed(text));
+                }
                 output.fill(CANARY);
                 assert!(backend.decode(
                     text,
@@ -99,6 +102,9 @@ pub fn exercise(data: &[u8]) {
                 // Checkers also accept valid odd-length strings. Decoders only
                 // receive complete pairs, so no length error can mask a fault.
                 assert!(backend.check(&text[..text.len() - 1], case));
+                if case == CheckCase::None {
+                    assert!(backend.check_mixed(&text[..text.len() - 1]));
+                }
                 let selected =
                     usize::from(u16::from_le_bytes([control(4), control(5)])) % text.len();
                 for position in [selected, text.len() - 1] {
@@ -116,6 +122,9 @@ pub fn exercise(data: &[u8]) {
                     text[position] = if valid { b'?' } else { candidate };
                     output.fill(CANARY);
                     assert!(!backend.check(text, case));
+                    if case == CheckCase::None {
+                        assert!(!backend.check_mixed(text));
+                    }
                     assert!(!backend.decode(
                         text,
                         &mut output[target_offset..target_offset + len],

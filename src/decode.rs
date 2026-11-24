@@ -640,8 +640,8 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
 }
 
 #[cfg(feature = "alloc")]
-mod append;
-mod validate;
+pub(crate) mod append;
+pub(crate) mod validate;
 
 /// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
 ///

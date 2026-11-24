@@ -150,6 +150,50 @@ impl Backend {
         }
     }
 
+    pub fn check_mixed(self, src: &[u8]) -> bool {
+        #[allow(unused_unsafe)] // Non-SIMD targets only compile the safe fallback.
+        // SAFETY: backends() checked the ISA. Each mixed-case checker bounds its
+        // own loads and accepts arbitrary source bytes and lengths.
+        unsafe {
+            match self.0 {
+                Kind::Scalar => decode::hex_check_fallback_with_case(src, CheckCase::None),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Sse41 => decode::validate::fuzz_check_mixed_sse(src),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx2 => decode::validate::fuzz_check_mixed_avx2(src),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx512 => decode::validate::fuzz_check_mixed_avx512(src),
+                #[cfg(target_arch = "aarch64")]
+                Kind::Neon => decode::validate::fuzz_check_mixed_neon(src),
+            }
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn decode_append(
+        self,
+        src: &[u8],
+        dst: &mut [core::mem::MaybeUninit<u8>],
+    ) -> Result<(), usize> {
+        assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+        #[allow(unused_unsafe)] // Non-SIMD targets only compile the safe fallback.
+        // SAFETY: backends() checked the ISA and the assertion establishes the
+        // exact 2:1 source/destination ratio.
+        unsafe {
+            match self.0 {
+                Kind::Scalar => decode::append::fuzz_decode_scalar_uninit(src, dst),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Sse41 => decode::append::fuzz_decode_sse41_uninit(src, dst),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx2 => decode::append::fuzz_decode_avx2_uninit(src, dst),
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                Kind::Avx512 => decode::append::fuzz_decode_avx512_uninit(src, dst),
+                #[cfg(target_arch = "aarch64")]
+                Kind::Neon => decode::append::fuzz_decode_neon_uninit(src, dst),
+            }
+        }
+    }
+
     // On failure, earlier valid blocks may already be written. This adapter
     // checks the same memory/CPU preconditions without pre-validating text.
     pub fn decode_owned(self, src: &[u8], dst: &mut [u8], case: CheckCase) -> bool {

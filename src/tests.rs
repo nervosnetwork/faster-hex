@@ -160,6 +160,11 @@ mod kernels {
                                 .iter()
                                 .chain(&decoded[target_offset + len..])
                                 .all(|&b| b == 0xa5));
+                            assert!(
+                                backend.check_mixed(&hex_source[source_offset..]),
+                                "{}",
+                                name
+                            );
                             decoded.fill(0xa5);
                             assert!(backend.decode_owned(
                                 &hex_source[source_offset..],
@@ -171,6 +176,27 @@ mod kernels {
                                 .iter()
                                 .chain(&decoded[target_offset + len..])
                                 .all(|&b| b == 0xa5));
+                            #[cfg(feature = "alloc")]
+                            {
+                                decoded.fill(0xa5);
+                                // SAFETY: MaybeUninit<u8> has u8's layout; decode_append only writes initialized bytes.
+                                let uninit = unsafe {
+                                    core::slice::from_raw_parts_mut(
+                                        decoded[target_offset..][..len].as_mut_ptr().cast(),
+                                        len,
+                                    )
+                                };
+                                assert_eq!(
+                                    backend.decode_append(&hex_source[source_offset..], uninit),
+                                    Ok(()),
+                                    "{name}, len={len}"
+                                );
+                                assert_eq!(&decoded[target_offset..][..len], input, "{name}");
+                                assert!(decoded[..target_offset]
+                                    .iter()
+                                    .chain(&decoded[target_offset + len..])
+                                    .all(|&b| b == 0xa5));
+                            }
                         }
                     }
                 }
@@ -209,6 +235,51 @@ mod kernels {
                             assert_eq!(backend.decode_owned(&input, &mut owned, case), valid);
                             if valid {
                                 assert_eq!(owned, output, "{name}");
+                            }
+                            if case == CheckCase::None {
+                                assert_eq!(
+                                    backend.check_mixed(&input),
+                                    valid,
+                                    "check_mixed {name}, {len}/{position}/{byte}"
+                                );
+                                #[cfg(feature = "alloc")]
+                                {
+                                    let mut uninit =
+                                        vec![core::mem::MaybeUninit::uninit(); len / 2];
+                                    match backend.decode_append(&input, &mut uninit) {
+                                        Ok(()) => {
+                                            assert!(
+                                                valid,
+                                                "decode_append {}, {}/{}/{}",
+                                                name, len, position, byte
+                                            );
+                                            // SAFETY: decode_append returned Ok(()), initializing all bytes.
+                                            let bytes = unsafe {
+                                                core::slice::from_raw_parts(
+                                                    uninit.as_ptr().cast::<u8>(),
+                                                    len / 2,
+                                                )
+                                            };
+                                            assert_eq!(bytes, output, "{name}");
+                                        }
+                                        Err(from) => {
+                                            assert!(
+                                                !valid,
+                                                "decode_append {}, {}/{}/{}",
+                                                name, len, position, byte
+                                            );
+                                            assert!(
+                                                from % 2 == 0 && from <= position,
+                                                "decode_append {}, {}/{}/{}: from={}",
+                                                name,
+                                                len,
+                                                position,
+                                                byte,
+                                                from
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

@@ -160,6 +160,11 @@ fn documented_allocation_free_operations_remain_allocation_free() {
             measure(|| faster_hex::hex_decode_append(expected.as_bytes(), &mut dst));
         assert_eq!(appended.unwrap(), bytes);
         assert_eq!(count, 0);
+        let mut empty = Vec::new();
+        let (error, count) = measure(|| faster_hex::hex_decode_append(b"g", &mut empty));
+        assert_eq!(error, Err(faster_hex::Error::OddLength));
+        assert_eq!(count, 0);
+        assert_eq!(empty.capacity(), 0);
         let (error, count) = measure(|| faster_hex::hex_decode_vec(b"g"));
         assert_eq!(error, Err(faster_hex::Error::OddLength));
         assert_eq!(count, 0);
