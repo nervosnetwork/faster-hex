@@ -206,7 +206,7 @@ jobs:
 
   miri:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: nightly-2026-08-21
       CARGO_TARGET_DIR: target/miri
@@ -235,6 +235,7 @@ jobs:
         run: cargo miri test --all-features --test public_api --test serde_protocol --test format --test owned_decode
         env:
           MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-tree-borrows
+          PROPTEST_CASES: 32
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

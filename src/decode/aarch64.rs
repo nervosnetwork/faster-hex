@@ -50,15 +50,14 @@ pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase)
     let (batches, rest) = src.as_chunks::<64>();
     for batch in batches {
         // SAFETY: `batch` is a 64-byte array and NEON is active.
-        let valid = unsafe {
+        unsafe {
             let a = valid_neon(vld1q_u8(batch.as_ptr()), check_case);
             let b = valid_neon(vld1q_u8(batch.as_ptr().add(16)), check_case);
             let c = valid_neon(vld1q_u8(batch.as_ptr().add(32)), check_case);
             let d = valid_neon(vld1q_u8(batch.as_ptr().add(48)), check_case);
-            vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d)))
-        };
-        if valid == 0 {
-            return false;
+            if vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d))) == 0 {
+                return false;
+            }
         }
     }
     // SAFETY: `src.len() >= 64` and `rest.len() < 64`, so the trailing slice is in bounds and NEON is active.
