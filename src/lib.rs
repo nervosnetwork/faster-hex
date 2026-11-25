@@ -336,15 +336,15 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
     let have_xsave = (proc_info_ecx >> 26) & 1 == 1;
     let have_osxsave = (proc_info_ecx >> 27) & 1 == 1;
     let have_avx = (proc_info_ecx >> 28) & 1 == 1;
-    if max_leaf >= 7 && have_xsave && have_osxsave && have_avx {
-        // SAFETY: XSAVE is available and enabled by the OS; leaf 7 exists.
-        return unsafe { avx_support_no_cache_x86() };
+    if have_xsave && have_osxsave && have_avx {
+        // SAFETY: XSAVE is available and enabled by the OS.
+        return unsafe { avx_support_no_cache_x86(max_leaf) };
     }
     Vectorization::SSE41
 }
 
 // We enable xsave so it can inline the _xgetbv call.
-// # Safety: Requires XSAVE, OSXSAVE and AVX, and CPUID basic leaf 7 must exist.
+// # Safety: Requires XSAVE, OSXSAVE and AVX.
 #[target_feature(enable = "xsave")]
 #[cfg(all(
     any(target_arch = "x86", target_arch = "x86_64"),
@@ -353,11 +353,15 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
     not(miri)
 ))]
 #[cold]
-unsafe fn avx_support_no_cache_x86() -> Vectorization {
+unsafe fn avx_support_no_cache_x86(max_leaf: u32) -> Vectorization {
     #[cfg(target_arch = "x86")]
     use core::arch::x86::{__cpuid_count, _xgetbv};
     #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::{__cpuid_count, _xgetbv};
+
+    if max_leaf < 7 {
+        return Vectorization::SSE41;
+    }
 
     // SAFETY: Caller verified XSAVE and OSXSAVE via CPUID.
     let xcr0 = unsafe { _xgetbv(0) };
