@@ -7,6 +7,12 @@
 - Add `hex_decode_append` to decode into an existing vector. It returns the
   appended slice and preserves the original bytes and length on error.
 - Add `hex_validate` to check complete hex byte pairs and report the first invalid byte.
+- Verify `SSE2`, `SSSE3`, and `SSE4.1` explicitly in x86 runtime CPUID dispatch
+  before selecting SSE4.1 kernels, and harden internal `unsafe` contracts under
+  `unsafe_op_in_unsafe_fn`.
+- Add `SECURITY.md` and document security boundaries (non-constant-time
+  execution, no automatic zeroization, and allocation/capacity behavior on
+  untrusted input) in the crate documentation and README.
 
 ## 2.0.0
 
