@@ -34,7 +34,11 @@ Out of scope (explicit non-goals):
   adapters, as well as spare `Vec` capacity touched before an error in
   `hex_decode_append` or owned decoders, are not zeroized.
 - **Unbounded allocation from untrusted input**: allocating helpers
-  (`hex_decode_vec`, `hex_decode_append`, unbounded Serde adapters) reserve
-  output storage based on the input length before character validation. Callers
-  handling untrusted input must enforce application-level size limits first (or
-  use `deserialize_bounded` / caller-owned slices).
+  (`hex_decode_vec`, `hex_decode_append`, Serde adapters) reserve decoded output
+  storage based on the input length before character validation. In addition,
+  `deserialize_bounded` only limits the decoded output length; for escaped JSON
+  or streaming inputs, the underlying Serde deserializer may still allocate the
+  entire input string before `faster-hex` checks the bound. Enforce raw input
+  size limits at the transport or parser boundary first, then use
+  `deserialize_bounded` (or caller-owned slices) to cap decoded output
+  allocation.

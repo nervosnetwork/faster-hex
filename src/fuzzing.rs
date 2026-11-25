@@ -29,9 +29,12 @@ pub fn backends() -> impl Iterator<Item = Backend> {
         // This also exercises AVX-512 when compiling with a static AVX2 baseline.
         #[cfg(test)]
         {
-            let avx2 = std::arch::is_x86_feature_detected!("avx2");
+            let sse41 = std::arch::is_x86_feature_detected!("sse2")
+                && std::arch::is_x86_feature_detected!("ssse3")
+                && std::arch::is_x86_feature_detected!("sse4.1");
+            let avx2 = sse41 && std::arch::is_x86_feature_detected!("avx2");
             (
-                std::arch::is_x86_feature_detected!("sse4.1"),
+                sse41,
                 avx2,
                 avx2 && std::arch::is_x86_feature_detected!("avx512f")
                     && std::arch::is_x86_feature_detected!("avx512bw"),

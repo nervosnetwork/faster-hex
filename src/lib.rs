@@ -96,9 +96,11 @@
 //! return early on the first invalid block. [`Error::InvalidChar`] also includes
 //! the offending input byte in diagnostics; avoid logging raw codec errors for
 //! secret inputs. Formatting, Serde and owned/append decoding buffers are not
-//! zeroized. When decoding untrusted input, enforce a length limit before
-//! calling allocating helpers (`hex_decode_vec`, `hex_decode_append`, or
-//! unbounded Serde adapters).
+//! zeroized. When decoding untrusted input, enforce raw input size limits at
+//! the transport or parser boundary before calling allocating helpers
+//! (`hex_decode_vec`, `hex_decode_append`, or Serde adapters);
+//! `deserialize_bounded` only caps decoded output length, not input buffering
+//! by the deserializer.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]

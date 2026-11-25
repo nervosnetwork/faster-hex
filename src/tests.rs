@@ -77,15 +77,21 @@ fn scalar_encoder_preserves_incomplete_destination_pairs() {
 fn feature_detection_matches_host() {
     use crate::{vectorization_support, Vectorization};
     eprintln!("selected backend: {:?}", vectorization_support());
+    let test_backends: Vec<_> = crate::fuzzing::backends().map(|b| b.name()).collect();
+    for name in &test_backends {
+        eprintln!("available test backend: {name}");
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     if let Ok(expected) = std::env::var("FASTER_HEX_EXPECT_BACKEND") {
         assert_eq!(format!("{:?}", vectorization_support()), expected);
-    }
-    for backend in crate::fuzzing::backends() {
-        eprintln!("available test backend: {}", backend.name());
+        if expected == "None" {
+            assert_eq!(test_backends, ["scalar"]);
+        }
     }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     if std::env::var("FASTER_HEX_REQUIRE_AVX2").as_deref() == Ok("1") {
+        assert!(std::arch::is_x86_feature_detected!("sse2"));
+        assert!(std::arch::is_x86_feature_detected!("ssse3"));
         assert!(std::arch::is_x86_feature_detected!("sse4.1"));
         assert!(std::arch::is_x86_feature_detected!("avx2"));
         assert!(matches!(
@@ -95,15 +101,27 @@ fn feature_detection_matches_host() {
     }
     match vectorization_support() {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        Vectorization::AVX2 => assert!(std::arch::is_x86_feature_detected!("avx2")),
+        Vectorization::AVX2 => {
+            assert!(std::arch::is_x86_feature_detected!("sse2"));
+            assert!(std::arch::is_x86_feature_detected!("ssse3"));
+            assert!(std::arch::is_x86_feature_detected!("sse4.1"));
+            assert!(std::arch::is_x86_feature_detected!("avx2"));
+        }
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         Vectorization::AVX512 => {
+            assert!(std::arch::is_x86_feature_detected!("sse2"));
+            assert!(std::arch::is_x86_feature_detected!("ssse3"));
+            assert!(std::arch::is_x86_feature_detected!("sse4.1"));
             assert!(std::arch::is_x86_feature_detected!("avx2"));
             assert!(std::arch::is_x86_feature_detected!("avx512f"));
             assert!(std::arch::is_x86_feature_detected!("avx512bw"));
         }
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        Vectorization::SSE41 => assert!(std::arch::is_x86_feature_detected!("sse4.1")),
+        Vectorization::SSE41 => {
+            assert!(std::arch::is_x86_feature_detected!("sse2"));
+            assert!(std::arch::is_x86_feature_detected!("ssse3"));
+            assert!(std::arch::is_x86_feature_detected!("sse4.1"));
+        }
         #[cfg(target_arch = "aarch64")]
         Vectorization::Neon => assert!(std::arch::is_aarch64_feature_detected!("neon")),
         Vectorization::None => {}

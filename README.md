@@ -57,9 +57,10 @@ dependency-free `no_std` build. Enable `alloc` for owned strings and vectors,
 `faster-hex` is a throughput-oriented codec, **not** a constant-time
 implementation, and it does not zeroize temporary stack or spare heap buffers.
 Do not use it on secrets where timing side channels or memory residue matter,
-and enforce input size limits before calling allocating decoders
-(`hex_decode_vec`, `hex_decode_append`, or unbounded Serde adapters) on
-untrusted data. See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+and enforce raw input size limits at the transport or parser boundary before
+calling allocating decoders (`hex_decode_vec`, `hex_decode_append`, or Serde
+adapters; `deserialize_bounded` only caps decoded output length) on untrusted
+data. See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 [API documentation](https://docs.rs/faster-hex) · [Changelog](CHANGELOG.md) · [Migration guide](MIGRATION.md) · [Security](SECURITY.md)
 
