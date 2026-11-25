@@ -44,19 +44,26 @@ pub(super) unsafe fn decode_neon_nibbles(bytes: uint8x16_t, case: CheckCase) -> 
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn hex_check_neon_with_case(src: &[u8], check_case: CheckCase) -> bool {
     if src.len() < 64 {
-        return hex_check_neon_short(src, check_case);
+        // SAFETY: NEON is enabled by this function's contract.
+        return unsafe { hex_check_neon_short(src, check_case) };
     }
     let (batches, rest) = src.as_chunks::<64>();
     for batch in batches {
-        let a = valid_neon(vld1q_u8(batch.as_ptr()), check_case);
-        let b = valid_neon(vld1q_u8(batch.as_ptr().add(16)), check_case);
-        let c = valid_neon(vld1q_u8(batch.as_ptr().add(32)), check_case);
-        let d = valid_neon(vld1q_u8(batch.as_ptr().add(48)), check_case);
-        if vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d))) == 0 {
+        // SAFETY: `batch` is a 64-byte array and NEON is active.
+        let valid = unsafe {
+            let a = valid_neon(vld1q_u8(batch.as_ptr()), check_case);
+            let b = valid_neon(vld1q_u8(batch.as_ptr().add(16)), check_case);
+            let c = valid_neon(vld1q_u8(batch.as_ptr().add(32)), check_case);
+            let d = valid_neon(vld1q_u8(batch.as_ptr().add(48)), check_case);
+            vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d)))
+        };
+        if valid == 0 {
             return false;
         }
     }
-    rest.is_empty() || hex_check_neon_short(&src[src.len() - rest.len().max(16)..], check_case)
+    // SAFETY: `src.len() >= 64` and `rest.len() < 64`, so the trailing slice is in bounds and NEON is active.
+    rest.is_empty()
+        || unsafe { hex_check_neon_short(&src[src.len() - rest.len().max(16)..], check_case) }
 }
 
 // At most 64 bytes. Overlapping blocks cover the complete input, with only
@@ -67,24 +74,27 @@ unsafe fn hex_check_neon_short(src: &[u8], check_case: CheckCase) -> bool {
     if src.len() < 16 {
         return hex_check_fallback_with_case(src, check_case);
     }
-    let a = valid_neon(vld1q_u8(src.as_ptr()), check_case);
-    if src.len() == 16 {
-        return vminvq_u8(a) != 0;
-    }
-    let b = valid_neon(vld1q_u8(src.as_ptr().add(src.len() - 16)), check_case);
-    let valid = if src.len() <= 32 {
-        vandq_u8(a, b)
-    } else {
-        let c = valid_neon(vld1q_u8(src.as_ptr().add(16)), check_case);
-        let valid = vandq_u8(vandq_u8(a, b), c);
-        if src.len() <= 48 {
-            valid
-        } else {
-            let d = valid_neon(vld1q_u8(src.as_ptr().add(src.len() - 32)), check_case);
-            vandq_u8(valid, d)
+    // SAFETY: `src.len() >= 16` and each offset (`len - 16`, `16`, `len - 32`) is guarded by length checks.
+    unsafe {
+        let a = valid_neon(vld1q_u8(src.as_ptr()), check_case);
+        if src.len() == 16 {
+            return vminvq_u8(a) != 0;
         }
-    };
-    vminvq_u8(valid) != 0
+        let b = valid_neon(vld1q_u8(src.as_ptr().add(src.len() - 16)), check_case);
+        let valid = if src.len() <= 32 {
+            vandq_u8(a, b)
+        } else {
+            let c = valid_neon(vld1q_u8(src.as_ptr().add(16)), check_case);
+            let valid = vandq_u8(vandq_u8(a, b), c);
+            if src.len() <= 48 {
+                valid
+            } else {
+                let d = valid_neon(vld1q_u8(src.as_ptr().add(src.len() - 32)), check_case);
+                vandq_u8(valid, d)
+            }
+        };
+        vminvq_u8(valid) != 0
+    }
 }
 
 #[inline]
@@ -105,16 +115,19 @@ pub(super) unsafe fn hex_decode_bounded_neon(
     dst: &mut [u8],
     case: CheckCase,
 ) -> Result<(), ()> {
-    let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
-    let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), case);
-    let c = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 32)), case);
-    let d = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
-    if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
-        return Err(());
+    // SAFETY: Caller guarantees `34 <= src.len() <= 64`, `dst.len() * 2 == src.len()`, and NEON support.
+    unsafe {
+        let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
+        let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), case);
+        let c = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 32)), case);
+        let d = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
+        if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
+            return Err(());
+        }
+        let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
+        vst1q_u8(dst.as_mut_ptr(), pack(a, b));
+        vst1q_u8(dst.as_mut_ptr().add(dst.len() - 16), pack(c, d));
     }
-    let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
-    vst1q_u8(dst.as_mut_ptr(), pack(a, b));
-    vst1q_u8(dst.as_mut_ptr().add(dst.len() - 16), pack(c, d));
     Ok(())
 }
 
@@ -133,22 +146,31 @@ pub(super) unsafe fn hex_decode_neon(src: &[u8], dst: &mut [u8]) {
             .iter()
             .zip(output.as_chunks_mut::<16>().0)
         {
-            let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
-            vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
+            // SAFETY: Fixed 32:16 chunks and NEON is active.
+            unsafe {
+                let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
+                vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
+            }
         }
     }
     let (blocks, tail) = rest.as_chunks::<32>();
     for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<16>().0) {
-        let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
-        vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
+        // SAFETY: Fixed 32:16 chunks and NEON is active.
+        unsafe {
+            let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
+            vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
+        }
     }
     if !tail.is_empty() {
         // Input is already validated. An overlapping final block avoids scalar
         // tails while keeping every load and store within the original slices.
         match (src.last_chunk::<32>(), dst.last_chunk_mut::<16>()) {
             (Some(input), Some(output)) => {
-                let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
-                vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
+                // SAFETY: Trailing chunks have exact 32:16 sizes and NEON is active.
+                unsafe {
+                    let uint8x16x2_t(a, b) = vld2q_u8(input.as_ptr());
+                    vst1q_u8(output.as_mut_ptr(), decode_neon_block(a, b));
+                }
             }
             _ => hex_decode_fallback(src, dst),
         }
@@ -164,21 +186,24 @@ pub(super) unsafe fn hex_decode_short_neon(
     case: CheckCase,
 ) -> Result<(), ()> {
     let pack = |a, b| vsliq_n_u8::<4>(vuzp2q_u8(a, b), vuzp1q_u8(a, b));
-    let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
-    if src.len() == 16 {
-        if vmaxvq_u8(a) > 15 {
+    // SAFETY: Caller guarantees `16 <= src.len() <= 32`, `dst.len() * 2 == src.len()`, and NEON support.
+    unsafe {
+        let a = decode_neon_nibbles(vld1q_u8(src.as_ptr()), case);
+        if src.len() == 16 {
+            if vmaxvq_u8(a) > 15 {
+                return Err(());
+            }
+            vst1_u8(dst.as_mut_ptr(), vget_low_u8(pack(a, a)));
+            return Ok(());
+        }
+        let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
+        if vmaxvq_u8(vorrq_u8(a, b)) > 15 {
             return Err(());
         }
-        vst1_u8(dst.as_mut_ptr(), vget_low_u8(pack(a, a)));
-        return Ok(());
+        let decoded = pack(a, b);
+        vst1_u8(dst.as_mut_ptr(), vget_low_u8(decoded));
+        vst1_u8(dst.as_mut_ptr().add(dst.len() - 8), vget_high_u8(decoded));
     }
-    let b = decode_neon_nibbles(vld1q_u8(src.as_ptr().add(src.len() - 16)), case);
-    if vmaxvq_u8(vorrq_u8(a, b)) > 15 {
-        return Err(());
-    }
-    let decoded = pack(a, b);
-    vst1_u8(dst.as_mut_ptr(), vget_low_u8(decoded));
-    vst1_u8(dst.as_mut_ptr().add(dst.len() - 8), vget_high_u8(decoded));
     Ok(())
 }
 
@@ -193,7 +218,9 @@ pub(crate) unsafe fn hex_decode_neon_owned(
     let (blocks, tail) = src.as_chunks::<64>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
-        hex_decode_bounded_neon(input, output, case)?;
+        // SAFETY: Each chunk is 64:32 bytes and NEON is active.
+        unsafe { hex_decode_bounded_neon(input, output, case)? };
     }
-    super::decode_checked(tail, rest, case)
+    // SAFETY: Caller guarantees `src.len() == dst.len() * 2`, so `tail.len() == rest.len() * 2`.
+    unsafe { super::decode_checked(tail, rest, case) }
 }

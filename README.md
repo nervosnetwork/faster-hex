@@ -52,7 +52,16 @@ Timings across prefix lengths are in the [2.1 benchmarks for SHA-1 and SHA-256](
 dependency-free `no_std` build. Enable `alloc` for owned strings and vectors,
 `heapless-09` for fixed-capacity strings, or `defmt` for defmt 1.x logging.
 
-[API documentation](https://docs.rs/faster-hex) · [Changelog](CHANGELOG.md) · [Migration guide](MIGRATION.md)
+## Security
+
+`faster-hex` is a throughput-oriented codec, **not** a constant-time
+implementation, and it does not zeroize temporary stack or spare heap buffers.
+Do not use it on secrets where timing side channels or memory residue matter,
+and enforce input size limits before calling allocating decoders
+(`hex_decode_vec`, `hex_decode_append`, or unbounded Serde adapters) on
+untrusted data. See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+
+[API documentation](https://docs.rs/faster-hex) · [Changelog](CHANGELOG.md) · [Migration guide](MIGRATION.md) · [Security](SECURITY.md)
 
 ## License
 

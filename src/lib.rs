@@ -88,6 +88,17 @@
 //! no public backend selection or architecture-specific call is required.
 //!
 //! The minimum supported Rust version is 1.95.0.
+//!
+//! # Security
+//!
+//! This crate optimizes for throughput and is **not** constant-time: scalar and
+//! short-input paths index lookup tables by input bytes, and decoders/validators
+//! return early on the first invalid block. [`Error::InvalidChar`] also includes
+//! the offending input byte in diagnostics; avoid logging raw codec errors for
+//! secret inputs. Formatting, Serde and owned/append decoding buffers are not
+//! zeroized. When decoding untrusted input, enforce a length limit before
+//! calling allocating helpers (`hex_decode_vec`, `hex_decode_append`, or
+//! unbounded Serde adapters).
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -308,10 +319,15 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
     if max_leaf < 1 {
         return Vectorization::None;
     }
-    let proc_info_ecx = __cpuid_count(1, 0).ecx;
-    let have_sse4 = (proc_info_ecx >> 19) & 1 == 1;
-    // If there's no SSE4 there can't be AVX2.
-    if !have_sse4 {
+    let proc_info = __cpuid_count(1, 0);
+    let proc_info_ecx = proc_info.ecx;
+    // The SSE4.1 kernels also use SSE2 and SSSE3 (`pshufb`, `pmaddubsw`). Check
+    // all three explicitly to guard against unusual virtualized CPUID masks.
+    let have_sse2 = (proc_info.edx >> 26) & 1 == 1;
+    let have_ssse3 = (proc_info_ecx >> 9) & 1 == 1;
+    let have_sse41 = (proc_info_ecx >> 19) & 1 == 1;
+    // If any prerequisite is missing, stay on the portable scalar fallback.
+    if !(have_sse2 && have_ssse3 && have_sse41) {
         return Vectorization::None;
     }
 
@@ -341,7 +357,8 @@ unsafe fn avx_support_no_cache_x86() -> Vectorization {
     #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::{__cpuid_count, _xgetbv};
 
-    let xcr0 = _xgetbv(0);
+    // SAFETY: Caller verified XSAVE and OSXSAVE via CPUID.
+    let xcr0 = unsafe { _xgetbv(0) };
     let os_avx_support = xcr0 & 6 == 6;
     if os_avx_support {
         let extended_features_ebx = __cpuid_count(7, 0).ebx;

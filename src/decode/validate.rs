@@ -132,22 +132,29 @@ unsafe fn check_mixed_sse<const _WIDTH: usize>(src: &[u8]) -> bool {
         return hex_check_fallback_with_case(src, CheckCase::None);
     }
     if len <= 32 {
-        // SAFETY: `16 <= len <= 32`, so both 16-byte windows stay in bounds.
-        let a = valid_sse_mixed(_mm_loadu_si128(src.as_ptr().cast()));
-        let b = valid_sse_mixed(_mm_loadu_si128(src.as_ptr().add(len - 16).cast()));
-        return _mm_movemask_epi8(_mm_and_si128(a, b)) == 0xffff;
+        // SAFETY: `16 <= len <= 32`, so both 16-byte windows stay in bounds and SSE2 is active.
+        return unsafe {
+            let a = valid_sse_mixed(_mm_loadu_si128(src.as_ptr().cast()));
+            let b = valid_sse_mixed(_mm_loadu_si128(src.as_ptr().add(len - 16).cast()));
+            _mm_movemask_epi8(_mm_and_si128(a, b)) == 0xffff
+        };
     }
     let (blocks, tail) = src.as_chunks::<16>();
     for block in blocks {
-        if _mm_movemask_epi8(valid_sse_mixed(_mm_loadu_si128(block.as_ptr().cast()))) != 0xffff {
+        // SAFETY: `block` is a 16-byte array and SSE2 is active.
+        let mask =
+            unsafe { _mm_movemask_epi8(valid_sse_mixed(_mm_loadu_si128(block.as_ptr().cast()))) };
+        if mask != 0xffff {
             return false;
         }
     }
-    // SAFETY: `len > 32`, so the trailing 16-byte window stays in bounds.
+    // SAFETY: `len > 32`, so the trailing 16-byte window stays in bounds and SSE2 is active.
     tail.is_empty()
-        || _mm_movemask_epi8(valid_sse_mixed(_mm_loadu_si128(
-            src.as_ptr().add(len - 16).cast(),
-        ))) == 0xffff
+        || unsafe {
+            _mm_movemask_epi8(valid_sse_mixed(_mm_loadu_si128(
+                src.as_ptr().add(len - 16).cast(),
+            ))) == 0xffff
+        }
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -172,23 +179,26 @@ unsafe fn valid_avx2_mixed(bytes: __m256i) -> __m256i {
 unsafe fn check_mixed_avx2<const _WIDTH: usize>(src: &[u8]) -> bool {
     let len = src.len();
     if len < 32 {
-        return check_mixed_sse::<16>(src);
+        // SAFETY: AVX2 implies SSE2.
+        return unsafe { check_mixed_sse::<16>(src) };
     }
     if len <= 64 {
         // Two overlapping 32-byte vectors cover 32..=64 bytes (SHA-1/SHA-256) without a loop.
-        // SAFETY: `32 <= len <= 64`, so both 32-byte windows stay in bounds.
-        let a = valid_avx2_mixed(_mm256_loadu_si256(src.as_ptr().cast()));
-        let b = valid_avx2_mixed(_mm256_loadu_si256(src.as_ptr().add(len - 32).cast()));
-        return _mm256_movemask_epi8(_mm256_and_si256(a, b)) == -1;
+        // SAFETY: `32 <= len <= 64`, so both 32-byte windows stay in bounds and AVX2 is active.
+        return unsafe {
+            let a = valid_avx2_mixed(_mm256_loadu_si256(src.as_ptr().cast()));
+            let b = valid_avx2_mixed(_mm256_loadu_si256(src.as_ptr().add(len - 32).cast()));
+            _mm256_movemask_epi8(_mm256_and_si256(a, b)) == -1
+        };
     }
     let (batches, rest) = src.as_chunks::<128>();
     for batch in batches {
         let mut valid = _mm256_set1_epi8(-1);
         for block in batch.as_chunks::<32>().0 {
-            valid = _mm256_and_si256(
-                valid,
-                valid_avx2_mixed(_mm256_loadu_si256(block.as_ptr().cast())),
-            );
+            // SAFETY: `block` is a 32-byte array and AVX2 is active.
+            valid = _mm256_and_si256(valid, unsafe {
+                valid_avx2_mixed(_mm256_loadu_si256(block.as_ptr().cast()))
+            });
         }
         if _mm256_movemask_epi8(valid) != -1 {
             return false;
@@ -197,17 +207,16 @@ unsafe fn check_mixed_avx2<const _WIDTH: usize>(src: &[u8]) -> bool {
     let (blocks, tail) = rest.as_chunks::<32>();
     let mut valid = _mm256_set1_epi8(-1);
     for block in blocks {
-        valid = _mm256_and_si256(
-            valid,
-            valid_avx2_mixed(_mm256_loadu_si256(block.as_ptr().cast())),
-        );
+        // SAFETY: `block` is a 32-byte array and AVX2 is active.
+        valid = _mm256_and_si256(valid, unsafe {
+            valid_avx2_mixed(_mm256_loadu_si256(block.as_ptr().cast()))
+        });
     }
     if !tail.is_empty() {
-        // SAFETY: `len > 64`, so the trailing 32-byte window stays in bounds.
-        valid = _mm256_and_si256(
-            valid,
-            valid_avx2_mixed(_mm256_loadu_si256(src.as_ptr().add(len - 32).cast())),
-        );
+        // SAFETY: `len > 64`, so the trailing 32-byte window stays in bounds and AVX2 is active.
+        valid = _mm256_and_si256(valid, unsafe {
+            valid_avx2_mixed(_mm256_loadu_si256(src.as_ptr().add(len - 32).cast()))
+        });
     }
     _mm256_movemask_epi8(valid) == -1
 }
@@ -234,20 +243,23 @@ unsafe fn valid_avx512_mixed(bytes: __m512i) -> bool {
 unsafe fn check_mixed_avx512<const _WIDTH: usize>(src: &[u8]) -> bool {
     let len = src.len();
     if len == 64 {
-        // SAFETY: `len == 64`.
-        return valid_avx512_mixed(_mm512_loadu_si512(src.as_ptr().cast()));
+        // SAFETY: `len == 64` and AVX-512F/BW are active.
+        return unsafe { valid_avx512_mixed(_mm512_loadu_si512(src.as_ptr().cast())) };
     }
     if len < 64 {
-        return check_mixed_avx2::<32>(src);
+        // SAFETY: AVX-512F implies AVX2.
+        return unsafe { check_mixed_avx2::<32>(src) };
     }
     let (blocks, tail) = src.as_chunks::<64>();
     for block in blocks {
-        if !valid_avx512_mixed(_mm512_loadu_si512(block.as_ptr().cast())) {
+        // SAFETY: `block` is a 64-byte array and AVX-512F/BW are active.
+        if !unsafe { valid_avx512_mixed(_mm512_loadu_si512(block.as_ptr().cast())) } {
             return false;
         }
     }
-    // SAFETY: `len > 64`, so the trailing 64-byte window stays in bounds.
-    tail.is_empty() || valid_avx512_mixed(_mm512_loadu_si512(src.as_ptr().add(len - 64).cast()))
+    // SAFETY: `len > 64`, so the trailing 64-byte window stays in bounds and AVX-512F/BW are active.
+    tail.is_empty()
+        || unsafe { valid_avx512_mixed(_mm512_loadu_si512(src.as_ptr().add(len - 64).cast())) }
 }
 
 // Force inlining when NEON is baseline so `#[cold] diagnose_invalid` still
@@ -256,10 +268,13 @@ unsafe fn check_mixed_avx512<const _WIDTH: usize>(src: &[u8]) -> bool {
 #[cfg_attr(target_feature = "neon", inline(always))]
 #[cfg_attr(not(target_feature = "neon"), inline, target_feature(enable = "neon"))]
 unsafe fn valid_neon_mixed(bytes: uint8x16_t) -> uint8x16_t {
-    let digit = vcleq_u8(vsubq_u8(bytes, vdupq_n_u8(b'0')), vdupq_n_u8(9));
-    let letters = vorrq_u8(bytes, vdupq_n_u8(0x20));
-    let letter = vcleq_u8(vsubq_u8(letters, vdupq_n_u8(b'a')), vdupq_n_u8(5));
-    vorrq_u8(digit, letter)
+    // SAFETY: Caller guarantees NEON support (either baseline or via runtime dispatch).
+    unsafe {
+        let digit = vcleq_u8(vsubq_u8(bytes, vdupq_n_u8(b'0')), vdupq_n_u8(9));
+        let letters = vorrq_u8(bytes, vdupq_n_u8(0x20));
+        let letter = vcleq_u8(vsubq_u8(letters, vdupq_n_u8(b'a')), vdupq_n_u8(5));
+        vorrq_u8(digit, letter)
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -267,19 +282,25 @@ unsafe fn valid_neon_mixed(bytes: uint8x16_t) -> uint8x16_t {
 #[cfg_attr(not(target_feature = "neon"), inline, target_feature(enable = "neon"))]
 unsafe fn check_mixed_neon(src: &[u8]) -> bool {
     if src.len() < 64 {
-        return check_mixed_neon_short(src);
+        // SAFETY: NEON is enabled by this function's contract.
+        return unsafe { check_mixed_neon_short(src) };
     }
     let (batches, rest) = src.as_chunks::<64>();
     for batch in batches {
-        let a = valid_neon_mixed(vld1q_u8(batch.as_ptr()));
-        let b = valid_neon_mixed(vld1q_u8(batch.as_ptr().add(16)));
-        let c = valid_neon_mixed(vld1q_u8(batch.as_ptr().add(32)));
-        let d = valid_neon_mixed(vld1q_u8(batch.as_ptr().add(48)));
-        if vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d))) == 0 {
+        // SAFETY: `batch` is a 64-byte array and NEON is active.
+        let valid = unsafe {
+            let a = valid_neon_mixed(vld1q_u8(batch.as_ptr()));
+            let b = valid_neon_mixed(vld1q_u8(batch.as_ptr().add(16)));
+            let c = valid_neon_mixed(vld1q_u8(batch.as_ptr().add(32)));
+            let d = valid_neon_mixed(vld1q_u8(batch.as_ptr().add(48)));
+            vminvq_u8(vandq_u8(vandq_u8(a, b), vandq_u8(c, d)))
+        };
+        if valid == 0 {
             return false;
         }
     }
-    rest.is_empty() || check_mixed_neon_short(&src[src.len() - rest.len().max(16)..])
+    // SAFETY: `src.len() >= 64` and `rest.len() < 64`, so the trailing slice is in bounds and NEON is active.
+    rest.is_empty() || unsafe { check_mixed_neon_short(&src[src.len() - rest.len().max(16)..]) }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -291,44 +312,50 @@ unsafe fn check_mixed_neon_short(src: &[u8]) -> bool {
     if len < 16 {
         return hex_check_fallback_with_case(src, CheckCase::None);
     }
-    // SAFETY: `16 <= len < 64`, so each bounded 16-byte load stays in `src`.
-    let a = valid_neon_mixed(vld1q_u8(src.as_ptr()));
-    if len == 16 {
-        return vminvq_u8(a) != 0;
-    }
-    let b = valid_neon_mixed(vld1q_u8(src.as_ptr().add(len - 16)));
-    let valid = if len <= 32 {
-        vandq_u8(a, b)
-    } else {
-        // SAFETY: `32 < len < 64`, so offsets `16` and (when `len > 48`) `len - 32` fit.
-        let c = valid_neon_mixed(vld1q_u8(src.as_ptr().add(16)));
-        let valid = vandq_u8(vandq_u8(a, b), c);
-        if len <= 48 {
-            valid
-        } else {
-            let d = valid_neon_mixed(vld1q_u8(src.as_ptr().add(len - 32)));
-            vandq_u8(valid, d)
+    // SAFETY: `16 <= len < 64`, so each bounded 16-byte load stays in `src` and NEON is active.
+    unsafe {
+        let a = valid_neon_mixed(vld1q_u8(src.as_ptr()));
+        if len == 16 {
+            return vminvq_u8(a) != 0;
         }
-    };
-    vminvq_u8(valid) != 0
+        let b = valid_neon_mixed(vld1q_u8(src.as_ptr().add(len - 16)));
+        let valid = if len <= 32 {
+            vandq_u8(a, b)
+        } else {
+            // `32 < len < 64`, so offsets `16` and (when `len > 48`) `len - 32` fit.
+            let c = valid_neon_mixed(vld1q_u8(src.as_ptr().add(16)));
+            let valid = vandq_u8(vandq_u8(a, b), c);
+            if len <= 48 {
+                valid
+            } else {
+                let d = valid_neon_mixed(vld1q_u8(src.as_ptr().add(len - 32)));
+                vandq_u8(valid, d)
+            }
+        };
+        vminvq_u8(valid) != 0
+    }
 }
 
 #[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
 pub(crate) unsafe fn fuzz_check_mixed_sse(src: &[u8]) -> bool {
-    check_mixed_sse::<16>(src)
+    // SAFETY: Caller guarantees SSE2 support.
+    unsafe { check_mixed_sse::<16>(src) }
 }
 
 #[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
 pub(crate) unsafe fn fuzz_check_mixed_avx2(src: &[u8]) -> bool {
-    check_mixed_avx2::<32>(src)
+    // SAFETY: Caller guarantees AVX2 support.
+    unsafe { check_mixed_avx2::<32>(src) }
 }
 
 #[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
 pub(crate) unsafe fn fuzz_check_mixed_avx512(src: &[u8]) -> bool {
-    check_mixed_avx512::<64>(src)
+    // SAFETY: Caller guarantees AVX-512F and AVX-512BW support.
+    unsafe { check_mixed_avx512::<64>(src) }
 }
 
 #[cfg(all(any(test, fuzzing), target_arch = "aarch64"))]
 pub(crate) unsafe fn fuzz_check_mixed_neon(src: &[u8]) -> bool {
-    check_mixed_neon(src)
+    // SAFETY: Caller guarantees NEON support.
+    unsafe { check_mixed_neon(src) }
 }

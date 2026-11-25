@@ -310,17 +310,21 @@ fn hex_append_custom<'a>(src: &[u8], dst: &'a mut String, upper: bool) -> &'a mu
 #[inline]
 pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], upper_case: bool) {
     if src.len() < 32 {
-        return hex_encode_sse41(src, dst, upper_case);
+        // SAFETY: AVX2 implies SSE4.1, and caller guarantees `dst.len() == src.len() * 2`.
+        return unsafe { hex_encode_sse41(src, dst, upper_case) };
     }
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
-    let table = _mm256_broadcastsi128_si256(_mm_loadu_si128(table.as_ptr().cast()));
+    // SAFETY: `table` is a 16-byte static array; AVX2 is enabled by this function's contract.
+    let table = unsafe { _mm256_broadcastsi128_si256(_mm_loadu_si128(table.as_ptr().cast())) };
     let (blocks, tail) = src.as_chunks::<32>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<64>().0) {
-        encode_avx2_32(input, output, table);
+        // SAFETY: `input` is 32 bytes, `output` is 64 bytes, and AVX2 is active.
+        unsafe { encode_avx2_32(input, output, table) };
     }
     if !tail.is_empty() {
         if let (Some(input), Some(output)) = (src.last_chunk::<32>(), dst.last_chunk_mut::<64>()) {
-            encode_avx2_32(input, output, table);
+            // SAFETY: Both trailing chunks have exact 32:64 sizes and AVX2 is active.
+            unsafe { encode_avx2_32(input, output, table) };
         }
     }
 }
@@ -329,20 +333,23 @@ pub(crate) unsafe fn hex_encode_avx2(src: &[u8], dst: &mut [MaybeUninit<u8>], up
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn encode_avx2_32(src: &[u8; 32], dst: &mut [MaybeUninit<u8>; 64], table: __m256i) {
-    let bytes = _mm256_loadu_si256(src.as_ptr().cast());
-    let mask = _mm256_set1_epi8(15);
-    let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), mask);
-    let low = _mm256_and_si256(bytes, mask);
-    let a = _mm256_unpacklo_epi8(high, low);
-    let b = _mm256_unpackhi_epi8(high, low);
-    _mm256_storeu_si256(
-        dst.as_mut_ptr().cast(),
-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x20>(a, b)),
-    );
-    _mm256_storeu_si256(
-        dst.as_mut_ptr().add(32).cast(),
-        _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x31>(a, b)),
-    );
+    // SAFETY: `src` is 32 bytes and `dst` is 64 bytes, so all unaligned 32-byte loads/stores are in bounds.
+    unsafe {
+        let bytes = _mm256_loadu_si256(src.as_ptr().cast());
+        let mask = _mm256_set1_epi8(15);
+        let high = _mm256_and_si256(_mm256_srli_epi16::<4>(bytes), mask);
+        let low = _mm256_and_si256(bytes, mask);
+        let a = _mm256_unpacklo_epi8(high, low);
+        let b = _mm256_unpackhi_epi8(high, low);
+        _mm256_storeu_si256(
+            dst.as_mut_ptr().cast(),
+            _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x20>(a, b)),
+        );
+        _mm256_storeu_si256(
+            dst.as_mut_ptr().add(32).cast(),
+            _mm256_shuffle_epi8(table, _mm256_permute2x128_si256::<0x31>(a, b)),
+        );
+    }
 }
 
 #[target_feature(enable = "sse4.1")]
@@ -352,14 +359,17 @@ pub(crate) unsafe fn hex_encode_sse41(src: &[u8], dst: &mut [MaybeUninit<u8>], u
         return hex_encode_custom_case_fallback(src, dst, upper_case);
     }
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
-    let table = _mm_loadu_si128(table.as_ptr().cast());
+    // SAFETY: `table` is a 16-byte static array; SSE4.1 is enabled by this function's contract.
+    let table = unsafe { _mm_loadu_si128(table.as_ptr().cast()) };
     let (blocks, tail) = src.as_chunks::<16>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
-        encode_sse41_16(input, output, table);
+        // SAFETY: `input` is 16 bytes, `output` is 32 bytes, and SSE4.1 is active.
+        unsafe { encode_sse41_16(input, output, table) };
     }
     if !tail.is_empty() {
         if let (Some(input), Some(output)) = (src.last_chunk::<16>(), dst.last_chunk_mut::<32>()) {
-            encode_sse41_16(input, output, table);
+            // SAFETY: Both trailing chunks have exact 16:32 sizes and SSE4.1 is active.
+            unsafe { encode_sse41_16(input, output, table) };
         }
     }
 }
@@ -368,15 +378,18 @@ pub(crate) unsafe fn hex_encode_sse41(src: &[u8], dst: &mut [MaybeUninit<u8>], u
 #[target_feature(enable = "sse4.1")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn encode_sse41_16(src: &[u8; 16], dst: &mut [MaybeUninit<u8>; 32], table: __m128i) {
-    let bytes = _mm_loadu_si128(src.as_ptr().cast());
-    let mask = _mm_set1_epi8(15);
-    let high = _mm_shuffle_epi8(table, _mm_and_si128(_mm_srli_epi16::<4>(bytes), mask));
-    let low = _mm_shuffle_epi8(table, _mm_and_si128(bytes, mask));
-    _mm_storeu_si128(dst.as_mut_ptr().cast(), _mm_unpacklo_epi8(high, low));
-    _mm_storeu_si128(
-        dst.as_mut_ptr().add(16).cast(),
-        _mm_unpackhi_epi8(high, low),
-    );
+    // SAFETY: `src` is 16 bytes and `dst` is 32 bytes, so all unaligned 16-byte loads/stores are in bounds.
+    unsafe {
+        let bytes = _mm_loadu_si128(src.as_ptr().cast());
+        let mask = _mm_set1_epi8(15);
+        let high = _mm_shuffle_epi8(table, _mm_and_si128(_mm_srli_epi16::<4>(bytes), mask));
+        let low = _mm_shuffle_epi8(table, _mm_and_si128(bytes, mask));
+        _mm_storeu_si128(dst.as_mut_ptr().cast(), _mm_unpacklo_epi8(high, low));
+        _mm_storeu_si128(
+            dst.as_mut_ptr().add(16).cast(),
+            _mm_unpackhi_epi8(high, low),
+        );
+    }
 }
 
 #[inline]
@@ -387,15 +400,18 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
         return hex_encode_custom_case_fallback(src, dst, upper_case);
     }
     let table = if upper_case { TABLE_UPPER } else { TABLE_LOWER };
-    let table = vld1q_u8(table.as_ptr());
+    // SAFETY: `table` is a 16-byte static array; NEON is enabled by this function's contract.
+    let table = unsafe { vld1q_u8(table.as_ptr()) };
     if src.len() < 16 {
         if let (Some(input), Some(output)) = (src.first_chunk::<8>(), dst.first_chunk_mut::<16>()) {
-            encode_neon_8(input, output, table);
+            // SAFETY: Leading chunks have exact 8:16 sizes and NEON is active.
+            unsafe { encode_neon_8(input, output, table) };
         }
         if src.len() > 8 {
             if let (Some(input), Some(output)) = (src.last_chunk::<8>(), dst.last_chunk_mut::<16>())
             {
-                encode_neon_8(input, output, table);
+                // SAFETY: Trailing chunks have exact 8:16 sizes and NEON is active.
+                unsafe { encode_neon_8(input, output, table) };
             }
         }
         return;
@@ -409,18 +425,23 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
             .iter()
             .zip(output.as_chunks_mut::<32>().0)
         {
-            encode_neon_16(input, output, table);
+            // SAFETY: Fixed 16:32 chunks and NEON is active.
+            unsafe { encode_neon_16(input, output, table) };
         }
     }
     let (blocks, tail) = rest.as_chunks::<16>();
     for (input, output) in blocks.iter().zip(remaining.as_chunks_mut::<32>().0) {
-        encode_neon_16(input, output, table);
+        // SAFETY: Fixed 16:32 chunks and NEON is active.
+        unsafe { encode_neon_16(input, output, table) };
     }
     if !tail.is_empty() {
         // Re-encode the last complete block to cover a short tail. The overlap
         // writes the same bytes and never accesses outside either slice.
         match (src.last_chunk::<16>(), dst.last_chunk_mut::<32>()) {
-            (Some(input), Some(output)) => encode_neon_16(input, output, table),
+            (Some(input), Some(output)) => {
+                // SAFETY: Trailing chunks have exact 16:32 sizes and NEON is active.
+                unsafe { encode_neon_16(input, output, table) };
+            }
             _ => hex_encode_custom_case_fallback(src, dst, upper_case),
         }
     }
@@ -430,10 +451,13 @@ pub(crate) unsafe fn hex_encode_neon(src: &[u8], dst: &mut [MaybeUninit<u8>], up
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 unsafe fn encode_neon_16(src: &[u8; 16], dst: &mut [MaybeUninit<u8>; 32], table: uint8x16_t) {
-    let bytes = vld1q_u8(src.as_ptr());
-    let high = vqtbl1q_u8(table, vshrq_n_u8::<4>(bytes));
-    let low = vqtbl1q_u8(table, vandq_u8(bytes, vdupq_n_u8(15)));
-    vst2q_u8(dst.as_mut_ptr().cast(), uint8x16x2_t(high, low));
+    // SAFETY: `src` is 16 bytes and `dst` is 32 bytes; NEON load/store stay in bounds.
+    unsafe {
+        let bytes = vld1q_u8(src.as_ptr());
+        let high = vqtbl1q_u8(table, vshrq_n_u8::<4>(bytes));
+        let low = vqtbl1q_u8(table, vandq_u8(bytes, vdupq_n_u8(15)));
+        vst2q_u8(dst.as_mut_ptr().cast(), uint8x16x2_t(high, low));
+    }
 }
 
 const fn encode_pairs(alphabet: &[u8; 16]) -> [[u8; 2]; 256] {
@@ -497,10 +521,13 @@ pub(crate) fn hex_encode_fallback(src: &[u8], dst: &mut [u8], upper: bool) {
 #[target_feature(enable = "neon")]
 #[cfg(target_arch = "aarch64")]
 unsafe fn encode_neon_8(src: &[u8; 8], dst: &mut [MaybeUninit<u8>; 16], table: uint8x16_t) {
-    let bytes = vcombine_u8(vld1_u8(src.as_ptr()), vdup_n_u8(0));
-    let high = vqtbl1q_u8(table, vshrq_n_u8::<4>(bytes));
-    let low = vqtbl1q_u8(table, vandq_u8(bytes, vdupq_n_u8(15)));
-    vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
+    // SAFETY: `src` is 8 bytes and `dst` is 16 bytes; NEON load/store stay in bounds.
+    unsafe {
+        let bytes = vcombine_u8(vld1_u8(src.as_ptr()), vdup_n_u8(0));
+        let high = vqtbl1q_u8(table, vshrq_n_u8::<4>(bytes));
+        let low = vqtbl1q_u8(table, vandq_u8(bytes, vdupq_n_u8(15)));
+        vst1q_u8(dst.as_mut_ptr().cast(), vzip1q_u8(high, low));
+    }
 }
 
 // `[[u8; 2]; 256]` has natural alignment 1; aligning the promoted constant keeps
@@ -587,47 +614,59 @@ pub(crate) unsafe fn encode_prefix_uninit<const UPPER: bool>(
 unsafe fn encode_prefix_neon<const UPPER: bool>(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
     debug_assert!(src.len() >= 8 && dst.len() == src.len() * 2);
     let table = if UPPER { TABLE_UPPER } else { TABLE_LOWER };
-    let table = vld1q_u8(table.as_ptr());
+    // SAFETY: `table` is a 16-byte static array and NEON is enabled by contract.
+    let table = unsafe { vld1q_u8(table.as_ptr()) };
     let len = src.len();
     let dst_len = dst.len();
     if len < 16 {
         // SAFETY: `8 <= len < 16` and `dst_len == len * 2 >= 16`.
-        encode_neon_8(&*src.as_ptr().cast(), &mut *dst.as_mut_ptr().cast(), table);
+        unsafe {
+            encode_neon_8(&*src.as_ptr().cast(), &mut *dst.as_mut_ptr().cast(), table);
+        }
         if len > 8 {
             // SAFETY: `len > 8` so both tail windows stay inside `src` and `dst`.
-            encode_neon_8(
-                &*src.as_ptr().add(len - 8).cast(),
-                &mut *dst.as_mut_ptr().add(dst_len - 16).cast(),
-                table,
-            );
+            unsafe {
+                encode_neon_8(
+                    &*src.as_ptr().add(len - 8).cast(),
+                    &mut *dst.as_mut_ptr().add(dst_len - 16).cast(),
+                    table,
+                );
+            }
         }
         return;
     }
     if len <= 32 {
         // First and last vectors cover a 16..=32 byte prefix without a loop.
         // SAFETY: `16 <= len <= 32` and `dst_len == len * 2 >= 32`.
-        encode_neon_16(&*src.as_ptr().cast(), &mut *dst.as_mut_ptr().cast(), table);
+        unsafe {
+            encode_neon_16(&*src.as_ptr().cast(), &mut *dst.as_mut_ptr().cast(), table);
+        }
         if len > 16 {
             // SAFETY: `len > 16` so both tail windows stay inside `src` and `dst`.
+            unsafe {
+                encode_neon_16(
+                    &*src.as_ptr().add(len - 16).cast(),
+                    &mut *dst.as_mut_ptr().add(dst_len - 32).cast(),
+                    table,
+                );
+            }
+        }
+        return;
+    }
+    let (blocks, tail) = src.as_chunks::<16>();
+    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
+        // SAFETY: Fixed 16:32 chunks and NEON is active.
+        unsafe { encode_neon_16(input, output, table) };
+    }
+    if !tail.is_empty() {
+        // SAFETY: `len > 32` and `dst_len == len * 2 > 64`, so the final window stays in bounds.
+        unsafe {
             encode_neon_16(
                 &*src.as_ptr().add(len - 16).cast(),
                 &mut *dst.as_mut_ptr().add(dst_len - 32).cast(),
                 table,
             );
         }
-        return;
-    }
-    let (blocks, tail) = src.as_chunks::<16>();
-    for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
-        encode_neon_16(input, output, table);
-    }
-    if !tail.is_empty() {
-        // SAFETY: `len > 32` and `dst_len == len * 2 > 64`, so the final window stays in bounds.
-        encode_neon_16(
-            &*src.as_ptr().add(len - 16).cast(),
-            &mut *dst.as_mut_ptr().add(dst_len - 32).cast(),
-            table,
-        );
     }
 }
 

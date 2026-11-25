@@ -271,7 +271,8 @@ pub fn hex_decode_with_case<'a>(
     let dst = dst
         .get_mut(..len)
         .ok_or(Error::OutputTooSmall { required: len })?;
-    if decode_checked(src, dst, check_case).is_err() {
+    // SAFETY: `src.len()` is even and `dst.len() == len == src.len() / 2`, so `src.len() == dst.len() * 2`.
+    if unsafe { decode_checked(src, dst, check_case) }.is_err() {
         decode_diagnosed(src, dst, check_case)?;
     }
     Ok(dst)
@@ -358,7 +359,8 @@ pub fn hex_decode_array_with_case<const N: usize>(
         return Ok(bytes);
     }
     if N > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
+        // SAFETY: `src.len()` is even and `bytes.len() == N == src.len() / 2`.
+        unsafe { decode_owned_large(src, &mut bytes, check_case)? };
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
@@ -428,7 +430,8 @@ pub fn hex_decode_vec_with_case(
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
     if bytes.len() > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
+        // SAFETY: `src.len()` is even and `bytes.len() == src.len() / 2`.
+        unsafe { decode_owned_large(src, &mut bytes, check_case)? };
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
@@ -442,30 +445,35 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
 // inputs can commit one checked block at a time without re-reading valid input.
 // Inline dispatch to preserve array return/copy code generation. The SIMD block
 // loops remain in their target-feature functions.
+//
+// SAFETY: Callers must ensure `src.len() == dst.len() * 2`.
 #[inline(always)]
-fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
-            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
-            // have the exact 2:1 ratio, and output is private until success.
+            // SAFETY: Dispatch establishes AVX-512BW and OS support; caller guarantees
+            // `src.len() == dst.len() * 2`, and output is private until success.
             unsafe { x86::hex_decode_avx512_owned(src, dst, case) }
         }
         crate::Vectorization::AVX2 => {
-            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
+            // SAFETY: Dispatch establishes AVX2 and caller guarantees `src.len() == dst.len() * 2`.
             unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
         }
-        _ => decode_checked(src, dst, case),
+        // SAFETY: Caller guarantees `src.len() == dst.len() * 2`.
+        _ => unsafe { decode_checked(src, dst, case) },
     };
     #[cfg(target_arch = "aarch64")]
     let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
-        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
+        // SAFETY: NEON is available and caller guarantees `src.len() == dst.len() * 2`.
         unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
     } else {
-        decode_checked(src, dst, case)
+        // SAFETY: Caller guarantees `src.len() == dst.len() * 2`.
+        unsafe { decode_checked(src, dst, case) }
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    let decoded = decode_checked(src, dst, case);
+    // SAFETY: Caller guarantees `src.len() == dst.len() * 2`.
+    let decoded = unsafe { decode_checked(src, dst, case) };
     if decoded.is_err() {
         decode_diagnosed(src, dst, case)?;
     }
@@ -477,8 +485,14 @@ fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(),
 // the public boundary. Tests use the same operation after asserting its lengths.
 // Inline the boundary and dispatch together so short decodes can keep their
 // result and SIMD constants in the caller instead of a separate stack frame.
+//
+// SAFETY: Callers must ensure `src.len() == dst.len() * 2`.
 #[inline(always)]
-pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
+pub(crate) unsafe fn decode_checked(
+    src: &[u8],
+    dst: &mut [u8],
+    check_case: CheckCase,
+) -> Result<(), ()> {
     if dst.len() < 8 {
         return hex_decode_short_scalar(src, dst, check_case);
     }
@@ -677,9 +691,15 @@ pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
 ///
 /// # Errors
 ///
-/// Odd input returns [`Error::OddLength`] before growing the vector. Otherwise
-/// [`Error::InvalidChar`] identifies the first invalid byte. On error, the
-/// vector retains its original length and contents. Its capacity may grow.
+/// Odd input returns [`Error::OddLength`] before growing the vector. Even
+/// input reserves `src.len() / 2` spare bytes before validating characters, so
+/// malformed even-length input can grow the vector before [`Error::InvalidChar`]
+/// identifies the first invalid byte. On error, the vector retains its original
+/// length and contents, while any reserved capacity remains allocated.
+///
+/// There is no input-size limit or recoverable allocation-error result. When
+/// decoding untrusted input into a reused vector, enforce an application length
+/// limit before calling (or shrink `dst` on error if needed).
 ///
 /// # Panics
 ///
