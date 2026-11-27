@@ -271,7 +271,8 @@ pub fn hex_decode_with_case<'a>(
     let dst = dst
         .get_mut(..len)
         .ok_or(Error::OutputTooSmall { required: len })?;
-    if decode_checked(src, dst, check_case).is_err() {
+    // SAFETY: `src.len()` is even and `dst.len() == len == src.len() / 2`, so `src.len() == dst.len() * 2`.
+    if unsafe { decode_checked(src, dst, check_case) }.is_err() {
         decode_diagnosed(src, dst, check_case)?;
     }
     Ok(dst)
@@ -358,7 +359,8 @@ pub fn hex_decode_array_with_case<const N: usize>(
         return Ok(bytes);
     }
     if N > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
+        // SAFETY: `src.len()` is even and `bytes.len() == N == src.len() / 2`.
+        unsafe { decode_owned_large(src, &mut bytes, check_case)? };
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
@@ -428,7 +430,8 @@ pub fn hex_decode_vec_with_case(
     }
     let mut bytes = alloc::vec![0; src.len() / 2];
     if bytes.len() > OWNED_DECODE_THRESHOLD {
-        decode_owned_large(src, &mut bytes, check_case)?;
+        // SAFETY: `src.len()` is even and `bytes.len() == src.len() / 2`.
+        unsafe { decode_owned_large(src, &mut bytes, check_case)? };
     } else {
         hex_decode_with_case(src, &mut bytes, check_case)?;
     }
@@ -442,30 +445,35 @@ const OWNED_DECODE_THRESHOLD: usize = 1024;
 // inputs can commit one checked block at a time without re-reading valid input.
 // Inline dispatch to preserve array return/copy code generation. The SIMD block
 // loops remain in their target-feature functions.
+//
+// SAFETY: Callers must ensure `src.len() == dst.len() * 2`.
 #[inline(always)]
-fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
+unsafe fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), Error> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let decoded = match crate::vectorization_support() {
         crate::Vectorization::AVX512 => {
-            // SAFETY: Dispatch establishes AVX-512BW and OS support; the slices
-            // have the exact 2:1 ratio, and output is private until success.
+            // SAFETY: Dispatch establishes AVX-512BW and OS support; caller guarantees
+            // `src.len() == dst.len() * 2`, and output is private until success.
             unsafe { x86::hex_decode_avx512_owned(src, dst, case) }
         }
         crate::Vectorization::AVX2 => {
-            // SAFETY: Dispatch establishes AVX2 and the same slice invariant.
+            // SAFETY: Dispatch establishes AVX2 and caller guarantees `src.len() == dst.len() * 2`.
             unsafe { x86::hex_decode_avx2_owned(src, dst, case) }
         }
-        _ => decode_checked(src, dst, case),
+        // SAFETY: Caller guarantees `src.len() == dst.len() * 2`.
+        _ => unsafe { decode_checked(src, dst, case) },
     };
     #[cfg(target_arch = "aarch64")]
     let decoded = if crate::vectorization_support() == crate::Vectorization::Neon {
-        // SAFETY: NEON is available and the slices have the exact 2:1 ratio.
+        // SAFETY: NEON is available and caller guarantees `src.len() == dst.len() * 2`.
         unsafe { aarch64::hex_decode_neon_owned(src, dst, case) }
     } else {
-        decode_checked(src, dst, case)
+        // SAFETY: Caller guarantees `src.len() == dst.len() * 2`.
+        unsafe { decode_checked(src, dst, case) }
     };
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    let decoded = decode_checked(src, dst, case);
+    // SAFETY: Caller guarantees `src.len() == dst.len() * 2`.
+    let decoded = unsafe { decode_checked(src, dst, case) };
     if decoded.is_err() {
         decode_diagnosed(src, dst, case)?;
     }
@@ -477,8 +485,14 @@ fn decode_owned_large(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(),
 // the public boundary. Tests use the same operation after asserting its lengths.
 // Inline the boundary and dispatch together so short decodes can keep their
 // result and SIMD constants in the caller instead of a separate stack frame.
+//
+// SAFETY: Callers must ensure `src.len() == dst.len() * 2`.
 #[inline(always)]
-pub(crate) fn decode_checked(src: &[u8], dst: &mut [u8], check_case: CheckCase) -> Result<(), ()> {
+pub(crate) unsafe fn decode_checked(
+    src: &[u8],
+    dst: &mut [u8],
+    check_case: CheckCase,
+) -> Result<(), ()> {
     if dst.len() < 8 {
         return hex_decode_short_scalar(src, dst, check_case);
     }
@@ -636,5 +650,95 @@ pub(crate) fn hex_decode_fallback(src: &[u8], dst: &mut [u8]) {
         let a = UNHEX4[bytes[0] as usize];
         let b = UNHEX[bytes[1] as usize];
         *slot = a | b;
+    }
+}
+
+#[cfg(any(feature = "alloc", test, fuzzing))]
+pub(crate) mod append;
+pub(crate) mod validate;
+
+/// Validates a complete, unprefixed sequence of ASCII hex byte pairs.
+///
+/// Accepts mixed case and empty input without allocating. Use [`hex_check`]
+/// to check individual digits, or [`hex_decode`] when the bytes are needed.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] first. Otherwise, the first invalid
+/// byte is reported as [`Error::InvalidChar`], with its byte index in `src`.
+///
+/// ```
+/// use faster_hex::{hex_validate, Error};
+/// assert_eq!(hex_validate(b"0aBF"), Ok(()));
+/// assert_eq!(hex_validate(b"abc"), Err(Error::OddLength));
+/// ```
+#[inline]
+pub fn hex_validate(src: &[u8]) -> Result<(), Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    if validate::check_mixed(src) {
+        Ok(())
+    } else {
+        validate::diagnose_invalid(src)
+    }
+}
+
+/// Appends decoded bytes to `dst` and returns just the new suffix.
+///
+/// Accepts the same mixed-case hex as [`hex_decode`]. Reuses the vector's
+/// allocation when capacity permits. Empty input returns an empty suffix.
+///
+/// # Errors
+///
+/// Odd input returns [`Error::OddLength`] before growing the vector. Even
+/// input reserves `src.len() / 2` spare bytes before validating characters, so
+/// malformed even-length input can grow the vector before [`Error::InvalidChar`]
+/// identifies the first invalid byte. On error, the vector retains its original
+/// length and contents, while any reserved capacity remains allocated.
+///
+/// There is no input-size limit or recoverable allocation-error result. When
+/// decoding untrusted input into a reused vector, enforce an application length
+/// limit before calling (or shrink `dst` on error if needed).
+///
+/// # Panics
+///
+/// Panics if the resulting vector would exceed its maximum capacity.
+/// Allocation failure follows the allocator's normal handling.
+///
+/// ```
+/// use faster_hex::hex_decode_append;
+/// let mut bytes = vec![0xff];
+/// assert_eq!(hex_decode_append(b"aB01", &mut bytes)?, [0xab, 1]);
+/// assert_eq!(bytes, [0xff, 0xab, 1]);
+/// # Ok::<(), faster_hex::Error>(())
+/// ```
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[inline]
+pub fn hex_decode_append<'a>(
+    src: &[u8],
+    dst: &'a mut alloc::vec::Vec<u8>,
+) -> Result<&'a mut [u8], Error> {
+    if !src.len().is_multiple_of(2) {
+        return Err(Error::OddLength);
+    }
+    let decoded = src.len() / 2;
+    let start = dst.len();
+    dst.reserve(decoded);
+    // SAFETY: `reserve(decoded)` ensures `spare_capacity_mut().len() >= decoded`.
+    // Only spare capacity beyond `start` is written, so `dst[..start]` and
+    // `dst.len()` remain unchanged if decoding fails.
+    let spare = unsafe { dst.spare_capacity_mut().get_unchecked_mut(..decoded) };
+    // SAFETY: `src.len()` is even and `spare.len() == decoded == src.len() / 2`,
+    // so `src.len() == spare.len() * 2`.
+    if let Err(from) = unsafe { append::decode_uninit(src, spare) } {
+        append::diagnose_append_error::<64>(src, spare, from)?;
+    }
+    // SAFETY: `decode_uninit` (or the defensive fallback in `diagnose_append_error`)
+    // initialized every byte in `start..start + decoded`.
+    unsafe {
+        dst.set_len(start + decoded);
+        Ok(dst.get_unchecked_mut(start..))
     }
 }

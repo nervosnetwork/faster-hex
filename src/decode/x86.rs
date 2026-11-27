@@ -77,14 +77,19 @@ pub(crate) unsafe fn hex_check_sse_with_case(src: &[u8], case: CheckCase) -> boo
     }
     let (blocks, tail) = src.as_chunks::<16>();
     for block in blocks {
-        if _mm_movemask_epi8(valid_sse(_mm_loadu_si128(block.as_ptr().cast()), case)) != 0xffff {
+        // SAFETY: `block` is a 16-byte array and SSE4.1 is active.
+        if unsafe { _mm_movemask_epi8(valid_sse(_mm_loadu_si128(block.as_ptr().cast()), case)) }
+            != 0xffff
+        {
             return false;
         }
     }
     if !tail.is_empty() {
         if let Some(last) = src.last_chunk::<16>() {
-            return _mm_movemask_epi8(valid_sse(_mm_loadu_si128(last.as_ptr().cast()), case))
-                == 0xffff;
+            // SAFETY: `last` is a 16-byte array and SSE4.1 is active.
+            return unsafe {
+                _mm_movemask_epi8(valid_sse(_mm_loadu_si128(last.as_ptr().cast()), case)) == 0xffff
+            };
         }
     }
     true
@@ -113,17 +118,18 @@ unsafe fn valid_avx2(bytes: __m256i, case: CheckCase) -> __m256i {
 #[inline]
 pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 32 {
-        return hex_check_sse_with_case(src, case);
+        // SAFETY: AVX2 implies SSE4.1.
+        return unsafe { hex_check_sse_with_case(src, case) };
     }
     // Reduce four vectors together so long inputs need fewer mask tests.
     let (batches, rest) = src.as_chunks::<128>();
     for batch in batches {
         let mut valid = _mm256_set1_epi8(-1);
         for block in batch.as_chunks::<32>().0 {
-            valid = _mm256_and_si256(
-                valid,
-                valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case),
-            );
+            // SAFETY: `block` is a 32-byte array and AVX2 is active.
+            valid = _mm256_and_si256(valid, unsafe {
+                valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case)
+            });
         }
         if _mm256_movemask_epi8(valid) != -1 {
             return false;
@@ -132,17 +138,17 @@ pub(crate) unsafe fn hex_check_avx2_with_case(src: &[u8], case: CheckCase) -> bo
     let (blocks, tail) = rest.as_chunks::<32>();
     let mut valid = _mm256_set1_epi8(-1);
     for block in blocks {
-        valid = _mm256_and_si256(
-            valid,
-            valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case),
-        );
+        // SAFETY: `block` is a 32-byte array and AVX2 is active.
+        valid = _mm256_and_si256(valid, unsafe {
+            valid_avx2(_mm256_loadu_si256(block.as_ptr().cast()), case)
+        });
     }
     if !tail.is_empty() {
         if let Some(last) = src.last_chunk::<32>() {
-            valid = _mm256_and_si256(
-                valid,
-                valid_avx2(_mm256_loadu_si256(last.as_ptr().cast()), case),
-            );
+            // SAFETY: `last` is a 32-byte array and AVX2 is active.
+            valid = _mm256_and_si256(valid, unsafe {
+                valid_avx2(_mm256_loadu_si256(last.as_ptr().cast()), case)
+            });
         }
     }
     _mm256_movemask_epi8(valid) == -1
@@ -169,17 +175,21 @@ unsafe fn valid_avx512(bytes: __m512i, case: CheckCase) -> u64 {
 #[inline]
 pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> bool {
     if src.len() < 64 {
-        return hex_check_avx2_with_case(src, case);
+        // SAFETY: AVX-512F implies AVX2.
+        return unsafe { hex_check_avx2_with_case(src, case) };
     }
     let (blocks, tail) = src.as_chunks::<64>();
     for block in blocks {
-        if valid_avx512(_mm512_loadu_si512(block.as_ptr().cast()), case) != u64::MAX {
+        // SAFETY: `block` is a 64-byte array and AVX-512F/BW are active.
+        if unsafe { valid_avx512(_mm512_loadu_si512(block.as_ptr().cast()), case) } != u64::MAX {
             return false;
         }
     }
     if !tail.is_empty() {
         if let Some(last) = src.last_chunk::<64>() {
-            return valid_avx512(_mm512_loadu_si512(last.as_ptr().cast()), case) == u64::MAX;
+            // SAFETY: `last` is a 64-byte array and AVX-512F/BW are active.
+            return unsafe { valid_avx512(_mm512_loadu_si512(last.as_ptr().cast()), case) }
+                == u64::MAX;
         }
     }
     true
@@ -194,7 +204,7 @@ pub(crate) unsafe fn hex_check_avx512_with_case(src: &[u8], case: CheckCase) -> 
 // its first six values to 10..=15; unsigned min chooses the valid candidate.
 #[inline]
 #[target_feature(enable = "sse4.1")]
-unsafe fn decode_sse41_nibbles(bytes: __m128i, case: CheckCase) -> __m128i {
+pub(super) unsafe fn decode_sse41_nibbles(bytes: __m128i, case: CheckCase) -> __m128i {
     let digit = _mm_sub_epi8(
         _mm_subs_epu8(_mm_add_epi8(bytes, _mm_set1_epi8(-58)), _mm_set1_epi8(6)),
         _mm_set1_epi8(-16),
@@ -214,11 +224,13 @@ unsafe fn decode_sse41_nibbles(bytes: __m128i, case: CheckCase) -> __m128i {
 // only affect index bits ignored by the 16-entry byte shuffles.
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> (__m256i, __m256i) {
+pub(super) unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> (__m256i, __m256i) {
     let (hash_table, decode_offsets) = alsw_tables();
     let hash_table = _mm256_broadcastsi128_si256(hash_table);
-    let check_offsets =
-        _mm256_broadcastsi128_si256(_mm_loadu_si128(decode_check_offsets(case).as_ptr().cast()));
+    // SAFETY: `decode_check_offsets(case)` returns a static 16-byte array and AVX2 is active.
+    let check_offsets = _mm256_broadcastsi128_si256(unsafe {
+        _mm_loadu_si128(decode_check_offsets(case).as_ptr().cast())
+    });
     let decode_offsets = _mm256_broadcastsi128_si256(decode_offsets);
     let hash = _mm256_avg_epu8(
         _mm256_srli_epi32::<3>(bytes),
@@ -232,11 +244,13 @@ unsafe fn decode_avx2_nibbles(bytes: __m256i, case: CheckCase) -> (__m256i, __m2
 // Same nibble/validity contract as decode_avx2_nibbles, for 64 input bytes.
 #[inline]
 #[target_feature(enable = "avx512f,avx512bw")]
-unsafe fn decode_avx512_nibbles(bytes: __m512i, case: CheckCase) -> (__m512i, __m512i) {
+pub(super) unsafe fn decode_avx512_nibbles(bytes: __m512i, case: CheckCase) -> (__m512i, __m512i) {
     let (hash_table, decode_offsets) = alsw_tables();
     let hash_table = _mm512_broadcast_i32x4(hash_table);
-    let check_offsets =
-        _mm512_broadcast_i32x4(_mm_loadu_si128(decode_check_offsets(case).as_ptr().cast()));
+    // SAFETY: `decode_check_offsets(case)` returns a static 16-byte array and AVX-512F/BW are active.
+    let check_offsets = _mm512_broadcast_i32x4(unsafe {
+        _mm_loadu_si128(decode_check_offsets(case).as_ptr().cast())
+    });
     let decode_offsets = _mm512_broadcast_i32x4(decode_offsets);
     let hash = _mm512_avg_epu8(
         _mm512_srli_epi32::<3>(bytes),
@@ -256,28 +270,31 @@ unsafe fn decode_avx512_nibbles(bytes: __m512i, case: CheckCase) -> (__m512i, __
 #[target_feature(enable = "sse4.1")]
 unsafe fn hex_decode_short_sse41(src: &[u8], dst: &mut [u8], case: CheckCase) -> Result<(), ()> {
     debug_assert!((16..=32).contains(&src.len()));
-    let a = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), case);
-    // An eight-byte output fits in this one load; no overlapping tail is needed.
-    if src.len() == 16 {
-        if _mm_testz_si128(a, _mm_set1_epi8(-16)) == 0 {
+    // SAFETY: Caller guarantees `16 <= src.len() <= 32`, `dst.len() * 2 == src.len()`, and SSE4.1 support.
+    unsafe {
+        let a = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), case);
+        // An eight-byte output fits in this one load; no overlapping tail is needed.
+        if src.len() == 16 {
+            if _mm_testz_si128(a, _mm_set1_epi8(-16)) == 0 {
+                return Err(());
+            }
+            _mm_storel_epi64(dst.as_mut_ptr().cast(), pack_sse41(a, a));
+            return Ok(());
+        }
+        let b = decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
+            case,
+        );
+        if _mm_testz_si128(_mm_or_si128(a, b), _mm_set1_epi8(-16)) == 0 {
             return Err(());
         }
-        _mm_storel_epi64(dst.as_mut_ptr().cast(), pack_sse41(a, a));
-        return Ok(());
+        let decoded = pack_sse41(a, b);
+        _mm_storel_epi64(dst.as_mut_ptr().cast(), decoded);
+        _mm_storel_epi64(
+            dst.as_mut_ptr().add(dst.len() - 8).cast(),
+            _mm_srli_si128::<8>(decoded),
+        );
     }
-    let b = decode_sse41_nibbles(
-        _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
-        case,
-    );
-    if _mm_testz_si128(_mm_or_si128(a, b), _mm_set1_epi8(-16)) == 0 {
-        return Err(());
-    }
-    let decoded = pack_sse41(a, b);
-    _mm_storel_epi64(dst.as_mut_ptr().cast(), decoded);
-    _mm_storel_epi64(
-        dst.as_mut_ptr().add(dst.len() - 8).cast(),
-        _mm_srli_si128::<8>(decoded),
-    );
     Ok(())
 }
 
@@ -289,33 +306,40 @@ pub(crate) unsafe fn hex_decode_sse41_checked(
 ) -> Result<(), ()> {
     debug_assert!(src.len() >= 16);
     if src.len() <= 32 {
-        return hex_decode_short_sse41(src, dst, case);
+        // SAFETY: `16 <= src.len() <= 32`, `dst.len() * 2 == src.len()`, and SSE4.1 is active.
+        return unsafe { hex_decode_short_sse41(src, dst, case) };
     }
     if src.len() <= 64 {
-        let a = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), case);
-        let b = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().add(16).cast()), case);
-        let c = decode_sse41_nibbles(
-            _mm_loadu_si128(src.as_ptr().add(src.len() - 32).cast()),
-            case,
-        );
-        let d = decode_sse41_nibbles(
-            _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
-            case,
-        );
-        let combined = _mm_or_si128(_mm_or_si128(a, b), _mm_or_si128(c, d));
-        if _mm_testz_si128(combined, _mm_set1_epi8(-16)) == 0 {
-            return Err(());
+        // SAFETY: `34 <= src.len() <= 64`, `dst.len() * 2 == src.len()`, and SSE4.1 is active.
+        unsafe {
+            let a = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), case);
+            let b = decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().add(16).cast()), case);
+            let c = decode_sse41_nibbles(
+                _mm_loadu_si128(src.as_ptr().add(src.len() - 32).cast()),
+                case,
+            );
+            let d = decode_sse41_nibbles(
+                _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
+                case,
+            );
+            let combined = _mm_or_si128(_mm_or_si128(a, b), _mm_or_si128(c, d));
+            if _mm_testz_si128(combined, _mm_set1_epi8(-16)) == 0 {
+                return Err(());
+            }
+            _mm_storeu_si128(dst.as_mut_ptr().cast(), pack_sse41(a, b));
+            _mm_storeu_si128(
+                dst.as_mut_ptr().add(dst.len() - 16).cast(),
+                pack_sse41(c, d),
+            );
         }
-        _mm_storeu_si128(dst.as_mut_ptr().cast(), pack_sse41(a, b));
-        _mm_storeu_si128(
-            dst.as_mut_ptr().add(dst.len() - 16).cast(),
-            pack_sse41(c, d),
-        );
     } else {
-        if !hex_check_sse_with_case(src, case) {
-            return Err(());
+        // SAFETY: SSE4.1 is active and caller guarantees `src.len() == dst.len() * 2`.
+        unsafe {
+            if !hex_check_sse_with_case(src, case) {
+                return Err(());
+            }
+            hex_decode_sse41(src, dst);
         }
-        hex_decode_sse41(src, dst);
     }
     Ok(())
 }
@@ -331,99 +355,119 @@ pub(crate) unsafe fn hex_decode_avx2_checked(
     // Common fixed sizes use constant offsets and avoid duplicate tail loads.
     // Every branch validates the complete input before its first store.
     if src.len() == 64 {
-        let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        let (b, b_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
-        if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
-            return Err(());
+        // SAFETY: `src.len() == 64`, `dst.len() == 32`, and AVX2 is active.
+        unsafe {
+            let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
+            let (b, b_checked) =
+                decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
+            if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
+                return Err(());
+            }
+            _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
         }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
         return Ok(());
     }
     if src.len() == 32 {
-        let (nibbles, checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        if _mm256_movemask_epi8(checked) != 0 {
-            return Err(());
+        // SAFETY: `src.len() == 32`, `dst.len() == 16`, and AVX2 is active.
+        unsafe {
+            let (nibbles, checked) =
+                decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
+            if _mm256_movemask_epi8(checked) != 0 {
+                return Err(());
+            }
+            _mm_storeu_si128(
+                dst.as_mut_ptr().cast(),
+                _mm256_castsi256_si128(pack_avx2(nibbles, nibbles)),
+            );
         }
-        _mm_storeu_si128(
-            dst.as_mut_ptr().cast(),
-            _mm256_castsi256_si128(pack_avx2(nibbles, nibbles)),
-        );
         return Ok(());
     }
     if src.len() < 32 {
-        return hex_decode_short_sse41(src, dst, case);
+        // SAFETY: `16 <= src.len() < 32`, `dst.len() * 2 == src.len()`, and AVX2 implies SSE4.1.
+        return unsafe { hex_decode_short_sse41(src, dst, case) };
     }
     if src.len() < 64 {
-        let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        let (b, b_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
-            case,
-        );
-        if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
-            return Err(());
+        // SAFETY: `34 <= src.len() < 64`, `dst.len() * 2 == src.len()`, and AVX2 is active.
+        unsafe {
+            let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
+            let (b, b_checked) = decode_avx2_nibbles(
+                _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
+                case,
+            );
+            if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
+                return Err(());
+            }
+            let packed = pack_avx2(a, b);
+            _mm_storeu_si128(dst.as_mut_ptr().cast(), _mm256_castsi256_si128(packed));
+            _mm_storeu_si128(
+                dst.as_mut_ptr().add(dst.len() - 16).cast(),
+                _mm256_extracti128_si256::<1>(packed),
+            );
         }
-        let packed = pack_avx2(a, b);
-        _mm_storeu_si128(dst.as_mut_ptr().cast(), _mm256_castsi256_si128(packed));
-        _mm_storeu_si128(
-            dst.as_mut_ptr().add(dst.len() - 16).cast(),
-            _mm256_extracti128_si256::<1>(packed),
-        );
     } else if src.len() <= 128 {
-        let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        let (b, b_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
-        let (c, c_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 64).cast()),
-            case,
-        );
-        let (d, d_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
-            case,
-        );
-        let checked = _mm256_or_si256(
-            _mm256_or_si256(a_checked, b_checked),
-            _mm256_or_si256(c_checked, d_checked),
-        );
-        if _mm256_movemask_epi8(checked) != 0 {
-            return Err(());
-        }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(c, d));
-    } else if src.len() <= 192 {
-        let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
-        let (b, b_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
-        let (c, c_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(64).cast()), case);
-        let (d, d_checked) =
-            decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(96).cast()), case);
-        let (e, e_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 64).cast()),
-            case,
-        );
-        let (f, f_checked) = decode_avx2_nibbles(
-            _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
-            case,
-        );
-        let checked = _mm256_or_si256(
-            _mm256_or_si256(a_checked, b_checked),
-            _mm256_or_si256(
+        // SAFETY: `66 <= src.len() <= 128`, `dst.len() * 2 == src.len()`, and AVX2 is active.
+        unsafe {
+            let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
+            let (b, b_checked) =
+                decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
+            let (c, c_checked) = decode_avx2_nibbles(
+                _mm256_loadu_si256(src.as_ptr().add(src.len() - 64).cast()),
+                case,
+            );
+            let (d, d_checked) = decode_avx2_nibbles(
+                _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
+                case,
+            );
+            let checked = _mm256_or_si256(
+                _mm256_or_si256(a_checked, b_checked),
                 _mm256_or_si256(c_checked, d_checked),
-                _mm256_or_si256(e_checked, f_checked),
-            ),
-        );
-        if _mm256_movemask_epi8(checked) != 0 {
-            return Err(());
+            );
+            if _mm256_movemask_epi8(checked) != 0 {
+                return Err(());
+            }
+            _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
+            _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(c, d));
         }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx2(c, d));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(e, f));
+    } else if src.len() <= 192 {
+        // SAFETY: `130 <= src.len() <= 192`, `dst.len() * 2 == src.len()`, and AVX2 is active.
+        unsafe {
+            let (a, a_checked) = decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), case);
+            let (b, b_checked) =
+                decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(32).cast()), case);
+            let (c, c_checked) =
+                decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(64).cast()), case);
+            let (d, d_checked) =
+                decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().add(96).cast()), case);
+            let (e, e_checked) = decode_avx2_nibbles(
+                _mm256_loadu_si256(src.as_ptr().add(src.len() - 64).cast()),
+                case,
+            );
+            let (f, f_checked) = decode_avx2_nibbles(
+                _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
+                case,
+            );
+            let checked = _mm256_or_si256(
+                _mm256_or_si256(a_checked, b_checked),
+                _mm256_or_si256(
+                    _mm256_or_si256(c_checked, d_checked),
+                    _mm256_or_si256(e_checked, f_checked),
+                ),
+            );
+            if _mm256_movemask_epi8(checked) != 0 {
+                return Err(());
+            }
+            _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx2(a, b));
+            _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx2(c, d));
+            _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx2(e, f));
+        }
     } else {
-        if !hex_check_avx2_with_case(src, case) {
-            return Err(());
+        // SAFETY: AVX2 is active and caller guarantees `src.len() == dst.len() * 2`.
+        unsafe {
+            if !hex_check_avx2_with_case(src, case) {
+                return Err(());
+            }
+            hex_decode_avx2(src, dst);
         }
-        hex_decode_avx2(src, dst);
     }
     Ok(())
 }
@@ -437,56 +481,71 @@ pub(crate) unsafe fn hex_decode_avx512_checked(
 ) -> Result<(), ()> {
     debug_assert!(src.len() >= 16);
     if src.len() < 64 {
-        return hex_decode_avx2_checked(src, dst, case);
+        // SAFETY: AVX-512F implies AVX2 and caller guarantees `src.len() == dst.len() * 2`.
+        return unsafe { hex_decode_avx2_checked(src, dst, case) };
     }
     if src.len() == 64 {
-        let (nibbles, checked) =
-            decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
-        if _mm512_movepi8_mask(checked) != 0 {
-            return Err(());
+        // SAFETY: `src.len() == 64`, `dst.len() == 32`, and AVX-512F/BW are active.
+        unsafe {
+            let (nibbles, checked) =
+                decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
+            if _mm512_movepi8_mask(checked) != 0 {
+                return Err(());
+            }
+            _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(nibbles));
         }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(nibbles));
     } else if src.len() <= 128 {
-        let (a, a_checked) = decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
-        let (b, b_checked) = decode_avx512_nibbles(
-            _mm512_loadu_si512(src.as_ptr().add(src.len() - 64).cast()),
-            case,
-        );
-        if _mm512_movepi8_mask(_mm512_or_si512(a_checked, b_checked)) != 0 {
-            return Err(());
+        // SAFETY: `66 <= src.len() <= 128`, `dst.len() * 2 == src.len()`, and AVX-512F/BW are active.
+        unsafe {
+            let (a, a_checked) =
+                decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
+            let (b, b_checked) = decode_avx512_nibbles(
+                _mm512_loadu_si512(src.as_ptr().add(src.len() - 64).cast()),
+                case,
+            );
+            if _mm512_movepi8_mask(_mm512_or_si512(a_checked, b_checked)) != 0 {
+                return Err(());
+            }
+            _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(a));
+            _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx512(b));
         }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(a));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx512(b));
     } else if src.len() <= 192 {
-        let (a, a_checked) = decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
-        let (b, b_checked) =
-            decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().add(64).cast()), case);
-        let (c, c_checked) = decode_avx512_nibbles(
-            _mm512_loadu_si512(src.as_ptr().add(src.len() - 64).cast()),
-            case,
-        );
-        if _mm512_movepi8_mask(_mm512_or_si512(
-            _mm512_or_si512(a_checked, b_checked),
-            c_checked,
-        )) != 0
-        {
-            return Err(());
+        // SAFETY: `130 <= src.len() <= 192`, `dst.len() * 2 == src.len()`, and AVX-512F/BW are active.
+        unsafe {
+            let (a, a_checked) =
+                decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), case);
+            let (b, b_checked) =
+                decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().add(64).cast()), case);
+            let (c, c_checked) = decode_avx512_nibbles(
+                _mm512_loadu_si512(src.as_ptr().add(src.len() - 64).cast()),
+                case,
+            );
+            if _mm512_movepi8_mask(_mm512_or_si512(
+                _mm512_or_si512(a_checked, b_checked),
+                c_checked,
+            )) != 0
+            {
+                return Err(());
+            }
+            _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(a));
+            _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx512(b));
+            _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx512(c));
         }
-        _mm256_storeu_si256(dst.as_mut_ptr().cast(), pack_avx512(a));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), pack_avx512(b));
-        _mm256_storeu_si256(dst.as_mut_ptr().add(dst.len() - 32).cast(), pack_avx512(c));
     } else {
-        if !hex_check_avx512_with_case(src, case) {
-            return Err(());
+        // SAFETY: AVX-512F/BW are active and caller guarantees `src.len() == dst.len() * 2`.
+        unsafe {
+            if !hex_check_avx512_with_case(src, case) {
+                return Err(());
+            }
+            hex_decode_avx512(src, dst);
         }
-        hex_decode_avx512(src, dst);
     }
     Ok(())
 }
 
 #[inline]
 #[target_feature(enable = "avx512f,avx512bw")]
-unsafe fn pack_avx512(nibbles: __m512i) -> __m256i {
+pub(super) unsafe fn pack_avx512(nibbles: __m512i) -> __m256i {
     _mm512_cvtepi16_epi8(_mm512_maddubs_epi16(nibbles, _mm512_set1_epi16(0x0110)))
 }
 
@@ -494,14 +553,18 @@ unsafe fn pack_avx512(nibbles: __m512i) -> __m256i {
 #[target_feature(enable = "avx512f,avx512bw")]
 pub(super) unsafe fn hex_decode_avx512(src: &[u8], dst: &mut [u8]) {
     if src.len() < 64 {
-        return hex_decode_avx2(src, dst);
+        // SAFETY: AVX-512F implies AVX2 and caller guarantees `src.len() == dst.len() * 2`.
+        return unsafe { hex_decode_avx2(src, dst) };
     }
     let convert = |input: &[u8; 64], output: &mut [u8; 32]| {
-        let bytes = _mm512_loadu_si512(input.as_ptr().cast());
-        let low = _mm512_and_si512(bytes, _mm512_set1_epi8(15));
-        let letters = _mm512_cmpgt_epu8_mask(bytes, _mm512_set1_epi8(b'9' as i8));
-        let nibbles = _mm512_mask_add_epi8(low, letters, low, _mm512_set1_epi8(9));
-        _mm256_storeu_si256(output.as_mut_ptr().cast(), pack_avx512(nibbles));
+        // SAFETY: `input` is 64 bytes, `output` is 32 bytes, and AVX-512F/BW are active.
+        unsafe {
+            let bytes = _mm512_loadu_si512(input.as_ptr().cast());
+            let low = _mm512_and_si512(bytes, _mm512_set1_epi8(15));
+            let letters = _mm512_cmpgt_epu8_mask(bytes, _mm512_set1_epi8(b'9' as i8));
+            let nibbles = _mm512_mask_add_epi8(low, letters, low, _mm512_set1_epi8(9));
+            _mm256_storeu_si256(output.as_mut_ptr().cast(), pack_avx512(nibbles));
+        }
     };
     let (blocks, tail) = src.as_chunks::<64>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
@@ -527,7 +590,8 @@ unsafe fn decode_sse41_block(a: __m128i, b: __m128i) -> __m128i {
             ),
         )
     };
-    pack_sse41(nibble(a), nibble(b))
+    // SAFETY: SSE4.1 is enabled by this function's contract.
+    unsafe { pack_sse41(nibble(a), nibble(b)) }
 }
 
 #[inline]
@@ -542,12 +606,13 @@ unsafe fn decode_avx2_block(a: __m256i, b: __m256i) -> __m256i {
             ),
         )
     };
-    pack_avx2(nibble(a), nibble(b))
+    // SAFETY: AVX2 is enabled by this function's contract.
+    unsafe { pack_avx2(nibble(a), nibble(b)) }
 }
 
 #[inline]
 #[target_feature(enable = "sse4.1")]
-unsafe fn pack_sse41(a: __m128i, b: __m128i) -> __m128i {
+pub(super) unsafe fn pack_sse41(a: __m128i, b: __m128i) -> __m128i {
     // PMADDUBSW combines adjacent nibbles with [16, 1]; no result exceeds 255.
     let weights = _mm_set1_epi16(0x0110);
     _mm_packus_epi16(_mm_maddubs_epi16(a, weights), _mm_maddubs_epi16(b, weights))
@@ -555,7 +620,7 @@ unsafe fn pack_sse41(a: __m128i, b: __m128i) -> __m128i {
 
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn pack_avx2(a: __m256i, b: __m256i) -> __m256i {
+pub(super) unsafe fn pack_avx2(a: __m256i, b: __m256i) -> __m256i {
     let weights = _mm256_set1_epi16(0x0110);
     // Packing is lane-local; restore the original order of the four 8-byte groups.
     _mm256_permute4x64_epi64::<0xd8>(_mm256_packus_epi16(
@@ -570,9 +635,12 @@ pub(super) unsafe fn hex_decode_sse41(src: &[u8], dst: &mut [u8]) {
         return hex_decode_fallback(src, dst);
     }
     let convert = |input: &[u8; 32], output: &mut [u8; 16]| {
-        let a = _mm_loadu_si128(input.as_ptr().cast());
-        let b = _mm_loadu_si128(input.as_ptr().add(16).cast());
-        _mm_storeu_si128(output.as_mut_ptr().cast(), decode_sse41_block(a, b));
+        // SAFETY: `input` is 32 bytes, `output` is 16 bytes, and SSE4.1 is active.
+        unsafe {
+            let a = _mm_loadu_si128(input.as_ptr().cast());
+            let b = _mm_loadu_si128(input.as_ptr().add(16).cast());
+            _mm_storeu_si128(output.as_mut_ptr().cast(), decode_sse41_block(a, b));
+        }
     };
     let (blocks, tail) = src.as_chunks::<32>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<16>().0) {
@@ -588,12 +656,16 @@ pub(super) unsafe fn hex_decode_sse41(src: &[u8], dst: &mut [u8]) {
 #[target_feature(enable = "avx2")]
 pub(super) unsafe fn hex_decode_avx2(src: &[u8], dst: &mut [u8]) {
     if src.len() < 64 {
-        return hex_decode_sse41(src, dst);
+        // SAFETY: AVX2 implies SSE4.1 and caller guarantees `src.len() == dst.len() * 2`.
+        return unsafe { hex_decode_sse41(src, dst) };
     }
     let convert = |input: &[u8; 64], output: &mut [u8; 32]| {
-        let a = _mm256_loadu_si256(input.as_ptr().cast());
-        let b = _mm256_loadu_si256(input.as_ptr().add(32).cast());
-        _mm256_storeu_si256(output.as_mut_ptr().cast(), decode_avx2_block(a, b));
+        // SAFETY: `input` is 64 bytes, `output` is 32 bytes, and AVX2 is active.
+        unsafe {
+            let a = _mm256_loadu_si256(input.as_ptr().cast());
+            let b = _mm256_loadu_si256(input.as_ptr().add(32).cast());
+            _mm256_storeu_si256(output.as_mut_ptr().cast(), decode_avx2_block(a, b));
+        }
     };
     let (blocks, tail) = src.as_chunks::<64>();
     for (input, output) in blocks.iter().zip(dst.as_chunks_mut::<32>().0) {
@@ -618,9 +690,11 @@ pub(crate) unsafe fn hex_decode_avx2_owned(
     let (blocks, tail) = src.as_chunks::<64>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 32);
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<32>().0) {
-        hex_decode_avx2_checked(input, output, case)?;
+        // SAFETY: Each chunk is 64:32 bytes and AVX2 is active.
+        unsafe { hex_decode_avx2_checked(input, output, case)? };
     }
-    super::decode_checked(tail, rest, case)
+    // SAFETY: Caller guarantees `src.len() == dst.len() * 2`, so `tail.len() == rest.len() * 2`.
+    unsafe { super::decode_checked(tail, rest, case) }
 }
 
 #[target_feature(enable = "avx512f,avx512bw")]
@@ -632,7 +706,9 @@ pub(crate) unsafe fn hex_decode_avx512_owned(
     let (blocks, tail) = src.as_chunks::<128>();
     let (outputs, rest) = dst.split_at_mut(blocks.len() * 64);
     for (input, output) in blocks.iter().zip(outputs.as_chunks_mut::<64>().0) {
-        hex_decode_avx512_checked(input, output, case)?;
+        // SAFETY: Each chunk is 128:64 bytes and AVX-512F/BW are active.
+        unsafe { hex_decode_avx512_checked(input, output, case)? };
     }
-    super::decode_checked(tail, rest, case)
+    // SAFETY: Caller guarantees `src.len() == dst.len() * 2`, so `tail.len() == rest.len() * 2`.
+    unsafe { super::decode_checked(tail, rest, case) }
 }

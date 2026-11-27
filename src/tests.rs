@@ -77,11 +77,21 @@ fn scalar_encoder_preserves_incomplete_destination_pairs() {
 fn feature_detection_matches_host() {
     use crate::{vectorization_support, Vectorization};
     eprintln!("selected backend: {:?}", vectorization_support());
-    for backend in crate::fuzzing::backends() {
-        eprintln!("available test backend: {}", backend.name());
+    let test_backends: Vec<_> = crate::fuzzing::backends().map(|b| b.name()).collect();
+    for name in &test_backends {
+        eprintln!("available test backend: {name}");
+    }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if let Ok(expected) = std::env::var("FASTER_HEX_EXPECT_BACKEND") {
+        assert_eq!(format!("{:?}", vectorization_support()), expected);
+        if expected == "None" {
+            assert_eq!(test_backends, ["scalar"]);
+        }
     }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     if std::env::var("FASTER_HEX_REQUIRE_AVX2").as_deref() == Ok("1") {
+        assert!(std::arch::is_x86_feature_detected!("sse2"));
+        assert!(std::arch::is_x86_feature_detected!("ssse3"));
         assert!(std::arch::is_x86_feature_detected!("sse4.1"));
         assert!(std::arch::is_x86_feature_detected!("avx2"));
         assert!(matches!(
@@ -91,15 +101,27 @@ fn feature_detection_matches_host() {
     }
     match vectorization_support() {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        Vectorization::AVX2 => assert!(std::arch::is_x86_feature_detected!("avx2")),
+        Vectorization::AVX2 => {
+            assert!(std::arch::is_x86_feature_detected!("sse2"));
+            assert!(std::arch::is_x86_feature_detected!("ssse3"));
+            assert!(std::arch::is_x86_feature_detected!("sse4.1"));
+            assert!(std::arch::is_x86_feature_detected!("avx2"));
+        }
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         Vectorization::AVX512 => {
+            assert!(std::arch::is_x86_feature_detected!("sse2"));
+            assert!(std::arch::is_x86_feature_detected!("ssse3"));
+            assert!(std::arch::is_x86_feature_detected!("sse4.1"));
             assert!(std::arch::is_x86_feature_detected!("avx2"));
             assert!(std::arch::is_x86_feature_detected!("avx512f"));
             assert!(std::arch::is_x86_feature_detected!("avx512bw"));
         }
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        Vectorization::SSE41 => assert!(std::arch::is_x86_feature_detected!("sse4.1")),
+        Vectorization::SSE41 => {
+            assert!(std::arch::is_x86_feature_detected!("sse2"));
+            assert!(std::arch::is_x86_feature_detected!("ssse3"));
+            assert!(std::arch::is_x86_feature_detected!("sse4.1"));
+        }
         #[cfg(target_arch = "aarch64")]
         Vectorization::Neon => assert!(std::arch::is_aarch64_feature_detected!("neon")),
         Vectorization::None => {}
@@ -156,6 +178,11 @@ mod kernels {
                                 .iter()
                                 .chain(&decoded[target_offset + len..])
                                 .all(|&b| b == 0xa5));
+                            assert!(
+                                backend.check_mixed(&hex_source[source_offset..]),
+                                "{}",
+                                name
+                            );
                             decoded.fill(0xa5);
                             assert!(backend.decode_owned(
                                 &hex_source[source_offset..],
@@ -167,6 +194,27 @@ mod kernels {
                                 .iter()
                                 .chain(&decoded[target_offset + len..])
                                 .all(|&b| b == 0xa5));
+                            #[cfg(feature = "alloc")]
+                            {
+                                decoded.fill(0xa5);
+                                // SAFETY: MaybeUninit<u8> has u8's layout; decode_append only writes initialized bytes.
+                                let uninit = unsafe {
+                                    core::slice::from_raw_parts_mut(
+                                        decoded[target_offset..][..len].as_mut_ptr().cast(),
+                                        len,
+                                    )
+                                };
+                                assert_eq!(
+                                    backend.decode_append(&hex_source[source_offset..], uninit),
+                                    Ok(()),
+                                    "{name}, len={len}"
+                                );
+                                assert_eq!(&decoded[target_offset..][..len], input, "{name}");
+                                assert!(decoded[..target_offset]
+                                    .iter()
+                                    .chain(&decoded[target_offset + len..])
+                                    .all(|&b| b == 0xa5));
+                            }
                         }
                     }
                 }
@@ -178,15 +226,13 @@ mod kernels {
     fn forced_backends_check_every_byte_in_every_lane_before_writing() {
         for backend in backends() {
             let name = backend.name();
-            for len in [
-                2, 4, 6, 8, 10, 12, 14, 16, 32, 64, 66, 128, 130, 190, 192, 194,
-            ] {
+            // Every even length through 64 covers every overlap of two short input vectors.
+            for len in (2..=64).step_by(2).chain([66, 128, 130, 190, 192, 194]) {
                 for position in 0..len {
+                    // Vary neighboring digits to catch bits leaking between
+                    // byte lanes when a kernel uses wider shifts.
+                    let mut input: Vec<_> = (0..len).map(|i| b'0' + (i / 4 % 8) as u8).collect();
                     for byte in 0..=255 {
-                        // Vary neighboring digits to catch bits leaking between
-                        // byte lanes when a kernel uses wider shifts.
-                        let mut input: Vec<_> =
-                            (0..len).map(|i| b'0' + (i / 4 % 8) as u8).collect();
                         input[position] = byte;
                         for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
                             let valid = hex_check_fallback_with_case(&input, case);
@@ -207,6 +253,51 @@ mod kernels {
                             assert_eq!(backend.decode_owned(&input, &mut owned, case), valid);
                             if valid {
                                 assert_eq!(owned, output, "{name}");
+                            }
+                            if case == CheckCase::None {
+                                assert_eq!(
+                                    backend.check_mixed(&input),
+                                    valid,
+                                    "check_mixed {name}, {len}/{position}/{byte}"
+                                );
+                                #[cfg(feature = "alloc")]
+                                {
+                                    let mut uninit =
+                                        vec![core::mem::MaybeUninit::uninit(); len / 2];
+                                    match backend.decode_append(&input, &mut uninit) {
+                                        Ok(()) => {
+                                            assert!(
+                                                valid,
+                                                "decode_append {}, {}/{}/{}",
+                                                name, len, position, byte
+                                            );
+                                            // SAFETY: decode_append returned Ok(()), initializing all bytes.
+                                            let bytes = unsafe {
+                                                core::slice::from_raw_parts(
+                                                    uninit.as_ptr().cast::<u8>(),
+                                                    len / 2,
+                                                )
+                                            };
+                                            assert_eq!(bytes, output, "{name}");
+                                        }
+                                        Err(from) => {
+                                            assert!(
+                                                !valid,
+                                                "decode_append {}, {}/{}/{}",
+                                                name, len, position, byte
+                                            );
+                                            assert!(
+                                                from % 2 == 0 && from <= position,
+                                                "decode_append {}, {}/{}/{}: from={}",
+                                                name,
+                                                len,
+                                                position,
+                                                byte,
+                                                from
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

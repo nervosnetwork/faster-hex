@@ -1,6 +1,6 @@
 use crate::{
     decode::hex_decode_unchecked, hex_check_with_case, hex_decode_with_case, hex_encode,
-    hex_encode_upper, CheckCase, Error,
+    hex_encode_upper, hex_validate, CheckCase, Error,
 };
 
 /// One writable page between inaccessible pages. Both ends are exercised so a
@@ -68,20 +68,40 @@ impl Drop for Guarded {
 }
 
 #[test]
+fn selected_digits_stop_at_the_edge_of_both_slices() {
+    let mut source = Guarded::new();
+    let mut output = Guarded::new();
+    for len in (0..=66).chain([127, 128, 129, 513]) {
+        for source_end in [false, true] {
+            let bytes = source.slice_mut(len, source_end);
+            for (i, byte) in bytes.iter_mut().enumerate() {
+                *byte = (i * 31 + 3) as u8;
+            }
+            let expected = hex::encode(&*bytes);
+            for digits in [expected.len().saturating_sub(1), expected.len()] {
+                for output_end in [false, true] {
+                    let dst = output.slice_mut(digits, output_end);
+                    let text = crate::Hex::new(bytes).leading_digits(digits).encode_to(dst);
+                    assert_eq!(text.unwrap(), &expected[..digits]);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn independent_decode_lengths_stop_at_guard_pages() {
     // The old unchecked entry could load 64 source bytes solely because dst
     // held 32 bytes. Keep source and destination lengths independent here;
     // exact-ratio kernel adapters intentionally cannot exercise that boundary.
-    let lengths = [
-        0, 1, 2, 4, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
-    ];
+    let lengths = (0..=66).chain(127..=129);
     let mut source = Guarded::new();
     let mut destination = Guarded::new();
-    for source_len in lengths {
+    for source_len in lengths.clone() {
         for source_end in [false, true] {
             source.slice_mut(source_len, source_end).fill(b'a');
             let input = source.slice(source_len, source_end);
-            for destination_len in lengths {
+            for destination_len in lengths.clone() {
                 for destination_end in [false, true] {
                     let output = destination.slice_mut(destination_len, destination_end);
                     output.fill(0xa5);
@@ -114,6 +134,44 @@ fn independent_decode_lengths_stop_at_guard_pages() {
     }
 }
 
+#[cfg(feature = "alloc")]
+#[test]
+fn owned_decode_tails_and_append_rollback_at_guard_pages() {
+    use crate::{hex_decode_append, hex_decode_vec};
+
+    let mut source = Guarded::new();
+    let prefix = [0xde, 0xad, 0x42];
+    // Cover scalar, short/bounded SIMD, 64B/128B blocks and every remainder above 1024.
+    for len in (0..=130).chain(1025..=1088) {
+        let bytes: Vec<_> = (0..len).map(|i| (i * 73 + i / 7) as u8).collect();
+        let digits = hex::encode(&bytes).into_bytes();
+        for end in [false, true] {
+            let input = source.slice_mut(digits.len(), end);
+            input.copy_from_slice(&digits);
+            let mut dst = prefix.to_vec();
+
+            if !input.is_empty() {
+                let last = input.len() - 1;
+                input[last] = b'!';
+                let error = Error::InvalidChar {
+                    index: last,
+                    byte: b'!',
+                };
+                assert_eq!(hex_decode_vec(input).unwrap_err(), error);
+                assert_eq!(hex_decode_append(input, &mut dst).unwrap_err(), error);
+                assert_eq!(dst, prefix);
+                input[last] = digits[last];
+            }
+            assert_eq!(hex_decode_vec(input).unwrap(), bytes);
+            assert_eq!(hex_decode_append(input, &mut dst).unwrap(), bytes);
+            assert_eq!(
+                dst.split_at(prefix.len()),
+                (prefix.as_slice(), bytes.as_slice())
+            );
+        }
+    }
+}
+
 #[test]
 fn conversions_and_checks_stop_at_guard_pages() {
     // None exercises the public boundary; Some directly exercises a kernel.
@@ -142,7 +200,7 @@ fn conversions_and_checks_stop_at_guard_pages() {
             Some(backend) => backend.decode(src, dst, case),
             None => hex_decode_with_case(src, dst, case).is_ok(),
         };
-        for len in 0..=257 {
+        for len in (0..=257).chain([1023, 1024, 1025]) {
             let data: Vec<u8> = (0..len).map(|i| (i * 73 + i / 7) as u8).collect();
             for end in [false, true] {
                 source.slice_mut(len, end).copy_from_slice(&data);
@@ -167,6 +225,23 @@ fn conversions_and_checks_stop_at_guard_pages() {
                     for size in [len * 2, (len * 2).saturating_sub(1)] {
                         encoded.slice_mut(size, end).fill(b'0');
                         assert!(check(encoded.slice(size, end), case), "{}", name);
+                        match backend {
+                            Some(backend) => {
+                                assert!(backend.check_mixed(encoded.slice(size, end)), "{}", name);
+                            }
+                            None => {
+                                let expected_validate = if size.is_multiple_of(2) {
+                                    Ok(())
+                                } else {
+                                    Err(Error::OddLength)
+                                };
+                                assert_eq!(
+                                    hex_validate(encoded.slice(size, end)),
+                                    expected_validate,
+                                    "{name}"
+                                );
+                            }
+                        }
                     }
                     encoded
                         .slice_mut(len * 2, end)
@@ -185,6 +260,21 @@ fn conversions_and_checks_stop_at_guard_pages() {
                             case,
                         ));
                         assert_eq!(decoded.slice(len, end), &data, "{name}");
+                        #[cfg(feature = "alloc")]
+                        {
+                            let dst = decoded.slice_mut(len, end);
+                            dst.fill(0xa5);
+                            // SAFETY: MaybeUninit<u8> has u8's layout; decode_append only writes initialized bytes.
+                            let uninit = unsafe {
+                                core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast(), len)
+                            };
+                            assert_eq!(
+                                backend.decode_append(encoded.slice(len * 2, end), uninit),
+                                Ok(()),
+                                "{name}"
+                            );
+                            assert_eq!(decoded.slice(len, end), &data, "{name}");
+                        }
                     }
                     if len != 0 {
                         encoded.slice_mut(len * 2, end)[len * 2 - 1] = b'!';
@@ -200,12 +290,47 @@ fn conversions_and_checks_stop_at_guard_pages() {
                             "{}",
                             name
                         );
-                        if let Some(backend) = backend {
-                            assert!(!backend.decode_owned(
-                                encoded.slice(len * 2, end),
-                                decoded.slice_mut(len, end),
-                                case,
-                            ));
+                        match backend {
+                            Some(backend) => {
+                                assert!(
+                                    !backend.check_mixed(encoded.slice(len * 2, end)),
+                                    "{}",
+                                    name
+                                );
+                                assert!(!backend.decode_owned(
+                                    encoded.slice(len * 2, end),
+                                    decoded.slice_mut(len, end),
+                                    case,
+                                ));
+                                #[cfg(feature = "alloc")]
+                                {
+                                    let dst = decoded.slice_mut(len, end);
+                                    // SAFETY: MaybeUninit<u8> has u8's layout; decode_append only writes initialized bytes.
+                                    let uninit = unsafe {
+                                        core::slice::from_raw_parts_mut(
+                                            dst.as_mut_ptr().cast(),
+                                            len,
+                                        )
+                                    };
+                                    assert!(
+                                        backend
+                                            .decode_append(encoded.slice(len * 2, end), uninit)
+                                            .is_err(),
+                                        "{}",
+                                        name
+                                    );
+                                }
+                            }
+                            None => {
+                                assert_eq!(
+                                    hex_validate(encoded.slice(len * 2, end)),
+                                    Err(Error::InvalidChar {
+                                        index: len * 2 - 1,
+                                        byte: b'!',
+                                    }),
+                                    "{name}"
+                                );
+                            }
                         }
                     }
                 }

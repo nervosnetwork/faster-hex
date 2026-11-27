@@ -82,6 +82,82 @@ fn empty_sign_prefix_and_zero_padding_are_explicit() {
     assert_eq!(format!("{hex:.0}"), "ab");
 }
 
+#[test]
+fn leading_digits_clamp_and_preserve_flags_across_chunk_boundaries() {
+    let bytes: Vec<_> = (0..520).map(|i| i as u8).collect();
+    let encoded = hex::encode(&bytes);
+    for count in [
+        0,
+        1,
+        2,
+        4,
+        7,
+        8,
+        12,
+        15,
+        16,
+        17,
+        31,
+        32,
+        33,
+        40,
+        63,
+        64,
+        65,
+        255,
+        256,
+        257,
+        1023,
+        1024,
+        1025,
+        1039,
+        1040,
+        usize::MAX,
+    ] {
+        let view = Hex::new(&bytes).leading_digits(count);
+        let expected = &encoded[..count.min(encoded.len())];
+        assert_eq!(format!("{view:x}"), expected);
+        assert_eq!(format!("{view}"), expected);
+        let upper = expected.to_ascii_uppercase();
+        assert_eq!(
+            format!("{view:💠^+#12.1X}"),
+            format!("{:💠^+#12.1X}", Digits(&upper))
+        );
+    }
+}
+
+#[test]
+fn selected_digits_encode_into_exact_storage_and_preserve_spare_bytes() {
+    for len in [0, 1, 2, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 129, 513] {
+        let bytes: Vec<_> = (0..len).map(|i| (i * 31 + 3) as u8).collect();
+        let full = hex::encode(&bytes);
+        for digits in [
+            0,
+            1,
+            7,
+            8,
+            full.len().saturating_sub(1),
+            full.len(),
+            usize::MAX,
+        ] {
+            let view = Hex::new(&bytes).leading_digits(digits);
+            let expected = &full[..digits.min(full.len())];
+            for extra in [0, 5] {
+                let mut buf = vec![0xff; 1 + expected.len() + extra];
+                assert_eq!(view.encode_to(&mut buf[1..]).unwrap(), expected);
+                assert_eq!(buf[0], 0xff);
+                assert!(buf[1 + expected.len()..].iter().all(|&b| b == 0xff));
+            }
+            if !expected.is_empty() {
+                let mut short = vec![0xa5; expected.len() - 1];
+                assert!(matches!(view.encode_to(&mut short),
+                    Err(faster_hex::Error::OutputTooSmall { required, .. }) if required == expected.len()));
+                assert!(short.iter().all(|&b| b == 0xa5));
+            }
+        }
+    }
+}
+
 struct FixedWriter {
     bytes: [u8; 1100],
     len: usize,
@@ -175,6 +251,19 @@ fn writes_into_fixed_storage_without_alloc() {
     write!(writer, "hash={VIEW:#X}, again={VIEW}").unwrap();
     assert_eq!(writer.as_str(), "hash=0x00ABCD, again=00abcd");
     assert!(!writer.failed);
+}
+
+#[test]
+fn an_abbreviated_view_propagates_writer_errors_at_the_last_nibble() {
+    let bytes = [0xab; 513];
+    let view = Hex::new(&bytes).leading_digits(1025);
+    for limit in [0, 1, 1023, 1024, 1025] {
+        let mut writer = FixedWriter::new(limit);
+        writer.accept_partial = true;
+        assert_eq!(write!(writer, "{view}").is_ok(), limit == 1025);
+        assert_eq!(writer.as_str(), &hex::encode(bytes)[..limit]);
+        assert!(!writer.called_after_error);
+    }
 }
 
 #[test]

@@ -26,11 +26,14 @@
 //! | Decode into a byte buffer | [`hex_decode`], [`hex_decode_with_case`] |
 //! | Decode an exact-length array | [`hex_decode_array`], [`hex_decode_array_with_case`] |
 //! | Format borrowed bytes into text | [`Hex`] with [`Display`](core::fmt::Display), [`LowerHex`](core::fmt::LowerHex) or [`UpperHex`](core::fmt::UpperHex) |
+//! | Format the first few hex digits or write them into a buffer | [`Hex::leading_digits`], [`LeadingDigits::encode_to`] |
 //! | Check characters without decoding | [`hex_check`], [`hex_check_with_case`] |
+//! | Validate complete byte pairs with error positions | [`hex_validate`] |
 //!
 //! With `alloc`, `hex_string` and `hex_string_upper` create owned strings;
 //! `hex_append` and `hex_append_upper` reuse a string's capacity;
-//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors.
+//! `hex_decode_vec` and `hex_decode_vec_with_case` create owned byte vectors;
+//! `hex_decode_append` appends decoded bytes to an existing vector.
 //! The `heapless-09` feature provides fixed-capacity strings in `heapless_09`.
 //!
 //! # Conversion contracts
@@ -62,7 +65,7 @@
 //! | Feature | Provides |
 //! | --- | --- |
 //! | None | Slice and fixed-array conversion, borrowed formatting, and `core::error::Error` |
-//! | `alloc` | Owned strings and byte vectors; appending to strings |
+//! | `alloc` | Owned strings and byte vectors, including appending to either |
 //! | `std` | `alloc` and standard-library support in enabled dependencies |
 //! | `serde` | Serde adapters and `alloc`; also works without `std` |
 //! | `heapless-09` | Fixed-capacity strings using `heapless` 0.9, without requiring `alloc` |
@@ -84,7 +87,20 @@
 //! selection, SIMD thresholds and instruction sequences are implementation details;
 //! no public backend selection or architecture-specific call is required.
 //!
-//! The minimum supported Rust version is 1.95.0 throughout the 2.0.x line.
+//! The minimum supported Rust version is 1.95.0.
+//!
+//! # Security
+//!
+//! This crate optimizes for throughput and is **not** constant-time: scalar and
+//! short-input paths index lookup tables by input bytes, and decoders/validators
+//! return early on the first invalid block. [`Error::InvalidChar`] also includes
+//! the offending input byte in diagnostics; avoid logging raw codec errors for
+//! secret inputs. Formatting, Serde and owned/append decoding buffers are not
+//! zeroized. When decoding untrusted input, enforce raw input size limits at
+//! the transport or parser boundary before calling allocating helpers
+//! (`hex_decode_vec`, `hex_decode_append`, or Serde adapters);
+//! `deserialize_bounded` only caps decoded output length, not input buffering
+//! by the deserializer.
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -93,10 +109,11 @@
     doc = r#"
 # Owned output and capacity reuse
 
-[`hex_decode_vec`] returns owned decoded bytes; [`hex_string`] returns owned
-text. [`hex_append`] preserves existing text and returns only its new suffix.
-These functions follow the allocator's normal error handling. Allocation failures
-are not codec errors.
+[`hex_decode_vec`] returns owned decoded bytes; [`hex_decode_append`] appends to
+an existing vector while preserving its prefix on error; [`hex_string`] returns
+owned text; [`hex_append`] preserves existing text and returns only its new
+suffix. These functions follow the allocator's normal error handling. Allocation
+failures are not codec errors.
 
 ```
 use faster_hex::{hex_append, hex_decode_vec};
@@ -183,7 +200,7 @@ mod serde;
 
 pub use crate::decode::{
     hex_check, hex_check_with_case, hex_decode, hex_decode_array, hex_decode_array_with_case,
-    hex_decode_with_case, CheckCase,
+    hex_decode_with_case, hex_validate, CheckCase,
 };
 pub use crate::encode::{hex_encode, hex_encode_upper};
 
@@ -191,10 +208,10 @@ pub use crate::encode::{hex_encode, hex_encode_upper};
 pub use crate::encode::{hex_append, hex_append_upper, hex_string, hex_string_upper};
 
 #[cfg(feature = "alloc")]
-pub use crate::decode::{hex_decode_vec, hex_decode_vec_with_case};
+pub use crate::decode::{hex_decode_append, hex_decode_vec, hex_decode_vec_with_case};
 
 pub use crate::error::Error;
-pub use crate::format::Hex;
+pub use crate::format::{Hex, LeadingDigits};
 
 #[cfg(feature = "serde")]
 pub use crate::serde::withpfx_ignorecase::array;
@@ -304,25 +321,30 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
     if max_leaf < 1 {
         return Vectorization::None;
     }
-    let proc_info_ecx = __cpuid_count(1, 0).ecx;
-    let have_sse4 = (proc_info_ecx >> 19) & 1 == 1;
-    // If there's no SSE4 there can't be AVX2.
-    if !have_sse4 {
+    let proc_info = __cpuid_count(1, 0);
+    let proc_info_ecx = proc_info.ecx;
+    // The SSE4.1 kernels also use SSE2 and SSSE3 (`pshufb`, `pmaddubsw`). Check
+    // all three explicitly to guard against unusual virtualized CPUID masks.
+    let have_sse2 = (proc_info.edx >> 26) & 1 == 1;
+    let have_ssse3 = (proc_info_ecx >> 9) & 1 == 1;
+    let have_sse41 = (proc_info_ecx >> 19) & 1 == 1;
+    // If any prerequisite is missing, stay on the portable scalar fallback.
+    if !(have_sse2 && have_ssse3 && have_sse41) {
         return Vectorization::None;
     }
 
     let have_xsave = (proc_info_ecx >> 26) & 1 == 1;
     let have_osxsave = (proc_info_ecx >> 27) & 1 == 1;
     let have_avx = (proc_info_ecx >> 28) & 1 == 1;
-    if max_leaf >= 7 && have_xsave && have_osxsave && have_avx {
-        // SAFETY: XSAVE is available and enabled by the OS; leaf 7 exists.
-        return unsafe { avx_support_no_cache_x86() };
+    if have_xsave && have_osxsave && have_avx {
+        // SAFETY: XSAVE is available and enabled by the OS.
+        return unsafe { avx_support_no_cache_x86(max_leaf) };
     }
     Vectorization::SSE41
 }
 
 // We enable xsave so it can inline the _xgetbv call.
-// # Safety: Requires XSAVE, OSXSAVE and AVX, and CPUID basic leaf 7 must exist.
+// # Safety: Requires XSAVE, OSXSAVE and AVX.
 #[target_feature(enable = "xsave")]
 #[cfg(all(
     any(target_arch = "x86", target_arch = "x86_64"),
@@ -331,13 +353,18 @@ fn vectorization_support_no_cache_x86() -> Vectorization {
     not(miri)
 ))]
 #[cold]
-unsafe fn avx_support_no_cache_x86() -> Vectorization {
+unsafe fn avx_support_no_cache_x86(max_leaf: u32) -> Vectorization {
     #[cfg(target_arch = "x86")]
     use core::arch::x86::{__cpuid_count, _xgetbv};
     #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::{__cpuid_count, _xgetbv};
 
-    let xcr0 = _xgetbv(0);
+    if max_leaf < 7 {
+        return Vectorization::SSE41;
+    }
+
+    // SAFETY: Caller verified XSAVE and OSXSAVE via CPUID.
+    let xcr0 = unsafe { _xgetbv(0) };
     let os_avx_support = xcr0 & 6 == 6;
     if os_avx_support {
         let extended_features_ebx = __cpuid_count(7, 0).ebx;

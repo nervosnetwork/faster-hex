@@ -148,6 +148,102 @@ fn vectors_keep_slice_decoder_error_precedence_and_grammar() {
     }
 }
 
+#[cfg(feature = "alloc")]
+#[test]
+fn append_commits_only_the_new_suffix_and_can_retry_after_a_late_error() {
+    use faster_hex::hex_decode_append;
+    let mut dst = vec![0xfe];
+    assert!(hex_decode_append(b"", &mut dst).unwrap().is_empty());
+    assert_eq!(hex_decode_append(b"!", &mut dst), Err(Error::OddLength));
+    for size in [32, 1024, 1025, 4096] {
+        let mut input = b"aB".repeat(size);
+        let last = input.len() - 1;
+        input[last] = 0xff;
+        // An earlier error still wins when reporting an offset in a later block.
+        for earlier in [2047, 2048, 4097].iter().copied().filter(|&i| i < last) {
+            let digit = input[earlier];
+            input[earlier] = b'!';
+            assert!(matches!(hex_decode_append(&input, &mut dst),
+                Err(Error::InvalidChar { index, byte: b'!', .. }) if index == earlier));
+            assert_eq!(dst, [0xfe]);
+            input[earlier] = digit;
+        }
+        assert!(matches!(hex_decode_append(&input, &mut dst),
+            Err(Error::InvalidChar { index, byte: 0xff, .. }) if index == last));
+        assert_eq!(dst, [0xfe]);
+        input[last] = b'B';
+        let suffix = hex_decode_append(&input, &mut dst).unwrap();
+        assert_eq!(suffix, vec![0xab; size]);
+        suffix[0] = 0;
+        assert_eq!(&dst[..2], &[0xfe, 0]);
+        dst.truncate(1);
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn append_covers_every_short_block_and_tail_error_position() {
+    use faster_hex::hex_decode_append;
+    // Exercise every scalar, short, bounded, 64B/128B block and overlapping-tail length.
+    let sizes: Vec<usize> = if cfg!(miri) {
+        vec![0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 128, 129]
+    } else {
+        (0..=130).collect()
+    };
+    for size in sizes {
+        let bytes: Vec<u8> = (0..size).map(|i| (i * 53 + 7) as u8).collect();
+        let text = hex::encode(&bytes);
+        let mut mixed = text.into_bytes();
+        for (i, byte) in mixed.iter_mut().enumerate() {
+            if i % 3 == 0 {
+                byte.make_ascii_uppercase();
+            }
+        }
+        let mut fresh = Vec::new();
+        assert_eq!(hex_decode_append(&mixed, &mut fresh).unwrap(), bytes);
+        assert_eq!(fresh, bytes);
+
+        let mut reused = Vec::with_capacity(size + 3);
+        reused.extend_from_slice(&[0xde, 0xad, 0x42]);
+        assert_eq!(hex_decode_append(&mixed, &mut reused).unwrap(), bytes);
+        assert_eq!(&reused[..3], &[0xde, 0xad, 0x42]);
+        assert_eq!(&reused[3..], bytes.as_slice());
+        reused.truncate(3);
+
+        if size == 0 {
+            continue;
+        }
+        // Check first, middle, block-edge and last positions, plus exhaustive positions on key sizes.
+        let exhaustive = !cfg!(miri)
+            && matches!(
+                size,
+                1 | 7 | 8 | 15 | 16 | 17 | 31 | 32 | 33 | 64 | 65 | 128 | 129
+            );
+        let positions: Vec<usize> = if exhaustive {
+            (0..mixed.len()).collect()
+        } else {
+            vec![0, 1, mixed.len() / 2, mixed.len() - 2, mixed.len() - 1]
+        };
+        for pos in positions {
+            let orig = mixed[pos];
+            let last = mixed.len() - 1;
+            let orig_last = mixed[last];
+            mixed[last] = 0xff;
+            mixed[pos] = b'!';
+            assert!(matches!(
+                hex_decode_append(&mixed, &mut reused),
+                Err(Error::InvalidChar { index, byte: b'!', .. }) if index == pos
+            ));
+            assert_eq!(reused, [0xde, 0xad, 0x42]);
+            mixed[pos] = orig;
+            mixed[last] = orig_last;
+        }
+        // Retry succeeds cleanly after repeated rollbacks into the same spare capacity.
+        assert_eq!(hex_decode_append(&mixed, &mut reused).unwrap(), bytes);
+        assert_eq!(&reused[3..], bytes.as_slice());
+    }
+}
+
 fn owned_block_errors<const N: usize>() {
     let mut input = vec![b'1'; N * 2];
     for (case, invalid) in [
@@ -202,6 +298,9 @@ proptest::proptest! {
         for case in [CheckCase::None, CheckCase::Lower, CheckCase::Upper] {
             let mut output = vec![0; src.len() / 2];
             let expected = faster_hex::hex_decode_with_case(&src, &mut output, case).map(|bytes| bytes.to_vec());
+            if case == CheckCase::None {
+                prop_assert_eq!(faster_hex::hex_validate(&src), expected.as_ref().map(|_| ()).map_err(|e| *e));
+            }
             #[cfg(feature = "alloc")]
             prop_assert_eq!(faster_hex::hex_decode_vec_with_case(&src, case), expected.clone());
             let array = hex_decode_array_with_case::<32>(&src, case);

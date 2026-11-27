@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Lint workflows and embedded scripts
-        uses: docker://rhysd/actionlint:1.7.12
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: -color
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0
@@ -144,7 +144,7 @@ jobs:
       - name: Install 32-bit runtime and linker
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y gcc-multilib
+          sudo apt-get install --no-install-recommends -y gcc-multilib qemu-user
       - name: Run 32-bit x86 tests with and without an SSE baseline
         env:
           RUSTFLAGS: -D warnings
@@ -154,6 +154,27 @@ jobs:
             cargo test --release --all-features --target "$target" --lib --tests
             cargo test --release --no-default-features --target "$target" --lib --tests
           done
+      - name: Check x86 dispatch with missing CPU features
+        env:
+          RUSTFLAGS: -D warnings
+        run: |
+          while read -r cpu expected; do
+            echo "$cpu -> $expected"
+            # Disable glibc SSSE3/SSE4 IFUNCs in the emulated process so
+            # synthetic CPUID masks (e.g. SSE4.1 without SSSE3) do not SIGILL
+            # inside libc before faster-hex's own CPUID dispatch runs. Use
+            # `env` rather than `qemu -E`, which splits values on commas.
+            CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="env GLIBC_TUNABLES=glibc.cpu.hwcaps=-SSSE3,-SSE4_1,-SSE4_2 qemu-x86_64 -cpu $cpu" \
+              FASTER_HEX_EXPECT_BACKEND="$expected" cargo test --release --all-features \
+                --target x86_64-unknown-linux-gnu --lib tests::feature_detection_matches_host -- --exact
+          done <<'CPUS'
+          Conroe None
+          Nehalem,-ssse3 None
+          Nehalem SSE41
+          SandyBridge,-xsave,-avx SSE41
+          SandyBridge SSE41
+          Haswell-noTSX AVX2
+          CPUS
 
   api:
     name: API compatibility
@@ -185,11 +206,11 @@ jobs:
 
   miri:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: nightly-2026-08-21
       CARGO_TARGET_DIR: target/miri
-      MIRIFLAGS: -Zmiri-strict-provenance
+      MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -210,6 +231,11 @@ jobs:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
       - run: cargo miri test --all-features --test public_api --test serde_protocol --test format --test owned_decode --test allocations
       - run: cargo miri test --all-features --lib internal_conversion_never_reads_past_short_source
+      - name: Check aliasing under Tree Borrows
+        run: cargo miri test --all-features --test public_api --test serde_protocol --test format --test owned_decode
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-tree-borrows
+          PROPTEST_CASES: 32
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

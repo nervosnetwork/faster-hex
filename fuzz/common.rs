@@ -1,5 +1,6 @@
 use faster_hex::{
-    hex_check_with_case, hex_decode_with_case, hex_encode, hex_encode_upper, CheckCase, Error,
+    hex_check_with_case, hex_decode_with_case, hex_encode, hex_encode_upper, hex_validate,
+    CheckCase, Error, Hex,
 };
 
 #[path = "core.rs"]
@@ -38,6 +39,9 @@ pub fn exercise(data: &[u8]) {
         );
         if !input.len().is_multiple_of(2) {
             assert_eq!(result.unwrap_err(), Error::OddLength);
+            if case == CheckCase::None {
+                assert_eq!(hex_validate(input), Err(Error::OddLength));
+            }
         } else if destination_len < input.len() / 2 {
             assert!(
                 matches!(result, Err(Error::OutputTooSmall { required, .. }) if required == input.len() / 2)
@@ -50,8 +54,16 @@ pub fn exercise(data: &[u8]) {
             assert!(
                 matches!(result, Err(Error::InvalidChar { index, byte, .. }) if (index, byte) == (position, invalid))
             );
+            if case == CheckCase::None {
+                assert!(
+                    matches!(hex_validate(input), Err(Error::InvalidChar { index, byte, .. }) if (index, byte) == (position, invalid))
+                );
+            }
         } else {
             assert_eq!(result.unwrap().len(), input.len() / 2);
+            if case == CheckCase::None {
+                assert_eq!(hex_validate(input), Ok(()));
+            }
             for (i, pair) in input.chunks_exact(2).enumerate() {
                 assert_eq!(
                     output[target_offset + i],
@@ -88,6 +100,19 @@ pub fn exercise(data: &[u8]) {
             .chain(&encoded[target_offset + hex_len..])
             .all(|b| *b == 0xff));
         let encoded = &mut encoded[target_offset..target_offset + hex_len];
+        if !upper {
+            let digits = usize::from(control(2)).min(hex_len);
+            let mut prefix = vec![0xff; target_offset + digits + 16];
+            let written = Hex::new(input)
+                .leading_digits(digits)
+                .encode_to(&mut prefix[target_offset..])
+                .unwrap();
+            assert_eq!(written.as_bytes(), &encoded[..digits]);
+            assert!(prefix[..target_offset]
+                .iter()
+                .chain(&prefix[target_offset + digits..])
+                .all(|&b| b == 0xff));
+        }
         let case = if upper {
             CheckCase::Upper
         } else {

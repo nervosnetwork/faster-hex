@@ -84,7 +84,7 @@ impl Write for Buffer {
 
 #[test]
 fn documented_allocation_free_operations_remain_allocation_free() {
-    use faster_hex::{hex_check, hex_decode, hex_decode_array, hex_encode, Hex};
+    use faster_hex::{hex_check, hex_decode, hex_decode_array, hex_encode, hex_validate, Hex};
 
     // Also prove the observer is active; successful zero counts alone are weak evidence.
     let (allocation, count) = measure(|| std::hint::black_box(vec![0u8; 1024]));
@@ -97,6 +97,13 @@ fn documented_allocation_free_operations_remain_allocation_free() {
     let (text, count) = measure(|| hex_encode(&bytes, &mut encoded));
     assert_eq!(&*text.unwrap(), expected);
     assert_eq!(count, 0);
+    let (prefix, count) = measure(|| {
+        Hex::new(&bytes)
+            .leading_digits(7)
+            .encode_to(&mut encoded[..7])
+    });
+    assert_eq!(prefix.unwrap(), &expected[..7]);
+    assert_eq!(count, 0);
     let mut decoded = [0; 513];
     let (data, count) = measure(|| hex_decode(expected.as_bytes(), &mut decoded));
     assert_eq!(data.unwrap(), bytes);
@@ -107,11 +114,19 @@ fn documented_allocation_free_operations_remain_allocation_free() {
     let (valid, count) = measure(|| hex_check(expected.as_bytes()));
     assert!(valid);
     assert_eq!(count, 0);
+    let (valid, count) = measure(|| hex_validate(expected.as_bytes()));
+    assert_eq!(valid, Ok(()));
+    assert_eq!(count, 0);
 
     let mut writer = Buffer {
         bytes: [0; 2048],
         len: 0,
     };
+    let (result, count) = measure(|| write!(writer, "{}", Hex::new(&bytes).leading_digits(7)));
+    result.unwrap();
+    assert_eq!(&writer.bytes[..writer.len], &expected.as_bytes()[..7]);
+    assert_eq!(count, 0);
+    writer.len = 0;
     let (result, count) = measure(|| write!(writer, "{:+#01040X}", Hex::new(&bytes)));
     result.unwrap();
     assert_eq!(
@@ -140,6 +155,16 @@ fn documented_allocation_free_operations_remain_allocation_free() {
         assert_eq!(suffix, expected.len());
         assert_eq!(text, format!("前缀:{expected}"));
         assert_eq!(count, 0);
+        let mut dst = Vec::with_capacity(bytes.len());
+        let (appended, count) =
+            measure(|| faster_hex::hex_decode_append(expected.as_bytes(), &mut dst));
+        assert_eq!(appended.unwrap(), bytes);
+        assert_eq!(count, 0);
+        let mut empty = Vec::new();
+        let (error, count) = measure(|| faster_hex::hex_decode_append(b"g", &mut empty));
+        assert_eq!(error, Err(faster_hex::Error::OddLength));
+        assert_eq!(count, 0);
+        assert_eq!(empty.capacity(), 0);
         let (error, count) = measure(|| faster_hex::hex_decode_vec(b"g"));
         assert_eq!(error, Err(faster_hex::Error::OddLength));
         assert_eq!(count, 0);
@@ -150,6 +175,50 @@ fn documented_allocation_free_operations_remain_allocation_free() {
         assert_eq!(text.unwrap().as_str(), expected);
         assert_eq!(count, 0);
     }
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn a_rejected_borrowed_option_does_not_allocate_its_decoded_bytes() {
+    use serde::de::{
+        value::BorrowedStrDeserializer, value::Error, Deserializer, Error as _, Visitor,
+    };
+
+    struct Framed<'a> {
+        text: &'a str,
+        closed: bool,
+    }
+
+    impl<'de> Deserializer<'de> for Framed<'de> {
+        type Error = Error;
+
+        fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+            let value = visitor.visit_some(BorrowedStrDeserializer::<Error>::new(self.text))?;
+            if self.closed {
+                Ok(value)
+            } else {
+                Err(Error::custom("unclosed option"))
+            }
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes
+            byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map struct
+            enum identifier ignored_any
+        }
+    }
+
+    let text = format!("0x{}", "ab".repeat(32));
+    let frame = Framed {
+        text: &text,
+        closed: std::hint::black_box(false),
+    };
+    let (expected, error_allocations) = measure(|| Error::custom("unclosed option"));
+    let (error, allocations) = measure(|| {
+        faster_hex::option_withpfx_ignorecase::deserialize::<_, Vec<u8>>(frame).unwrap_err()
+    });
+    assert_eq!(error.to_string(), expected.to_string());
+    assert_eq!(allocations, error_allocations);
 }
 
 #[cfg(feature = "serde")]

@@ -28,6 +28,16 @@ fn intact(buffer: &[u8], offset: usize, written: usize) {
         .all(|&b| b == CANARY));
 }
 
+fn intact_uninit(buffer: &[core::mem::MaybeUninit<u8>], offset: usize, written: usize) {
+    assert!(buffer[..offset]
+        .iter()
+        .chain(&buffer[offset + written..])
+        .all(|b| {
+            // SAFETY: Canary slots outside the destination slice stay initialized.
+            unsafe { b.assume_init() == CANARY }
+        }));
+}
+
 pub fn exercise(data: &[u8]) {
     let control = |i| data.get(i).copied().unwrap_or(0);
     let source_offset = usize::from(control(0) % 64);
@@ -77,6 +87,9 @@ pub fn exercise(data: &[u8]) {
                     intact(&output, target_offset, len * 2);
                 }
                 assert!(backend.check(text, case));
+                if case == CheckCase::None {
+                    assert!(backend.check_mixed(text));
+                }
                 output.fill(CANARY);
                 assert!(backend.decode(
                     text,
@@ -93,12 +106,29 @@ pub fn exercise(data: &[u8]) {
                 ));
                 assert_eq!(&output[target_offset..target_offset + len], raw);
                 intact(&output, target_offset, len);
+                if case == CheckCase::None {
+                    let mut uninit =
+                        vec![core::mem::MaybeUninit::new(CANARY); target_offset + len + 32];
+                    assert_eq!(
+                        backend
+                            .decode_append(text, &mut uninit[target_offset..target_offset + len]),
+                        Ok(())
+                    );
+                    for (got, &want) in uninit[target_offset..target_offset + len].iter().zip(raw) {
+                        // SAFETY: `decode_append` succeeded and initialized every output byte.
+                        assert_eq!(unsafe { got.assume_init() }, want);
+                    }
+                    intact_uninit(&uninit, target_offset, len);
+                }
                 if text.is_empty() {
                     continue;
                 }
                 // Checkers also accept valid odd-length strings. Decoders only
                 // receive complete pairs, so no length error can mask a fault.
                 assert!(backend.check(&text[..text.len() - 1], case));
+                if case == CheckCase::None {
+                    assert!(backend.check_mixed(&text[..text.len() - 1]));
+                }
                 let selected =
                     usize::from(u16::from_le_bytes([control(4), control(5)])) % text.len();
                 for position in [selected, text.len() - 1] {
@@ -116,6 +146,9 @@ pub fn exercise(data: &[u8]) {
                     text[position] = if valid { b'?' } else { candidate };
                     output.fill(CANARY);
                     assert!(!backend.check(text, case));
+                    if case == CheckCase::None {
+                        assert!(!backend.check_mixed(text));
+                    }
                     assert!(!backend.decode(
                         text,
                         &mut output[target_offset..target_offset + len],
@@ -148,6 +181,22 @@ pub fn exercise(data: &[u8]) {
                     // Owned output is discarded on error; only bytes outside
                     // the destination are required to retain their canaries.
                     intact(&output, target_offset, len);
+                    if case == CheckCase::None {
+                        let mut uninit =
+                            vec![core::mem::MaybeUninit::new(CANARY); target_offset + len + 32];
+                        let from = backend
+                            .decode_append(text, &mut uninit[target_offset..target_offset + len])
+                            .unwrap_err();
+                        assert!(from.is_multiple_of(2) && from <= position);
+                        for (got, &want) in uninit[target_offset..target_offset + from / 2]
+                            .iter()
+                            .zip(raw)
+                        {
+                            // SAFETY: `decode_append` initialized every byte before `from`.
+                            assert_eq!(unsafe { got.assume_init() }, want);
+                        }
+                        intact_uninit(&uninit, target_offset, len);
+                    }
                     text[position] = original;
                 }
             }

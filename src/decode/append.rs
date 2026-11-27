@@ -1,0 +1,602 @@
+//! Spare-capacity decoding for [`crate::hex_decode_append`].
+//!
+//! Writes decoded bytes directly into uninitialized destination capacity without
+//! zero-filling first, returning the starting input offset of the first failing
+//! block on error so diagnostics skip already-validated prefixes.
+
+use core::mem::MaybeUninit;
+
+#[cfg(target_arch = "aarch64")]
+use core::arch::aarch64::*;
+#[cfg(target_arch = "x86")]
+use core::arch::x86::*;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::*;
+
+#[cfg(feature = "alloc")]
+use crate::error::Error;
+
+#[cfg(target_arch = "aarch64")]
+use super::{aarch64, CheckCase};
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use super::{x86, CheckCase};
+use super::{NIL, UNHEX};
+
+// Decodes `src` into `dst`. Returns `Ok(())` only after initializing every element
+// of `dst`. On `Err(from)`, `from` is even, `from <= src.len()`, `src[..from]` is
+// valid, and `dst[..from / 2]` is already initialized.
+//
+// SAFETY: Callers must ensure `src.len() == dst.len() * 2`.
+#[cfg(feature = "alloc")]
+#[inline]
+pub(super) unsafe fn decode_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    debug_assert_eq!(dst.len().checked_mul(2), Some(src.len()));
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        match crate::vectorization_support() {
+            crate::Vectorization::AVX512 => {
+                // SAFETY: Dispatch verified AVX-512BW and OS state; `src.len() == dst.len() * 2 >= 16`.
+                unsafe { decode_avx512_uninit(src, dst) }
+            }
+            crate::Vectorization::AVX2 => {
+                // SAFETY: Dispatch verified AVX2 and OS state; `src.len() == dst.len() * 2 >= 16`.
+                unsafe { decode_avx2_uninit(src, dst) }
+            }
+            crate::Vectorization::SSE41 => {
+                // SAFETY: Dispatch verified SSE4.1; `src.len() == dst.len() * 2 >= 16`.
+                unsafe { decode_sse41_uninit::<64>(src, dst) }
+            }
+            crate::Vectorization::None => decode_scalar_uninit(src, dst),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        if crate::vectorization_support() == crate::Vectorization::Neon {
+            if dst.len() <= 16 {
+                // SAFETY: NEON is available and `16 <= src.len() <= 32` with exact 2:1 ratio.
+                unsafe { decode_short_neon_uninit(src, dst) }
+            } else if dst.len() <= 32 {
+                // SAFETY: NEON is available and `34 <= src.len() <= 64` with exact 2:1 ratio.
+                unsafe { decode_bounded_neon_uninit(src, dst) }
+            } else {
+                // SAFETY: NEON is available and `src.len() > 64` with exact 2:1 ratio.
+                unsafe { decode_large_neon_uninit(src, dst) }
+            }
+        } else {
+            decode_scalar_uninit(src, dst)
+        }
+    }
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        decode_scalar_uninit(src, dst)
+    }
+}
+
+#[inline]
+fn decode_scalar_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    for (slot, pair) in dst.iter_mut().zip(src.as_chunks::<2>().0) {
+        let high = UNHEX[usize::from(pair[0])];
+        let low = UNHEX[usize::from(pair[1])];
+        if high | low == NIL {
+            // SAFETY: `pair` is a subslice of `src` at or after `src.as_ptr()`.
+            return Err(unsafe { pair.as_ptr().offset_from_unsigned(src.as_ptr()) });
+        }
+        slot.write(high << 4 | low);
+    }
+    Ok(())
+}
+
+// Shifts `UNHEX` instead of referencing `UNHEX4` so 2.0's internal `UNHEX4`
+// table stays a local symbol in the rlib and does not shift AArch64 `.text`.
+#[cfg(feature = "alloc")]
+#[inline]
+fn decode_fallback_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) {
+    for (slot, pair) in dst.iter_mut().zip(src.as_chunks::<2>().0) {
+        slot.write((UNHEX[usize::from(pair[0])] << 4) | UNHEX[usize::from(pair[1])]);
+    }
+}
+
+// Macro rather than closure so each caller retains its `#[target_feature]`
+// attributes and inlines the block kernel directly into the SIMD loop.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+macro_rules! decode_blocks_uninit {
+    ($src:expr, $dst:expr, $src_block:literal, $dst_block:literal, $decode:path) => {{
+        let (blocks, tail) = $src.as_chunks::<$src_block>();
+        let (outputs, _) = $dst.as_chunks_mut::<$dst_block>();
+        for (input, output) in blocks.iter().zip(outputs) {
+            // SAFETY: `input` and `output` are fixed-size chunks matching the caller's ISA.
+            if unsafe { $decode(input, output) }.is_err() {
+                // SAFETY: `input` is a subslice of `$src` at or after `$src.as_ptr()`.
+                return Err(unsafe { input.as_ptr().offset_from_unsigned($src.as_ptr()) });
+            }
+        }
+        if !tail.is_empty() {
+            let Some(input) = $src.last_chunk::<$src_block>() else {
+                return Err(blocks.len() * $src_block);
+            };
+            let Some(output) = $dst.last_chunk_mut::<$dst_block>() else {
+                return Err(blocks.len() * $src_block);
+            };
+            // SAFETY: Trailing chunks have the exact block sizes matching the caller's ISA.
+            if unsafe { $decode(input, output) }.is_err() {
+                return Err(blocks.len() * $src_block);
+            }
+        }
+        Ok(())
+    }};
+}
+
+// Locates the first invalid byte starting from `from`, where `src[..from]` has
+// already been validated and `dst[..from / 2]` has already been initialized.
+// Generic on chunk width so 2.0-only callers never pull this into rlib CGUs,
+// while `#[inline(never)]` keeps error diagnostics out of caller hot loops.
+#[cfg(feature = "alloc")]
+#[cold]
+#[inline(never)]
+pub(super) fn diagnose_append_error<const CHUNK: usize>(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+    from: usize,
+) -> Result<(), Error> {
+    let rest = &src[from..];
+    let table = &UNHEX;
+    // Report a malformed first pair of the failing region before wider scans.
+    for (offset, &byte) in rest.iter().take(2).enumerate() {
+        if table[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar {
+                index: from + offset,
+                byte,
+            });
+        }
+    }
+    // Skip valid chunks when a wider block (e.g. 128-byte AVX-512) failed.
+    let mut skipped = 0;
+    if rest.len() > CHUNK {
+        for chunk in rest.chunks_exact(CHUNK) {
+            if !crate::hex_check(chunk) {
+                break;
+            }
+            skipped += CHUNK;
+        }
+    }
+    // Four independent lookups skip valid digits before the exact byte scan.
+    // A rejected digit sets all bits (0xff); valid entries use only the low nibble.
+    let mut start = skipped;
+    for group in rest[skipped..].as_chunks::<4>().0 {
+        if (table[usize::from(group[0])]
+            | table[usize::from(group[1])]
+            | table[usize::from(group[2])]
+            | table[usize::from(group[3])])
+            == NIL
+        {
+            break;
+        }
+        start += 4;
+    }
+    for (offset, &byte) in rest[start..].iter().enumerate() {
+        if table[usize::from(byte)] == NIL {
+            return Err(Error::InvalidChar {
+                index: from + start + offset,
+                byte,
+            });
+        }
+    }
+    // Defensive recovery: if every remaining byte is valid, finish initializing `dst`.
+    decode_fallback_uninit(rest, &mut dst[from / 2..]);
+    Ok(())
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn decode_short_neon_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    debug_assert!((16..=32).contains(&src.len()) && dst.len() * 2 == src.len());
+    let pack = |a, b| vsliq_n_u8::<4>(vuzp2q_u8(a, b), vuzp1q_u8(a, b));
+    // SAFETY: Caller guarantees `16 <= src.len() <= 32`, `dst.len() * 2 == src.len()`, and NEON support.
+    unsafe {
+        let a = aarch64::decode_neon_nibbles(vld1q_u8(src.as_ptr()), CheckCase::None);
+        if src.len() == 16 {
+            if vmaxvq_u8(a) > 15 {
+                return Err(0);
+            }
+            vst1_u8(dst.as_mut_ptr().cast(), vget_low_u8(pack(a, a)));
+            return Ok(());
+        }
+        let b = aarch64::decode_neon_nibbles(
+            vld1q_u8(src.as_ptr().add(src.len() - 16)),
+            CheckCase::None,
+        );
+        if vmaxvq_u8(vorrq_u8(a, b)) > 15 {
+            return Err(0);
+        }
+        let decoded = pack(a, b);
+        vst1_u8(dst.as_mut_ptr().cast(), vget_low_u8(decoded));
+        vst1_u8(
+            dst.as_mut_ptr().add(dst.len() - 8).cast(),
+            vget_high_u8(decoded),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn decode_bounded_neon_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    debug_assert!((34..=64).contains(&src.len()) && dst.len() * 2 == src.len());
+    // SAFETY: Caller guarantees `34 <= src.len() <= 64`, `dst.len() * 2 == src.len()`, and NEON support.
+    unsafe {
+        let a = aarch64::decode_neon_nibbles(vld1q_u8(src.as_ptr()), CheckCase::None);
+        let b = aarch64::decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), CheckCase::None);
+        let c = aarch64::decode_neon_nibbles(
+            vld1q_u8(src.as_ptr().add(src.len() - 32)),
+            CheckCase::None,
+        );
+        let d = aarch64::decode_neon_nibbles(
+            vld1q_u8(src.as_ptr().add(src.len() - 16)),
+            CheckCase::None,
+        );
+        if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
+            return Err(0);
+        }
+        let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
+        vst1q_u8(dst.as_mut_ptr().cast(), pack(a, b));
+        vst1q_u8(dst.as_mut_ptr().add(dst.len() - 16).cast(), pack(c, d));
+    }
+    Ok(())
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn decode_neon_64_uninit(src: &[u8; 64], dst: &mut [MaybeUninit<u8>; 32]) -> Result<(), ()> {
+    // SAFETY: `src` is 64 bytes, `dst` is 32 bytes, and NEON is enabled by contract.
+    unsafe {
+        let a = aarch64::decode_neon_nibbles(vld1q_u8(src.as_ptr()), CheckCase::None);
+        let b = aarch64::decode_neon_nibbles(vld1q_u8(src.as_ptr().add(16)), CheckCase::None);
+        let c = aarch64::decode_neon_nibbles(vld1q_u8(src.as_ptr().add(32)), CheckCase::None);
+        let d = aarch64::decode_neon_nibbles(vld1q_u8(src.as_ptr().add(48)), CheckCase::None);
+        if vmaxvq_u8(vorrq_u8(vorrq_u8(a, b), vorrq_u8(c, d))) > 15 {
+            return Err(());
+        }
+        let pack = |hi, lo| vsliq_n_u8::<4>(vuzp2q_u8(hi, lo), vuzp1q_u8(hi, lo));
+        vst1q_u8(dst.as_mut_ptr().cast(), pack(a, b));
+        vst1q_u8(dst.as_mut_ptr().add(16).cast(), pack(c, d));
+    }
+    Ok(())
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn decode_large_neon_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    debug_assert!(src.len() > 64 && dst.len() * 2 == src.len());
+    decode_blocks_uninit!(src, dst, 64, 32, decode_neon_64_uninit)
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "sse4.1")]
+unsafe fn decode_short_sse41_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    debug_assert!((16..=32).contains(&src.len()) && dst.len() * 2 == src.len());
+    // SAFETY: Caller guarantees `16 <= src.len() <= 32`, `dst.len() * 2 == src.len()`, and SSE4.1 support.
+    unsafe {
+        let a = x86::decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), CheckCase::None);
+        if src.len() == 16 {
+            if _mm_testz_si128(a, _mm_set1_epi8(-16)) == 0 {
+                return Err(0);
+            }
+            _mm_storel_epi64(dst.as_mut_ptr().cast(), x86::pack_sse41(a, a));
+            return Ok(());
+        }
+        let b = x86::decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
+            CheckCase::None,
+        );
+        if _mm_testz_si128(_mm_or_si128(a, b), _mm_set1_epi8(-16)) == 0 {
+            return Err(0);
+        }
+        let decoded = x86::pack_sse41(a, b);
+        _mm_storel_epi64(dst.as_mut_ptr().cast(), decoded);
+        _mm_storel_epi64(
+            dst.as_mut_ptr().add(dst.len() - 8).cast(),
+            _mm_srli_si128::<8>(decoded),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "sse4.1")]
+unsafe fn decode_sse41_64_uninit(
+    src: &[u8; 64],
+    dst: &mut [MaybeUninit<u8>; 32],
+) -> Result<(), ()> {
+    // SAFETY: `src` is 64 bytes, `dst` is 32 bytes, and SSE4.1 is enabled by contract.
+    unsafe {
+        let a = x86::decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), CheckCase::None);
+        let b = x86::decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(16).cast()),
+            CheckCase::None,
+        );
+        let c = x86::decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(32).cast()),
+            CheckCase::None,
+        );
+        let d = x86::decode_sse41_nibbles(
+            _mm_loadu_si128(src.as_ptr().add(48).cast()),
+            CheckCase::None,
+        );
+        let combined = _mm_or_si128(_mm_or_si128(a, b), _mm_or_si128(c, d));
+        if _mm_testz_si128(combined, _mm_set1_epi8(-16)) == 0 {
+            return Err(());
+        }
+        _mm_storeu_si128(dst.as_mut_ptr().cast(), x86::pack_sse41(a, b));
+        _mm_storeu_si128(dst.as_mut_ptr().add(16).cast(), x86::pack_sse41(c, d));
+    }
+    Ok(())
+}
+
+// Generic on block width so crates that never call `hex_decode_append` do not
+// materialize this function in `faster-hex`'s rlib CGUs, while targets with
+// static SSE4.1 (such as x86_64 macOS) still keep it out of AVX2 hot loops.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline(never)]
+#[target_feature(enable = "sse4.1")]
+unsafe fn decode_sse41_uninit<const BLOCK: usize>(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    debug_assert!(BLOCK == 64 && src.len() >= 16 && dst.len() * 2 == src.len());
+    if src.len() <= 32 {
+        // SAFETY: `16 <= src.len() <= 32`, `dst.len() * 2 == src.len()`, and SSE4.1 is active.
+        return unsafe { decode_short_sse41_uninit(src, dst) };
+    }
+    if src.len() < 64 {
+        // SAFETY: `34 <= src.len() < 64`, `dst.len() * 2 == src.len()`, and SSE4.1 is active.
+        unsafe {
+            let a =
+                x86::decode_sse41_nibbles(_mm_loadu_si128(src.as_ptr().cast()), CheckCase::None);
+            let b = x86::decode_sse41_nibbles(
+                _mm_loadu_si128(src.as_ptr().add(16).cast()),
+                CheckCase::None,
+            );
+            let c = x86::decode_sse41_nibbles(
+                _mm_loadu_si128(src.as_ptr().add(src.len() - 32).cast()),
+                CheckCase::None,
+            );
+            let d = x86::decode_sse41_nibbles(
+                _mm_loadu_si128(src.as_ptr().add(src.len() - 16).cast()),
+                CheckCase::None,
+            );
+            let combined = _mm_or_si128(_mm_or_si128(a, b), _mm_or_si128(c, d));
+            if _mm_testz_si128(combined, _mm_set1_epi8(-16)) == 0 {
+                return Err(0);
+            }
+            _mm_storeu_si128(dst.as_mut_ptr().cast(), x86::pack_sse41(a, b));
+            _mm_storeu_si128(
+                dst.as_mut_ptr().add(dst.len() - 16).cast(),
+                x86::pack_sse41(c, d),
+            );
+        }
+        return Ok(());
+    }
+    decode_blocks_uninit!(src, dst, 64, 32, decode_sse41_64_uninit)
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_avx2_64_uninit(src: &[u8; 64], dst: &mut [MaybeUninit<u8>; 32]) -> Result<(), ()> {
+    // SAFETY: `src` is 64 bytes, `dst` is 32 bytes, and AVX2 is enabled by contract.
+    unsafe {
+        let (a, a_checked) =
+            x86::decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), CheckCase::None);
+        let (b, b_checked) = x86::decode_avx2_nibbles(
+            _mm256_loadu_si256(src.as_ptr().add(32).cast()),
+            CheckCase::None,
+        );
+        if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
+            return Err(());
+        }
+        _mm256_storeu_si256(dst.as_mut_ptr().cast(), x86::pack_avx2(a, b));
+    }
+    Ok(())
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_avx2_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    debug_assert!(src.len() >= 16 && dst.len() * 2 == src.len());
+    if src.len() == 64 {
+        let (Some(input), Some(output)) = (src.first_chunk::<64>(), dst.first_chunk_mut::<32>())
+        else {
+            return Err(0);
+        };
+        // SAFETY: Exact 64:32 chunks and AVX2 is active.
+        return unsafe { decode_avx2_64_uninit(input, output) }.map_err(|()| 0);
+    }
+    if src.len() > 64 {
+        return decode_blocks_uninit!(src, dst, 64, 32, decode_avx2_64_uninit);
+    }
+    if src.len() == 32 {
+        // SAFETY: `src.len() == 32`, `dst.len() == 16`, and AVX2 is active.
+        unsafe {
+            let (nibbles, checked) =
+                x86::decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), CheckCase::None);
+            if _mm256_movemask_epi8(checked) != 0 {
+                return Err(0);
+            }
+            _mm_storeu_si128(
+                dst.as_mut_ptr().cast(),
+                _mm256_castsi256_si128(x86::pack_avx2(nibbles, nibbles)),
+            );
+        }
+        return Ok(());
+    }
+    if src.len() < 32 {
+        // SAFETY: `16 <= src.len() < 32`, `dst.len() * 2 == src.len()`, and AVX2 implies SSE4.1.
+        return unsafe { decode_short_sse41_uninit(src, dst) };
+    }
+    // SAFETY: `34 <= src.len() < 64`, `dst.len() * 2 == src.len()`, and AVX2 is active.
+    unsafe {
+        let (a, a_checked) =
+            x86::decode_avx2_nibbles(_mm256_loadu_si256(src.as_ptr().cast()), CheckCase::None);
+        let (b, b_checked) = x86::decode_avx2_nibbles(
+            _mm256_loadu_si256(src.as_ptr().add(src.len() - 32).cast()),
+            CheckCase::None,
+        );
+        if _mm256_movemask_epi8(_mm256_or_si256(a_checked, b_checked)) != 0 {
+            return Err(0);
+        }
+        let packed = x86::pack_avx2(a, b);
+        _mm_storeu_si128(dst.as_mut_ptr().cast(), _mm256_castsi256_si128(packed));
+        _mm_storeu_si128(
+            dst.as_mut_ptr().add(dst.len() - 16).cast(),
+            _mm256_extracti128_si256::<1>(packed),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn decode_avx512_128_uninit(
+    src: &[u8; 128],
+    dst: &mut [MaybeUninit<u8>; 64],
+) -> Result<(), ()> {
+    // SAFETY: `src` is 128 bytes, `dst` is 64 bytes, and AVX-512F/BW are enabled by contract.
+    unsafe {
+        let (a, a_checked) =
+            x86::decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), CheckCase::None);
+        let (b, b_checked) = x86::decode_avx512_nibbles(
+            _mm512_loadu_si512(src.as_ptr().add(64).cast()),
+            CheckCase::None,
+        );
+        if _mm512_movepi8_mask(_mm512_or_si512(a_checked, b_checked)) != 0 {
+            return Err(());
+        }
+        _mm256_storeu_si256(dst.as_mut_ptr().cast(), x86::pack_avx512(a));
+        _mm256_storeu_si256(dst.as_mut_ptr().add(32).cast(), x86::pack_avx512(b));
+    }
+    Ok(())
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn decode_avx512_uninit(src: &[u8], dst: &mut [MaybeUninit<u8>]) -> Result<(), usize> {
+    debug_assert!(src.len() >= 16 && dst.len() * 2 == src.len());
+    if src.len() >= 128 {
+        return decode_blocks_uninit!(src, dst, 128, 64, decode_avx512_128_uninit);
+    }
+    if src.len() == 64 {
+        // SAFETY: `src.len() == 64`, `dst.len() == 32`, and AVX-512F/BW are active.
+        unsafe {
+            let (nibbles, checked) = x86::decode_avx512_nibbles(
+                _mm512_loadu_si512(src.as_ptr().cast()),
+                CheckCase::None,
+            );
+            if _mm512_movepi8_mask(checked) != 0 {
+                return Err(0);
+            }
+            _mm256_storeu_si256(dst.as_mut_ptr().cast(), x86::pack_avx512(nibbles));
+        }
+        return Ok(());
+    }
+    if src.len() < 64 {
+        // SAFETY: `16 <= src.len() < 64`, `dst.len() * 2 == src.len()`, and AVX-512F implies AVX2.
+        return unsafe { decode_avx2_uninit(src, dst) };
+    }
+    // SAFETY: `66 <= src.len() < 128`, `dst.len() * 2 == src.len()`, and AVX-512F/BW are active.
+    unsafe {
+        let (a, a_checked) =
+            x86::decode_avx512_nibbles(_mm512_loadu_si512(src.as_ptr().cast()), CheckCase::None);
+        let (b, b_checked) = x86::decode_avx512_nibbles(
+            _mm512_loadu_si512(src.as_ptr().add(src.len() - 64).cast()),
+            CheckCase::None,
+        );
+        if _mm512_movepi8_mask(_mm512_or_si512(a_checked, b_checked)) != 0 {
+            return Err(0);
+        }
+        _mm256_storeu_si256(dst.as_mut_ptr().cast(), x86::pack_avx512(a));
+        _mm256_storeu_si256(
+            dst.as_mut_ptr().add(dst.len() - 32).cast(),
+            x86::pack_avx512(b),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(any(test, fuzzing))]
+pub(crate) fn fuzz_decode_scalar_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    decode_scalar_uninit(src, dst)
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_decode_sse41_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    // SAFETY: Caller guarantees SSE4.1 support and `src.len() == dst.len() * 2 >= 16`.
+    unsafe { decode_sse41_uninit::<64>(src, dst) }
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_decode_avx2_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    // SAFETY: Caller guarantees AVX2 support and `src.len() == dst.len() * 2 >= 16`.
+    unsafe { decode_avx2_uninit(src, dst) }
+}
+
+#[cfg(all(any(test, fuzzing), any(target_arch = "x86", target_arch = "x86_64")))]
+pub(crate) unsafe fn fuzz_decode_avx512_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    // SAFETY: Caller guarantees AVX-512F/BW support and `src.len() == dst.len() * 2 >= 16`.
+    unsafe { decode_avx512_uninit(src, dst) }
+}
+
+#[cfg(all(any(test, fuzzing), target_arch = "aarch64"))]
+pub(crate) unsafe fn fuzz_decode_neon_uninit(
+    src: &[u8],
+    dst: &mut [MaybeUninit<u8>],
+) -> Result<(), usize> {
+    if dst.len() < 8 {
+        return decode_scalar_uninit(src, dst);
+    }
+    // SAFETY: Caller guarantees NEON support and `src.len() == dst.len() * 2 >= 16`.
+    unsafe {
+        if dst.len() <= 16 {
+            decode_short_neon_uninit(src, dst)
+        } else if dst.len() <= 32 {
+            decode_bounded_neon_uninit(src, dst)
+        } else {
+            decode_large_neon_uninit(src, dst)
+        }
+    }
+}
